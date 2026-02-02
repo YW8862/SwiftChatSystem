@@ -1,11 +1,9 @@
 syntax = "proto3";
 
-package swift.friend;
+package swift.relation;  // 不用 friend，它是 C++ 关键字
 
 import "common.proto";
 import "auth.proto";
-
-option cc_generic_services = true;
 
 // ============== 请求/响应 ==============
 
@@ -16,7 +14,8 @@ message AddFriendRequest {
     string group_id = 4;       // 分组 ID
 }
 
-message HandleFriendRequest {
+// 重命名避免与 RPC 方法名冲突
+message HandleFriendReq {
     string user_id = 1;
     string request_id = 2;     // 请求 ID
     bool accept = 3;           // 是否接受
@@ -59,16 +58,17 @@ message BlockListResponse {
     repeated string blocked_ids = 3;
 }
 
-message CreateGroupRequest {
+// 好友分组相关（重命名避免与 group.proto 冲突）
+message CreateFriendGroupRequest {
     string user_id = 1;
     string group_name = 2;
 }
 
-message GetGroupsRequest {
+message GetFriendGroupsRequest {
     string user_id = 1;
 }
 
-message GroupListResponse {
+message FriendGroupListResponse {
     int32 code = 1;
     string message = 2;
     repeated FriendGroup groups = 3;
@@ -94,7 +94,7 @@ message GetFriendRequestsRequest {
 message FriendRequestListResponse {
     int32 code = 1;
     string message = 2;
-    repeated FriendRequest requests = 3;
+    repeated FriendRequestInfo requests = 3;
 }
 
 // ============== 数据结构 ==============
@@ -115,7 +115,8 @@ message FriendGroup {
     int32 sort_order = 4;
 }
 
-message FriendRequest {
+// 重命名避免与 RPC 参数类型冲突
+message FriendRequestInfo {
     string request_id = 1;
     string from_user_id = 2;
     string to_user_id = 3;
@@ -132,7 +133,7 @@ service FriendService {
     rpc AddFriend(AddFriendRequest) returns (swift.common.CommonResponse);
     
     // 处理好友请求
-    rpc HandleFriendRequest(HandleFriendRequest) returns (swift.common.CommonResponse);
+    rpc HandleFriendRequest(HandleFriendReq) returns (swift.common.CommonResponse);
     
     // 删除好友
     rpc RemoveFriend(RemoveFriendRequest) returns (swift.common.CommonResponse);
@@ -150,10 +151,10 @@ service FriendService {
     rpc GetBlockList(GetBlockListRequest) returns (BlockListResponse);
     
     // 创建好友分组
-    rpc CreateGroup(CreateGroupRequest) returns (swift.common.CommonResponse);
+    rpc CreateFriendGroup(CreateFriendGroupRequest) returns (swift.common.CommonResponse);
     
     // 获取分组列表
-    rpc GetGroups(GetGroupsRequest) returns (GroupListResponse);
+    rpc GetFriendGroups(GetFriendGroupsRequest) returns (FriendGroupListResponse);
     
     // 移动好友到分组
     rpc MoveFriend(MoveFriendRequest) returns (swift.common.CommonResponse);

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package swift.common;
 
-option cc_generic_services = true;
+
 
 // 通用响应
 message CommonResponse {

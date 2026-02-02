@@ -5,7 +5,7 @@ package swift.group;
 import "common.proto";
 import "auth.proto";
 
-option cc_generic_services = true;
+
 
 // ============== 请求/响应 ==============
 

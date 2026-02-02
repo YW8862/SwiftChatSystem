@@ -8,6 +8,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(OpenSSL REQUIRED)
 message(STATUS "OpenSSL version: ${OPENSSL_VERSION}")
 
+# 编译 Proto 文件
+add_subdirectory(proto)
+
 # 源文件
 set(SOURCES
     src/utils.cpp

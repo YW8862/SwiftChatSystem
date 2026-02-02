@@ -4,7 +4,7 @@ package swift.file;
 
 import "common.proto";
 
-option cc_generic_services = true;
+
 
 // ============== 请求/响应 ==============
 

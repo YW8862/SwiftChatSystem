@@ -1,45 +1,103 @@
 cmake_minimum_required(VERSION 3.16)
-project(common_proto)
+project(swift_proto)
 
+# 查找 Protobuf 和 gRPC
 find_package(Protobuf REQUIRED)
 
+# 查找 gRPC 插件
+find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin REQUIRED)
+find_library(GRPC_LIBRARY grpc++ REQUIRED)
+find_library(GRPC_LIBRARY_GRPC grpc REQUIRED)
+
+message(STATUS "Protobuf version: ${Protobuf_VERSION}")
+message(STATUS "Protobuf include: ${Protobuf_INCLUDE_DIRS}")
+message(STATUS "gRPC plugin: ${GRPC_CPP_PLUGIN}")
+
+# Proto 文件目录 - 使用绝对路径
+set(BACKEND_DIR ${CMAKE_SOURCE_DIR}/backend)
+set(PROTO_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+file(MAKE_DIRECTORY ${PROTO_OUTPUT_DIR})
+
+# 定义 proto 文件列表
 set(PROTO_FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/common.proto
+    ${BACKEND_DIR}/common/proto/common.proto
+    ${BACKEND_DIR}/authsvr/proto/auth.proto
+    ${BACKEND_DIR}/chatsvr/proto/chat.proto
+    ${BACKEND_DIR}/chatsvr/proto/group.proto
+    ${BACKEND_DIR}/friendsvr/proto/friend.proto
+    ${BACKEND_DIR}/filesvr/proto/file.proto
+    ${BACKEND_DIR}/gatesvr/proto/gate.proto
+    ${BACKEND_DIR}/zonesvr/proto/zone.proto
 )
 
-# 生成目录（生成的 .pb.h/.pb.cc 放在 proto 目录下）
-set(PROTO_GEN_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+# Proto 搜索路径
+set(PROTO_PATHS
+    ${BACKEND_DIR}/common/proto
+    ${BACKEND_DIR}/authsvr/proto
+    ${BACKEND_DIR}/chatsvr/proto
+    ${BACKEND_DIR}/friendsvr/proto
+    ${BACKEND_DIR}/filesvr/proto
+    ${BACKEND_DIR}/gatesvr/proto
+    ${BACKEND_DIR}/zonesvr/proto
+)
 
+# 构建 -I 参数
+set(PROTO_PATH_ARGS)
+foreach(PATH ${PROTO_PATHS})
+    list(APPEND PROTO_PATH_ARGS --proto_path=${PATH})
+endforeach()
+
+# 生成的文件列表
 set(PROTO_SRCS)
 set(PROTO_HDRS)
+set(GRPC_SRCS)
+set(GRPC_HDRS)
 
 foreach(PROTO_FILE ${PROTO_FILES})
     get_filename_component(PROTO_NAME ${PROTO_FILE} NAME_WE)
     
-    set(PROTO_SRC ${PROTO_GEN_DIR}/${PROTO_NAME}.pb.cc)
-    set(PROTO_HDR ${PROTO_GEN_DIR}/${PROTO_NAME}.pb.h)
+    # Protobuf 生成的文件
+    list(APPEND PROTO_SRCS ${PROTO_OUTPUT_DIR}/${PROTO_NAME}.pb.cc)
+    list(APPEND PROTO_HDRS ${PROTO_OUTPUT_DIR}/${PROTO_NAME}.pb.h)
     
-    list(APPEND PROTO_SRCS ${PROTO_SRC})
-    list(APPEND PROTO_HDRS ${PROTO_HDR})
+    # gRPC 生成的文件
+    list(APPEND GRPC_SRCS ${PROTO_OUTPUT_DIR}/${PROTO_NAME}.grpc.pb.cc)
+    list(APPEND GRPC_HDRS ${PROTO_OUTPUT_DIR}/${PROTO_NAME}.grpc.pb.h)
     
+    # 添加生成规则
     add_custom_command(
-        OUTPUT ${PROTO_SRC} ${PROTO_HDR}
+        OUTPUT 
+            ${PROTO_OUTPUT_DIR}/${PROTO_NAME}.pb.cc
+            ${PROTO_OUTPUT_DIR}/${PROTO_NAME}.pb.h
+            ${PROTO_OUTPUT_DIR}/${PROTO_NAME}.grpc.pb.cc
+            ${PROTO_OUTPUT_DIR}/${PROTO_NAME}.grpc.pb.h
         COMMAND ${Protobuf_PROTOC_EXECUTABLE}
-        ARGS --cpp_out=${PROTO_GEN_DIR}
-             -I${CMAKE_CURRENT_SOURCE_DIR}
-             ${PROTO_FILE}
+            ${PROTO_PATH_ARGS}
+            --cpp_out=${PROTO_OUTPUT_DIR}
+            --grpc_out=${PROTO_OUTPUT_DIR}
+            --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN}
+            ${PROTO_FILE}
         DEPENDS ${PROTO_FILE}
-        COMMENT "Generating ${PROTO_NAME}.pb.h/cc"
+        COMMENT "Generating protobuf/grpc: ${PROTO_NAME}.proto"
     )
 endforeach()
 
-add_library(${PROJECT_NAME} STATIC ${PROTO_SRCS} ${PROTO_HDRS})
+# 创建 proto 库
+add_library(swift_proto STATIC
+    ${PROTO_SRCS}
+    ${GRPC_SRCS}
+)
 
-target_include_directories(${PROJECT_NAME} PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
+target_include_directories(swift_proto PUBLIC
+    ${PROTO_OUTPUT_DIR}
     ${Protobuf_INCLUDE_DIRS}
 )
 
-target_link_libraries(${PROJECT_NAME} PUBLIC
+target_link_libraries(swift_proto PUBLIC
     ${Protobuf_LIBRARIES}
+    ${GRPC_LIBRARY}
+    ${GRPC_LIBRARY_GRPC}
 )
+
+# 导出头文件目录
+set(SWIFT_PROTO_INCLUDE_DIR ${PROTO_OUTPUT_DIR} PARENT_SCOPE)

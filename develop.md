@@ -1200,17 +1200,162 @@ void HttpServer::HandleRequest(
 
 ## 9. 阶段七：ZoneSvr 路由服务
 
-ZoneSvr 是系统的核心路由服务，管理用户在线状态和消息路由。
+ZoneSvr 是系统的 **API Gateway**，统一持有所有后端服务的 RPC Client，负责请求转发和消息路由。
+实际的业务逻辑在各个后端服务（AuthSvr, ChatSvr 等）中实现。
 
-### 9.1 功能清单
+### 9.1 API Gateway 架构
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│                      ZoneSvr (API Gateway)                         │
+│                                                                    │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │                    RPC Clients (统一持有)                     │  │
+│  │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ │  │
+│  │  │AuthClient  │ │ChatClient  │ │FriendClient│ │FileClient  │ │  │
+│  │  └─────┬──────┘ └─────┬──────┘ └─────┬──────┘ └─────┬──────┘ │  │
+│  └────────┼──────────────┼──────────────┼──────────────┼────────┘  │
+│           │              │              │              │           │
+│  ┌────────┼──────────────┼──────────────┼──────────────┼────────┐  │
+│  │        │         SessionStore (消息路由)            │        │  │
+│  └────────┼──────────────┼──────────────┼──────────────┼────────┘  │
+└───────────┼──────────────┼──────────────┼──────────────┼───────────┘
+            │              │              │              │
+            ▼              ▼              ▼              ▼
+       ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
+       │ AuthSvr │    │ ChatSvr │───→│ FileSvr │    │FriendSvr│
+       │(实际逻辑)│   │(实际逻辑)│    │(实际逻辑)│   │(实际逻辑)│
+       └─────────┘    └─────────┘    └─────────┘    └─────────┘
+                           │              ↑
+                           └──────────────┘
+                          (服务间直接调用)
+```
+
+**职责划分：**
+
+| 组件 | 职责 |
+|------|------|
+| **ZoneSvr** | 统一入口、持有 RPC Client、请求转发、消息路由 |
+| **各 System** | 封装对应服务的 RPC 调用接口（转发层） |
+| **SessionStore** | 用户会话状态，用于消息路由 |
+| **后端 Svr** | **实际业务逻辑**、数据存储 |
+| **服务间调用** | 后端服务自己持有对方 Client（如 ChatSvr → FileSvr） |
+
+### 9.2 目录结构
+
+```
+backend/zonesvr/
+├── cmd/main.cpp
+└── internal/
+    ├── system/                    # RPC 转发层（封装各服务调用）
+    │   ├── base_system.h          # System 基类
+    │   ├── system_manager.h/cpp   # System 管理器
+    │   ├── auth_system.h/cpp      # AuthSvr 转发层
+    │   ├── chat_system.h/cpp      # ChatSvr 转发层
+    │   ├── friend_system.h/cpp    # FriendSvr 转发层
+    │   ├── group_system.h/cpp     # GroupService 转发层
+    │   └── file_system.h/cpp      # FileSvr 转发层
+    ├── rpc/                       # RPC 客户端
+    │   ├── rpc_client_base.h/cpp  # RPC 客户端基类
+    │   ├── auth_rpc_client.h/cpp
+    │   ├── chat_rpc_client.h/cpp
+    │   ├── friend_rpc_client.h/cpp
+    │   ├── group_rpc_client.h/cpp
+    │   ├── file_rpc_client.h/cpp
+    │   └── gate_rpc_client.h/cpp  # 推送消息到 Gate
+    ├── handler/                   # gRPC 入口
+    ├── store/                     # SessionStore（会话管理）
+    └── config/
+```
+
+### 9.3 功能清单
 
 - [x] 用户上线/下线管理
 - [x] Gate 节点注册与心跳
-- [x] 消息路由
+- [x] 消息路由（查 SessionStore，推送到 Gate）
 - [x] 广播消息
 - [x] 在线状态查询
+- [x] API Gateway 架构框架
 
-### 9.2 关键实现
+### 9.4 System 基类设计
+
+```cpp
+// internal/system/base_system.h
+// System 是 RPC 转发层，实际业务逻辑在后端服务
+
+class BaseSystem {
+public:
+    virtual ~BaseSystem() = default;
+    
+    /// 系统名称
+    virtual std::string Name() const = 0;
+    
+    /// 初始化（建立 RPC 连接）
+    virtual bool Init() = 0;
+    
+    /// 关闭（清理资源）
+    virtual void Shutdown() = 0;
+
+protected:
+    /// 共享会话存储，用于消息路由
+    std::shared_ptr<SessionStore> session_store_;
+};
+```
+
+### 9.5 SystemManager 使用示例
+
+```cpp
+// 初始化
+SystemManager manager;
+manager.Init(config);
+
+// 获取 System，转发请求到后端服务
+auto* auth = manager.GetAuthSystem();
+auto response = auth->ValidateToken(request);  // → AuthSvr RPC
+
+auto* chat = manager.GetChatSystem();
+auto result = chat->SendMessage(request);      // → ChatSvr RPC
+
+// 消息路由（ZoneSvr 特有职责）
+chat->PushToUser(user_id, "chat.new_message", payload);  // → GateSvr RPC
+
+// 关闭
+manager.Shutdown();
+```
+
+### 9.6 请求处理流程
+
+```
+1. Client → GateSvr (WebSocket)
+2. GateSvr → ZoneSvr.HandleRequest(cmd, payload)
+3. ZoneSvr Handler 根据 cmd 选择对应 System：
+   - "auth.*"   → AuthSystem → AuthSvr (RPC)
+   - "chat.*"   → ChatSystem → ChatSvr (RPC)
+   - "friend.*" → FriendSystem → FriendSvr (RPC)
+   - "group.*"  → GroupSystem → ChatSvr/GroupService (RPC)
+   - "file.*"   → FileSystem → FileSvr (RPC)
+4. 后端服务处理业务逻辑，返回结果
+5. ZoneSvr 返回给 GateSvr → Client
+
+注意：实际业务逻辑在后端服务实现，System 只做 RPC 转发
+```
+
+### 9.7 消息路由流程
+
+```
+发送消息时的路由流程：
+
+1. Client A → GateSvr-1 (发送消息)
+2. GateSvr-1 → ZoneSvr.ChatSystem.SendMessage()
+3. ChatSystem → ChatSvr.SendMessage() 存储消息
+4. ChatSvr 返回消息ID
+5. ChatSystem 查询 SessionStore：用户 B 在哪个 Gate？
+6. SessionStore 返回：用户 B 在 GateSvr-2
+7. ChatSystem → GateSvr-2.PushMessage() 推送给用户 B
+8. GateSvr-2 → Client B (WebSocket 推送)
+```
+
+### 9.8 关键实现
 
 #### SessionStore（Redis 版本）
 
@@ -1705,6 +1850,128 @@ kubectl port-forward svc/authsvr 9094:9094 -n swift-chat
 
 # 测试
 grpcurl -plaintext localhost:9094 swift.auth.AuthService/Register
+```
+
+### 12.4 服务发现与负载均衡
+
+#### Headless Service 配置
+
+```yaml
+# deploy/k8s/authsvr-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: authsvr
+  namespace: swift
+spec:
+  clusterIP: None          # Headless Service
+  selector:
+    app: authsvr
+  ports:
+    - name: grpc
+      port: 9094
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authsvr
+  namespace: swift
+spec:
+  replicas: 3              # 多副本
+  selector:
+    matchLabels:
+      app: authsvr
+  template:
+    metadata:
+      labels:
+        app: authsvr
+    spec:
+      containers:
+        - name: authsvr
+          image: swift/authsvr:latest
+          ports:
+            - containerPort: 9094
+```
+
+#### gRPC 客户端负载均衡
+
+```cpp
+// backend/common/include/swift/grpc_client.h
+
+#include <grpcpp/grpcpp.h>
+
+namespace swift {
+
+/**
+ * 创建支持负载均衡的 gRPC Channel
+ * gRPC 会自动通过 DNS 发现所有 Pod，并做客户端负载均衡
+ */
+inline std::shared_ptr<grpc::Channel> CreateLBChannel(
+    const std::string& service_name,
+    const std::string& ns = "swift",
+    int port = 9094) {
+    
+    // DNS 格式：dns:///service.namespace.svc.cluster.local:port
+    std::string target = "dns:///" + service_name + "." + ns + 
+                         ".svc.cluster.local:" + std::to_string(port);
+    
+    grpc::ChannelArguments args;
+    
+    // 启用客户端负载均衡（轮询策略）
+    args.SetLoadBalancingPolicyName("round_robin");
+    
+    // DNS 刷新间隔
+    args.SetInt(GRPC_ARG_DNS_MIN_TIME_BETWEEN_RESOLUTIONS_MS, 10000);
+    
+    return grpc::CreateCustomChannel(
+        target,
+        grpc::InsecureChannelCredentials(),
+        args
+    );
+}
+
+}  // namespace swift
+```
+
+#### 使用示例
+
+```cpp
+// ZoneSvr 初始化 RPC Client
+bool AuthRpcClient::Init() {
+    // 使用负载均衡 Channel
+    channel_ = swift::CreateLBChannel("authsvr", "swift", 9094);
+    stub_ = swift::auth::AuthService::NewStub(channel_);
+    return true;
+}
+
+// 每次 RPC 调用自动负载均衡到不同 Pod
+auto response = stub_->ValidateToken(&context, request, &response);
+```
+
+#### 负载均衡架构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Kubernetes Cluster                        │
+│                                                             │
+│  Client ──→ Ingress/LoadBalancer                            │
+│                    │                                         │
+│                    ▼                                         │
+│              ┌──────────┐                                   │
+│              │ GateSvr  │ x N (K8s Service LB)              │
+│              └────┬─────┘                                   │
+│                   │                                          │
+│                   ▼                                          │
+│              ┌──────────┐                                   │
+│              │ ZoneSvr  │ (gRPC Client LB)                  │
+│              │          │                                   │
+│              │ ┌──────┐ │     Headless Service              │
+│              │ │Client│─┼──→ authsvr.swift.svc              │
+│              │ └──────┘ │         │                         │
+│              └──────────┘         ├─→ Pod-1                 │
+│                                   ├─→ Pod-2                 │
+│                                   └─→ Pod-3                 │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---

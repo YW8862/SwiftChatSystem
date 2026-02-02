@@ -60,10 +60,116 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
     └──────────┘          └──────────┘          └──────────┘
 ```
 
-### 2.2 关键设计决策
+### 2.2 ZoneSvr-System 架构（核心设计）
+
+采用 **Zone-System 模式**，ZoneSvr 作为中心服务，内部包含多个子系统：
+
+```
+                         ┌─────────────────────────────────────────────┐
+                         │                  ZoneSvr                    │
+                         │  ┌─────────────────────────────────────┐    │
+                         │  │          SystemManager              │    │
+                         │  │  ┌───────────┐  ┌───────────┐       │    │
+ GateSvr ──gRPC──────────│──│  │AuthSystem │  │ChatSystem │       │    │
+                         │  │  └─────┬─────┘  └─────┬─────┘       │    │
+                         │  │        │              │             │    │
+                         │  │  ┌─────┴─────┐  ┌─────┴─────┐       │    │
+                         │  │  │FriendSys  │  │GroupSystem│       │    │
+                         │  │  └─────┬─────┘  └─────┬─────┘       │    │
+                         │  │        │              │             │    │
+                         │  │  ┌─────┴─────────────┴─────┐        │    │
+                         │  │  │       FileSystem        │        │    │
+                         │  │  └─────────────────────────┘        │    │
+                         │  └─────────────────────────────────────┘    │
+                         │                    │                        │
+                         │           ┌────────▼────────┐               │
+                         │           │  SessionStore   │               │
+                         │           └─────────────────┘               │
+                         └─────────────────────────────────────────────┘
+                                              │
+              ┌───────────────────────────────┼───────────────────────────────┐
+              ▼                               ▼                               ▼
+         AuthSvr(RPC)                   ChatSvr(RPC)                    FileSvr(RPC)
+              │                               │                               │
+         ┌────▼────┐                     ┌────▼────┐                     ┌────▼────┐
+         │  Store  │                     │  Store  │                     │  Store  │
+         └─────────┘                     └─────────┘                     └─────────┘
+```
+
+**核心组件说明：**
+
+| 组件 | 职责 |
+|------|------|
+| **SystemManager** | 管理所有 System 的生命周期，分发请求 |
+| **AuthSystem** | RPC 转发层，调用 AuthSvr |
+| **ChatSystem** | RPC 转发层，调用 ChatSvr，协调消息路由 |
+| **FriendSystem** | RPC 转发层，调用 FriendSvr |
+| **GroupSystem** | RPC 转发层，调用 ChatSvr(GroupService) |
+| **FileSystem** | RPC 转发层，调用 FileSvr |
+| **SessionStore** | 管理用户会话状态（所有 System 共享） |
+
+**架构模式：API Gateway + 微服务**
+  find . -name '.*' -prune -o -type f -print | wc -l
+```
+┌────────────────────────────────────────────────────────────────────┐
+│                      ZoneSvr (API Gateway)                         │
+│                                                                    │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │                    RPC Clients (统一持有)                     │  │
+│  │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ │  │
+│  │  │AuthClient  │ │ChatClient  │ │FriendClient│ │FileClient  │ │  │
+│  │  └─────┬──────┘ └─────┬──────┘ └─────┬──────┘ └─────┬──────┘ │  │
+│  └────────┼──────────────┼──────────────┼──────────────┼────────┘  │
+│           │              │              │              │           │
+│  ┌────────┼──────────────┼──────────────┼──────────────┼────────┐  │
+│  │        │         SessionStore (消息路由)            │        │  │
+│  └────────┼──────────────┼──────────────┼──────────────┼────────┘  │
+└───────────┼──────────────┼──────────────┼──────────────┼───────────┘
+            │              │              │              │
+            ▼              ▼              ▼              ▼
+       ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
+       │ AuthSvr │    │ ChatSvr │───→│ FileSvr │    │FriendSvr│
+       │(实际逻辑)│   │(实际逻辑)│    │(实际逻辑)│   │(实际逻辑)│
+       └─────────┘    └─────────┘    └─────────┘    └─────────┘
+                           │              ↑
+                           └──────────────┘
+                          (服务间直接调用)
+```
+
+**职责划分：**
+
+| 组件 | 职责 |
+|------|------|
+| **ZoneSvr** | 统一入口、持有所有 RPC Client、请求转发、消息路由 |
+| **各 System** | 封装对应服务的 RPC 调用接口 |
+| **SessionStore** | 用户会话状态，用于消息路由到正确的 Gate |
+| **后端 Svr** | 实际业务逻辑、数据存储 |
+| **服务间调用** | 后端服务自己持有其他服务的 Client（如 ChatSvr → FileSvr） |
+
+**请求流程：**
+
+```
+1. Client → GateSvr (WebSocket)
+2. GateSvr → ZoneSvr (gRPC)
+3. ZoneSvr 根据 cmd 选择对应的 System/Client
+4. System 通过 RPC Client 转发请求到后端 Svr
+5. 后端 Svr 处理业务逻辑，返回结果
+6. ZoneSvr 返回给 GateSvr → Client
+```
+
+**设计优势：**
+
+- **统一入口**：所有请求经过 ZoneSvr，便于鉴权、限流、监控
+- **RPC Client 集中管理**：连接池、超时、重试策略统一配置
+- **会话共享**：SessionStore 用于消息路由，无需每次查 Redis
+- **职责清晰**：ZoneSvr 只转发，业务逻辑在后端服务
+- **服务解耦**：后端服务间调用自己管理，互不影响
+
+### 2.3 关键设计决策
 
 | 决策点           | 方案                                      | 理由                       |
 | ---------------- | ----------------------------------------- | -------------------------- |
+| 架构模式         | Zone-System 模式                          | 统一入口、状态共享、便于维护 |
 | 客户端协议       | WebSocket + Protobuf（二进制）            | 体积小、解析快、与后端统一 |
 | 会话管理         | ZoneSvr + Redis                           | 支持多副本、高可用         |
 | 存储引擎         | RocksDB（单机）/ MySQL（集群）            | 灵活切换、渐进式扩展       |
@@ -266,7 +372,92 @@ Gate 心跳（每 30s）：
 
 ---
 
-## 7. 部署模式
+## 7. 服务发现与负载均衡
+
+### 7.1 方案选择
+
+| 方案 | 复杂度 | 适用场景 |
+|------|--------|----------|
+| **K8s ClusterIP Service** | 低 | 开发/小规模，L4 轮询 |
+| **gRPC 客户端负载均衡** | 中 | 生产推荐，配合 Headless Service |
+| **Envoy Sidecar** | 高 | 大规模/服务网格 (Istio) |
+
+### 7.2 推荐方案：gRPC 客户端负载均衡
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Kubernetes Cluster                        │
+│                                                                 │
+│  ┌─────────────┐      Headless Service (DNS)                   │
+│  │   ZoneSvr   │      authsvr.swift.svc.cluster.local          │
+│  │             │          │                                     │
+│  │ AuthClient  │──DNS────→├── 10.0.0.1 (authsvr-pod-1)         │
+│  │ (gRPC LB)   │          ├── 10.0.0.2 (authsvr-pod-2)         │
+│  │             │          └── 10.0.0.3 (authsvr-pod-3)         │
+│  └─────────────┘                                                │
+│        │                                                        │
+│        │ gRPC 客户端负载均衡 (round_robin)                       │
+│        ▼                                                        │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                      │
+│  │ AuthSvr  │  │ AuthSvr  │  │ AuthSvr  │                      │
+│  │  Pod-1   │  │  Pod-2   │  │  Pod-3   │                      │
+│  └──────────┘  └──────────┘  └──────────┘                      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 7.3 K8s Headless Service 配置
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: authsvr
+  namespace: swift
+spec:
+  clusterIP: None          # Headless Service，返回所有 Pod IP
+  selector:
+    app: authsvr
+  ports:
+    - name: grpc
+      port: 9094
+```
+
+### 7.4 gRPC 客户端负载均衡实现
+
+```cpp
+// 创建支持负载均衡的 Channel
+std::shared_ptr<grpc::Channel> CreateLBChannel(
+    const std::string& service_name,
+    const std::string& ns = "swift",
+    int port = 9094) {
+    
+    // DNS 格式：dns:///service.namespace.svc.cluster.local:port
+    std::string target = "dns:///" + service_name + "." + ns + 
+                         ".svc.cluster.local:" + std::to_string(port);
+    
+    grpc::ChannelArguments args;
+    args.SetLoadBalancingPolicyName("round_robin");  // 轮询策略
+    
+    return grpc::CreateCustomChannel(
+        target,
+        grpc::InsecureChannelCredentials(),
+        args
+    );
+}
+```
+
+### 7.5 各层负载均衡方式
+
+| 层级 | 负载均衡方式 |
+|------|-------------|
+| **Client → GateSvr** | K8s Ingress / LoadBalancer |
+| **GateSvr → ZoneSvr** | gRPC 客户端负载均衡 + Headless Service |
+| **ZoneSvr → 各 Svr** | gRPC 客户端负载均衡 + Headless Service |
+| **Svr 间调用** | 同上 |
+
+---
+
+## 8. 部署模式
 
 ### 7.1 模式对比
 
@@ -309,7 +500,7 @@ MINIO_ENDPOINT: "minio:9000"
 
 ---
 
-## 8. 异步日志系统设计（AsyncLogger）
+## 9. 异步日志系统设计（AsyncLogger）
 
 ### 8.1 设计目标
 
@@ -378,7 +569,7 @@ void Shutdown();
 
 ---
 
-## 9. 核心功能流程
+## 10. 核心功能流程
 
 ### 9.1 消息发送（私聊）
 
@@ -410,7 +601,7 @@ void Shutdown();
 
 ---
 
-## 10. 项目目录结构
+## 11. 项目目录结构
 
 ```
 SwiftChatSystem/
@@ -443,12 +634,28 @@ SwiftChatSystem/
 │   │       ├── service/
 │   │       └── config/
 │   │
-│   ├── zonesvr/                      # 路由服务
+│   ├── zonesvr/                      # 路由服务（Zone-System 架构）
 │   │   ├── CMakeLists.txt
 │   │   ├── Dockerfile
 │   │   ├── cmd/main.cpp
 │   │   ├── proto/zone.proto
 │   │   └── internal/
+│   │       ├── system/               # 核心：子系统
+│   │       │   ├── base_system.h     # System 基类
+│   │       │   ├── system_manager.h/cpp
+│   │       │   ├── auth_system.h/cpp
+│   │       │   ├── chat_system.h/cpp
+│   │       │   ├── friend_system.h/cpp
+│   │       │   ├── group_system.h/cpp
+│   │       │   └── file_system.h/cpp
+│   │       ├── rpc/                  # RPC 客户端封装
+│   │       │   ├── rpc_client_base.h/cpp
+│   │       │   ├── auth_rpc_client.h/cpp
+│   │       │   ├── chat_rpc_client.h/cpp
+│   │       │   ├── friend_rpc_client.h/cpp
+│   │       │   ├── group_rpc_client.h/cpp
+│   │       │   ├── file_rpc_client.h/cpp
+│   │       │   └── gate_rpc_client.h/cpp
 │   │       ├── handler/
 │   │       ├── service/
 │   │       ├── store/                # SessionStore
@@ -528,7 +735,7 @@ SwiftChatSystem/
 
 ---
 
-## 11. 技术栈汇总
+## 12. 技术栈汇总
 
 | 类别     | 技术                                    |
 | -------- | --------------------------------------- |
@@ -545,7 +752,7 @@ SwiftChatSystem/
 
 ---
 
-## 12. 升级路径
+## 13. 升级路径
 
 ```
 阶段 1：单机开发
@@ -570,7 +777,7 @@ SwiftChatSystem/
 
 ---
 
-## 13. 未来扩展
+## 14. 未来扩展
 
 | 扩展点       | 说明                                              |
 | ------------ | ------------------------------------------------- |
@@ -581,5 +788,5 @@ SwiftChatSystem/
 
 ---
 
-**文档版本**：v4.0（存储与路由设计）  
-**最后更新**：2026年2月2日
+**文档版本**：v5.0（Zone-System 架构）  
+**最后更新**：2026年2月3日

@@ -4,7 +4,7 @@ package swift.gate;
 
 import "common.proto";
 
-option cc_generic_services = true;
+
 
 // ============== 客户端 ↔ 网关协议 ==============
 
