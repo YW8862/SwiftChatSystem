@@ -1,0 +1,18 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/">
+        <!-- 图标 -->
+        <file>icons/app.png</file>
+        <file>icons/send.png</file>
+        <file>icons/emoji.png</file>
+        <file>icons/file.png</file>
+        <file>icons/image.png</file>
+        
+        <!-- 默认图片 -->
+        <file>images/default_avatar.png</file>
+        <file>images/logo.png</file>
+        
+        <!-- QML（如果使用） -->
+        <!-- <file>qml/main.qml</file> -->
+    </qresource>
+</RCC>

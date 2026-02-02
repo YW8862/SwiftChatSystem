@@ -1,0 +1,37 @@
+[
+{
+  "directory": "/home/yw/projects/SwiftChatSystem/build/component/asynclogger",
+  "command": "/bin/c++   -I/home/yw/projects/SwiftChatSystem/component/asynclogger/include -I/home/yw/projects/SwiftChatSystem/component/asynclogger/src    -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/asynclogger.dir/src/async_logger.cpp.o -c /home/yw/projects/SwiftChatSystem/component/asynclogger/src/async_logger.cpp",
+  "file": "/home/yw/projects/SwiftChatSystem/component/asynclogger/src/async_logger.cpp"
+},
+{
+  "directory": "/home/yw/projects/SwiftChatSystem/build/component/asynclogger",
+  "command": "/bin/c++   -I/home/yw/projects/SwiftChatSystem/component/asynclogger/include -I/home/yw/projects/SwiftChatSystem/component/asynclogger/src    -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/asynclogger.dir/src/ring_buffer.cpp.o -c /home/yw/projects/SwiftChatSystem/component/asynclogger/src/ring_buffer.cpp",
+  "file": "/home/yw/projects/SwiftChatSystem/component/asynclogger/src/ring_buffer.cpp"
+},
+{
+  "directory": "/home/yw/projects/SwiftChatSystem/build/component/asynclogger",
+  "command": "/bin/c++   -I/home/yw/projects/SwiftChatSystem/component/asynclogger/include -I/home/yw/projects/SwiftChatSystem/component/asynclogger/src    -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/asynclogger.dir/src/backend_thread.cpp.o -c /home/yw/projects/SwiftChatSystem/component/asynclogger/src/backend_thread.cpp",
+  "file": "/home/yw/projects/SwiftChatSystem/component/asynclogger/src/backend_thread.cpp"
+},
+{
+  "directory": "/home/yw/projects/SwiftChatSystem/build/component/asynclogger",
+  "command": "/bin/c++   -I/home/yw/projects/SwiftChatSystem/component/asynclogger/include -I/home/yw/projects/SwiftChatSystem/component/asynclogger/src    -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/asynclogger.dir/src/file_sink.cpp.o -c /home/yw/projects/SwiftChatSystem/component/asynclogger/src/file_sink.cpp",
+  "file": "/home/yw/projects/SwiftChatSystem/component/asynclogger/src/file_sink.cpp"
+},
+{
+  "directory": "/home/yw/projects/SwiftChatSystem/build/component/asynclogger",
+  "command": "/bin/c++   -I/home/yw/projects/SwiftChatSystem/component/asynclogger/include -I/home/yw/projects/SwiftChatSystem/component/asynclogger/src    -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/asynclogger.dir/src/console_sink.cpp.o -c /home/yw/projects/SwiftChatSystem/component/asynclogger/src/console_sink.cpp",
+  "file": "/home/yw/projects/SwiftChatSystem/component/asynclogger/src/console_sink.cpp"
+},
+{
+  "directory": "/home/yw/projects/SwiftChatSystem/build/component/asynclogger",
+  "command": "/bin/c++   -I/home/yw/projects/SwiftChatSystem/component/asynclogger/include -I/home/yw/projects/SwiftChatSystem/component/asynclogger/src    -Wall -Wextra -Wpedantic -std=gnu++17 -o CMakeFiles/asynclogger.dir/src/log_formatter.cpp.o -c /home/yw/projects/SwiftChatSystem/component/asynclogger/src/log_formatter.cpp",
+  "file": "/home/yw/projects/SwiftChatSystem/component/asynclogger/src/log_formatter.cpp"
+},
+{
+  "directory": "/home/yw/projects/SwiftChatSystem/build/backend/authsvr",
+  "command": "/bin/c++   -I/home/yw/projects/SwiftChatSystem/backend/common/include -I/home/yw/projects/SwiftChatSystem/component/asynclogger/include    -std=gnu++17 -o CMakeFiles/authsvr.dir/cmd/main.cpp.o -c /home/yw/projects/SwiftChatSystem/backend/authsvr/cmd/main.cpp",
+  "file": "/home/yw/projects/SwiftChatSystem/backend/authsvr/cmd/main.cpp"
+}
+]

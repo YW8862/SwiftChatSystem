@@ -1,0 +1,11 @@
+[2026-02-02 22:32:07.692] [INFO] [main.cpp:35] ========================================
+[2026-02-02 22:32:07.692] [INFO] [main.cpp:36] AuthSvr starting...
+[2026-02-02 22:32:07.692] [INFO] [main.cpp:37] ========================================
+[2026-02-02 22:32:07.692] [INFO] [main.cpp:42] This is INFO level
+[2026-02-02 22:32:07.692] [WARN] [main.cpp:43] This is WARNING level
+[2026-02-02 22:32:07.692] [ERROR] [main.cpp:44] This is ERROR level
+[2026-02-02 22:32:07.692] [INFO] [main.cpp:49] Server version: 1.0.0, port: 9094
+[2026-02-02 22:32:07.692] [INFO] [service=authsvr] [main.cpp:52] Service initialized
+[2026-02-02 22:32:07.692] [INFO] [user=alice, action=login] [main.cpp:53] User action logged
+[2026-02-02 22:32:07.692] [INFO] [main.cpp:55] AuthSvr is running (press Ctrl+C to stop)
+[2026-02-02 22:32:12.693] [INFO] [main.cpp:65] AuthSvr shutting down...

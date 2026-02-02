@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: swift-config
+data:
+  # 服务发现
+  ZONE_SVR_ADDR: "zonesvr:9092"
+  AUTH_SVR_ADDR: "authsvr:9094"
+  FRIEND_SVR_ADDR: "friendsvr:9096"
+  CHAT_SVR_ADDR: "chatsvr:9098"
+  FILE_SVR_ADDR: "filesvr:9100"
+  
+  # 日志配置
+  LOG_LEVEL: "INFO"
+  LOG_DIR: "/data/logs"

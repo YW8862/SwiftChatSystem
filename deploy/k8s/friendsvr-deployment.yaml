@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: friendsvr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: friendsvr
+  template:
+    metadata:
+      labels:
+        app: friendsvr
+    spec:
+      containers:
+      - name: friendsvr
+        image: swift/friendsvr:latest
+        ports:
+        - containerPort: 9096
+          name: grpc
+        envFrom:
+        - configMapRef:
+            name: swift-config
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        resources:
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: swift-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: friendsvr
+spec:
+  selector:
+    app: friendsvr
+  ports:
+  - port: 9096
+    targetPort: 9096
+    name: grpc

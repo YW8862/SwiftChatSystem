@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package swift.file;
+
+import "common.proto";
+
+option cc_generic_services = true;
+
+// ============== 请求/响应 ==============
+
+// 流式上传请求
+message UploadChunk {
+    oneof data {
+        UploadMeta meta = 1;       // 首个 chunk 发送元信息
+        bytes chunk = 2;           // 后续 chunk 发送文件内容
+    }
+}
+
+message UploadMeta {
+    string user_id = 1;
+    string file_name = 2;
+    string content_type = 3;       // MIME 类型
+    int64 file_size = 4;
+    string md5 = 5;                // 可选，用于校验
+}
+
+message UploadResponse {
+    int32 code = 1;
+    string message = 2;
+    string file_id = 3;
+    string file_url = 4;           // 文件访问 URL
+    string thumbnail_url = 5;      // 缩略图 URL（图片/视频）
+}
+
+message GetFileUrlRequest {
+    string file_id = 1;
+    string user_id = 2;            // 用于权限校验
+}
+
+message FileUrlResponse {
+    int32 code = 1;
+    string message = 2;
+    string file_url = 3;
+    string file_name = 4;
+    int64 file_size = 5;
+    string content_type = 6;
+    int64 expire_at = 7;           // URL 过期时间
+}
+
+message GetFileInfoRequest {
+    string file_id = 1;
+}
+
+message FileInfo {
+    string file_id = 1;
+    string file_name = 2;
+    int64 file_size = 3;
+    string content_type = 4;
+    string uploader_id = 5;
+    int64 uploaded_at = 6;
+    string md5 = 7;
+}
+
+message FileInfoResponse {
+    int32 code = 1;
+    string message = 2;
+    FileInfo file_info = 3;
+}
+
+message DeleteFileRequest {
+    string file_id = 1;
+    string user_id = 2;
+}
+
+message GetUploadTokenRequest {
+    string user_id = 1;
+    string file_name = 2;
+    int64 file_size = 3;
+}
+
+message UploadTokenResponse {
+    int32 code = 1;
+    string message = 2;
+    string upload_token = 3;       // 上传凭证
+    string upload_url = 4;         // 上传地址
+    int64 expire_at = 5;
+}
+
+// ============== 服务定义 ==============
+
+service FileService {
+    // 流式上传文件
+    rpc UploadFile(stream UploadChunk) returns (UploadResponse);
+    
+    // 获取文件下载 URL
+    rpc GetFileUrl(GetFileUrlRequest) returns (FileUrlResponse);
+    
+    // 获取文件信息
+    rpc GetFileInfo(GetFileInfoRequest) returns (FileInfoResponse);
+    
+    // 删除文件
+    rpc DeleteFile(DeleteFileRequest) returns (swift.common.CommonResponse);
+    
+    // 获取上传凭证（可选，用于直传）
+    rpc GetUploadToken(GetUploadTokenRequest) returns (UploadTokenResponse);
+}

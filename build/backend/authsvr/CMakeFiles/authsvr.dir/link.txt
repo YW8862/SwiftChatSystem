@@ -1,0 +1,1 @@
+/bin/c++     CMakeFiles/authsvr.dir/cmd/main.cpp.o  -o authsvr  ../../component/asynclogger/libasynclogger.a -lpthread 

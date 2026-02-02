@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package swift.auth;
+
+import "common.proto";
+
+option cc_generic_services = true;
+
+// ============== 请求/响应 ==============
+
+message RegisterRequest {
+    string username = 1;
+    string password = 2;
+    string nickname = 3;
+    string email = 4;
+    string avatar_url = 5;
+}
+
+message RegisterResponse {
+    int32 code = 1;
+    string message = 2;
+    string user_id = 3;
+}
+
+message LoginRequest {
+    string username = 1;
+    string password = 2;
+    string device_id = 3;      // 设备标识
+    string device_type = 4;    // windows, android, ios, web
+}
+
+message LoginResponse {
+    int32 code = 1;
+    string message = 2;
+    string user_id = 3;
+    string token = 4;          // JWT token
+    int64 expire_at = 5;       // token 过期时间戳
+    UserProfile profile = 6;
+}
+
+message TokenRequest {
+    string token = 1;
+}
+
+message TokenResponse {
+    int32 code = 1;
+    string message = 2;
+    string user_id = 3;
+    bool valid = 4;
+}
+
+message LogoutRequest {
+    string user_id = 1;
+    string token = 2;
+}
+
+message GetProfileRequest {
+    string user_id = 1;
+}
+
+message UpdateProfileRequest {
+    string user_id = 1;
+    string nickname = 2;
+    string avatar_url = 3;
+    string signature = 4;
+}
+
+// ============== 数据结构 ==============
+
+message UserProfile {
+    string user_id = 1;
+    string username = 2;
+    string nickname = 3;
+    string avatar_url = 4;
+    string signature = 5;
+    int32 gender = 6;          // 0=未知, 1=男, 2=女
+    int64 created_at = 7;
+}
+
+// ============== 服务定义 ==============
+
+service AuthService {
+    // 用户注册
+    rpc Register(RegisterRequest) returns (RegisterResponse);
+    
+    // 用户登录
+    rpc Login(LoginRequest) returns (LoginResponse);
+    
+    // 验证 Token
+    rpc ValidateToken(TokenRequest) returns (TokenResponse);
+    
+    // 用户登出
+    rpc Logout(LogoutRequest) returns (swift.common.CommonResponse);
+    
+    // 获取用户资料
+    rpc GetProfile(GetProfileRequest) returns (UserProfile);
+    
+    // 更新用户资料
+    rpc UpdateProfile(UpdateProfileRequest) returns (swift.common.CommonResponse);
+}

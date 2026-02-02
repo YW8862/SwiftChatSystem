@@ -1,0 +1,12 @@
+/home/yw/projects/SwiftChatSystem/build/CMakeFiles/rebuild_cache.dir
+/home/yw/projects/SwiftChatSystem/build/CMakeFiles/edit_cache.dir
+/home/yw/projects/SwiftChatSystem/build/component/asynclogger/CMakeFiles/rebuild_cache.dir
+/home/yw/projects/SwiftChatSystem/build/component/asynclogger/CMakeFiles/edit_cache.dir
+/home/yw/projects/SwiftChatSystem/build/component/asynclogger/CMakeFiles/asynclogger.dir
+/home/yw/projects/SwiftChatSystem/build/backend/CMakeFiles/rebuild_cache.dir
+/home/yw/projects/SwiftChatSystem/build/backend/CMakeFiles/edit_cache.dir
+/home/yw/projects/SwiftChatSystem/build/backend/common/CMakeFiles/rebuild_cache.dir
+/home/yw/projects/SwiftChatSystem/build/backend/common/CMakeFiles/edit_cache.dir
+/home/yw/projects/SwiftChatSystem/build/backend/authsvr/CMakeFiles/rebuild_cache.dir
+/home/yw/projects/SwiftChatSystem/build/backend/authsvr/CMakeFiles/edit_cache.dir
+/home/yw/projects/SwiftChatSystem/build/backend/authsvr/CMakeFiles/authsvr.dir

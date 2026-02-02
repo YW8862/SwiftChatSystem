@@ -1,0 +1,166 @@
+syntax = "proto3";
+
+package swift.friend;
+
+import "common.proto";
+import "auth.proto";
+
+option cc_generic_services = true;
+
+// ============== 请求/响应 ==============
+
+message AddFriendRequest {
+    string user_id = 1;        // 发起者
+    string friend_id = 2;      // 目标用户
+    string remark = 3;         // 验证消息
+    string group_id = 4;       // 分组 ID
+}
+
+message HandleFriendRequest {
+    string user_id = 1;
+    string request_id = 2;     // 请求 ID
+    bool accept = 3;           // 是否接受
+    string group_id = 4;       // 接受后放入的分组
+}
+
+message RemoveFriendRequest {
+    string user_id = 1;
+    string friend_id = 2;
+}
+
+message GetFriendsRequest {
+    string user_id = 1;
+    string group_id = 2;       // 可选，指定分组
+}
+
+message FriendListResponse {
+    int32 code = 1;
+    string message = 2;
+    repeated FriendInfo friends = 3;
+}
+
+message BlockUserRequest {
+    string user_id = 1;
+    string target_id = 2;      // 被拉黑的用户
+}
+
+message UnblockUserRequest {
+    string user_id = 1;
+    string target_id = 2;
+}
+
+message GetBlockListRequest {
+    string user_id = 1;
+}
+
+message BlockListResponse {
+    int32 code = 1;
+    string message = 2;
+    repeated string blocked_ids = 3;
+}
+
+message CreateGroupRequest {
+    string user_id = 1;
+    string group_name = 2;
+}
+
+message GetGroupsRequest {
+    string user_id = 1;
+}
+
+message GroupListResponse {
+    int32 code = 1;
+    string message = 2;
+    repeated FriendGroup groups = 3;
+}
+
+message MoveFriendRequest {
+    string user_id = 1;
+    string friend_id = 2;
+    string to_group_id = 3;
+}
+
+message SetRemarkRequest {
+    string user_id = 1;
+    string friend_id = 2;
+    string remark = 3;         // 好友备注
+}
+
+message GetFriendRequestsRequest {
+    string user_id = 1;
+    int32 type = 2;            // 1=收到的, 2=发出的, 0=全部
+}
+
+message FriendRequestListResponse {
+    int32 code = 1;
+    string message = 2;
+    repeated FriendRequest requests = 3;
+}
+
+// ============== 数据结构 ==============
+
+message FriendInfo {
+    string friend_id = 1;
+    string remark = 2;          // 备注名
+    string group_id = 3;        // 所属分组
+    int32 status = 4;           // 在线状态：0=离线, 1=在线, 2=忙碌
+    swift.auth.UserProfile profile = 5;
+    int64 added_at = 6;         // 添加时间
+}
+
+message FriendGroup {
+    string group_id = 1;
+    string group_name = 2;
+    int32 friend_count = 3;
+    int32 sort_order = 4;
+}
+
+message FriendRequest {
+    string request_id = 1;
+    string from_user_id = 2;
+    string to_user_id = 3;
+    string remark = 4;          // 验证消息
+    int32 status = 5;           // 0=待处理, 1=已接受, 2=已拒绝
+    int64 created_at = 6;
+    swift.auth.UserProfile from_profile = 7;
+}
+
+// ============== 服务定义 ==============
+
+service FriendService {
+    // 添加好友（发送请求）
+    rpc AddFriend(AddFriendRequest) returns (swift.common.CommonResponse);
+    
+    // 处理好友请求
+    rpc HandleFriendRequest(HandleFriendRequest) returns (swift.common.CommonResponse);
+    
+    // 删除好友
+    rpc RemoveFriend(RemoveFriendRequest) returns (swift.common.CommonResponse);
+    
+    // 获取好友列表
+    rpc GetFriends(GetFriendsRequest) returns (FriendListResponse);
+    
+    // 拉黑用户
+    rpc BlockUser(BlockUserRequest) returns (swift.common.CommonResponse);
+    
+    // 取消拉黑
+    rpc UnblockUser(UnblockUserRequest) returns (swift.common.CommonResponse);
+    
+    // 获取黑名单
+    rpc GetBlockList(GetBlockListRequest) returns (BlockListResponse);
+    
+    // 创建好友分组
+    rpc CreateGroup(CreateGroupRequest) returns (swift.common.CommonResponse);
+    
+    // 获取分组列表
+    rpc GetGroups(GetGroupsRequest) returns (GroupListResponse);
+    
+    // 移动好友到分组
+    rpc MoveFriend(MoveFriendRequest) returns (swift.common.CommonResponse);
+    
+    // 设置好友备注
+    rpc SetRemark(SetRemarkRequest) returns (swift.common.CommonResponse);
+    
+    // 获取好友请求列表
+    rpc GetFriendRequests(GetFriendRequestsRequest) returns (FriendRequestListResponse);
+}

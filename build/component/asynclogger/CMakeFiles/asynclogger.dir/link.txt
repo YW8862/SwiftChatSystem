@@ -1,0 +1,2 @@
+/bin/ar qc libasynclogger.a  CMakeFiles/asynclogger.dir/src/async_logger.cpp.o CMakeFiles/asynclogger.dir/src/ring_buffer.cpp.o CMakeFiles/asynclogger.dir/src/backend_thread.cpp.o CMakeFiles/asynclogger.dir/src/file_sink.cpp.o CMakeFiles/asynclogger.dir/src/console_sink.cpp.o CMakeFiles/asynclogger.dir/src/log_formatter.cpp.o
+/bin/ranlib libasynclogger.a

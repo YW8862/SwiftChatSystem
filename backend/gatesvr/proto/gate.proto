@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package swift.gate;
+
+import "common.proto";
+
+option cc_generic_services = true;
+
+// ============== 客户端 ↔ 网关协议 ==============
+
+// 客户端发送的消息包装
+message ClientMessage {
+    string cmd = 1;                // 命令类型
+    bytes payload = 2;             // 具体消息体
+    string request_id = 3;         // 请求 ID，用于响应匹配
+}
+
+// 服务端返回的消息包装
+message ServerMessage {
+    string cmd = 1;                // 命令类型
+    bytes payload = 2;             // 具体消息体
+    string request_id = 3;         // 对应请求 ID
+    int32 code = 4;                // 状态码：0=成功
+    string message = 5;            // 错误信息
+}
+
+// ============== 客户端命令定义 ==============
+
+// cmd: "auth.login"
+message ClientLoginRequest {
+    string token = 1;              // JWT token
+    string device_id = 2;
+    string device_type = 3;
+}
+
+// cmd: "heartbeat"
+message HeartbeatRequest {
+    int64 client_time = 1;
+}
+
+message HeartbeatResponse {
+    int64 server_time = 1;
+}
+
+// ============== 服务端推送定义 ==============
+
+// cmd: "chat.new_message"
+message NewMessageNotify {
+    string msg_id = 1;
+    string from_user_id = 2;
+    string from_nickname = 3;
+    string from_avatar = 4;
+    string chat_id = 5;
+    int32 chat_type = 6;
+    string content = 7;
+    string media_url = 8;
+    string media_type = 9;
+    repeated string mentions = 10;
+    int64 timestamp = 11;
+}
+
+// cmd: "chat.recall"
+message RecallNotify {
+    string msg_id = 1;
+    string chat_id = 2;
+    int32 chat_type = 3;
+    string operator_id = 4;        // 撤回操作者
+    int64 recall_at = 5;
+}
+
+// cmd: "chat.read_receipt"
+message ReadReceiptNotify {
+    string chat_id = 1;
+    string user_id = 2;            // 已读者
+    string last_read_msg_id = 3;
+}
+
+// cmd: "friend.request"
+message FriendRequestNotify {
+    string request_id = 1;
+    string from_user_id = 2;
+    string from_nickname = 3;
+    string from_avatar = 4;
+    string remark = 5;
+    int64 timestamp = 6;
+}
+
+// cmd: "friend.accepted"
+message FriendAcceptedNotify {
+    string friend_id = 1;
+    string nickname = 2;
+    string avatar = 3;
+}
+
+// cmd: "user.status_change"
+message UserStatusChangeNotify {
+    string user_id = 1;
+    bool online = 2;
+    int64 timestamp = 3;
+}
+
+// cmd: "system.kicked"
+message KickedNotify {
+    string reason = 1;
+}
+
+// ============== ZoneSvr → GateSvr 内部接口 ==============
+
+message PushMessageRequest {
+    string user_id = 1;
+    string cmd = 2;
+    bytes payload = 3;
+}
+
+message DisconnectUserRequest {
+    string user_id = 1;
+    string reason = 2;
+}
+
+service GateInternalService {
+    // ZoneSvr 调用，推送消息给用户
+    rpc PushMessage(PushMessageRequest) returns (swift.common.CommonResponse);
+    
+    // ZoneSvr 调用，断开用户连接
+    rpc DisconnectUser(DisconnectUserRequest) returns (swift.common.CommonResponse);
+}

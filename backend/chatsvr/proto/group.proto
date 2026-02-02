@@ -1,0 +1,166 @@
+syntax = "proto3";
+
+package swift.group;
+
+import "common.proto";
+import "auth.proto";
+
+option cc_generic_services = true;
+
+// ============== 请求/响应 ==============
+
+message CreateGroupRequest {
+    string creator_id = 1;
+    string group_name = 2;
+    string avatar_url = 3;
+    repeated string member_ids = 4;   // 初始成员
+}
+
+message CreateGroupResponse {
+    int32 code = 1;
+    string message = 2;
+    string group_id = 3;
+}
+
+message DismissGroupRequest {
+    string group_id = 1;
+    string operator_id = 2;           // 操作者（必须是群主）
+}
+
+message GetGroupInfoRequest {
+    string group_id = 1;
+}
+
+message GroupInfoResponse {
+    int32 code = 1;
+    string message = 2;
+    GroupInfo group = 3;
+}
+
+message UpdateGroupRequest {
+    string group_id = 1;
+    string operator_id = 2;
+    string group_name = 3;
+    string avatar_url = 4;
+    string announcement = 5;
+}
+
+message InviteMembersRequest {
+    string group_id = 1;
+    string inviter_id = 2;
+    repeated string member_ids = 3;
+}
+
+message RemoveMemberRequest {
+    string group_id = 1;
+    string operator_id = 2;
+    string member_id = 3;
+}
+
+message LeaveGroupRequest {
+    string group_id = 1;
+    string user_id = 2;
+}
+
+message GetGroupMembersRequest {
+    string group_id = 1;
+    int32 page = 2;
+    int32 page_size = 3;
+}
+
+message GroupMembersResponse {
+    int32 code = 1;
+    string message = 2;
+    repeated GroupMember members = 3;
+    int32 total = 4;
+}
+
+message TransferOwnerRequest {
+    string group_id = 1;
+    string old_owner_id = 2;
+    string new_owner_id = 3;
+}
+
+message SetMemberRoleRequest {
+    string group_id = 1;
+    string operator_id = 2;
+    string member_id = 3;
+    int32 role = 4;                   // 1=普通成员, 2=管理员
+}
+
+message GetUserGroupsRequest {
+    string user_id = 1;
+}
+
+message UserGroupsResponse {
+    int32 code = 1;
+    string message = 2;
+    repeated GroupInfo groups = 3;
+}
+
+message MuteGroupRequest {
+    string group_id = 1;
+    string user_id = 2;
+    bool mute = 3;                    // true=开启免打扰
+}
+
+// ============== 数据结构 ==============
+
+message GroupInfo {
+    string group_id = 1;
+    string group_name = 2;
+    string avatar_url = 3;
+    string owner_id = 4;
+    int32 member_count = 5;
+    string announcement = 6;
+    int64 created_at = 7;
+    int64 updated_at = 8;
+}
+
+message GroupMember {
+    string user_id = 1;
+    int32 role = 2;                   // 0=群主, 1=普通成员, 2=管理员
+    string nickname = 3;              // 群内昵称
+    int64 joined_at = 4;
+    swift.auth.UserProfile profile = 5;
+}
+
+// ============== 服务定义 ==============
+
+service GroupService {
+    // 创建群聊
+    rpc CreateGroup(CreateGroupRequest) returns (CreateGroupResponse);
+    
+    // 解散群聊
+    rpc DismissGroup(DismissGroupRequest) returns (swift.common.CommonResponse);
+    
+    // 获取群信息
+    rpc GetGroupInfo(GetGroupInfoRequest) returns (GroupInfoResponse);
+    
+    // 更新群信息
+    rpc UpdateGroup(UpdateGroupRequest) returns (swift.common.CommonResponse);
+    
+    // 邀请成员
+    rpc InviteMembers(InviteMembersRequest) returns (swift.common.CommonResponse);
+    
+    // 移除成员
+    rpc RemoveMember(RemoveMemberRequest) returns (swift.common.CommonResponse);
+    
+    // 退出群聊
+    rpc LeaveGroup(LeaveGroupRequest) returns (swift.common.CommonResponse);
+    
+    // 获取群成员列表
+    rpc GetGroupMembers(GetGroupMembersRequest) returns (GroupMembersResponse);
+    
+    // 转让群主
+    rpc TransferOwner(TransferOwnerRequest) returns (swift.common.CommonResponse);
+    
+    // 设置管理员
+    rpc SetMemberRole(SetMemberRoleRequest) returns (swift.common.CommonResponse);
+    
+    // 获取用户的群列表
+    rpc GetUserGroups(GetUserGroupsRequest) returns (UserGroupsResponse);
+    
+    // 设置群免打扰
+    rpc MuteGroup(MuteGroupRequest) returns (swift.common.CommonResponse);
+}

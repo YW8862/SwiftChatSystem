@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package swift.zone;
+
+import "common.proto";
+
+option cc_generic_services = true;
+
+// ============== 请求/响应 ==============
+
+message UserOnlineRequest {
+    string user_id = 1;
+    string gate_id = 2;            // 用户连接的网关 ID
+    string device_type = 3;        // windows, android, ios, web
+    string device_id = 4;
+}
+
+message UserOfflineRequest {
+    string user_id = 1;
+    string gate_id = 2;
+}
+
+message RouteMessageRequest {
+    string from_user_id = 1;
+    string to_user_id = 2;
+    bytes payload = 3;             // 消息内容（Protobuf 序列化）
+    string msg_type = 4;           // 消息类型
+}
+
+message RouteMessageResponse {
+    int32 code = 1;
+    string message = 2;
+    bool delivered = 3;            // 是否在线投递成功
+}
+
+message BroadcastRequest {
+    repeated string user_ids = 1;  // 目标用户列表
+    bytes payload = 2;
+    string msg_type = 3;
+}
+
+message BroadcastResponse {
+    int32 code = 1;
+    string message = 2;
+    int32 online_count = 3;        // 在线用户数
+    int32 delivered_count = 4;     // 投递成功数
+}
+
+message GetUserStatusRequest {
+    repeated string user_ids = 1;
+}
+
+message UserStatus {
+    string user_id = 1;
+    bool online = 2;
+    string gate_id = 3;
+    string device_type = 4;
+    int64 last_active_at = 5;
+}
+
+message GetUserStatusResponse {
+    int32 code = 1;
+    string message = 2;
+    repeated UserStatus statuses = 3;
+}
+
+message PushToUserRequest {
+    string user_id = 1;
+    string cmd = 2;                // 命令类型
+    bytes payload = 3;             // 消息体
+}
+
+message KickUserRequest {
+    string user_id = 1;
+    string reason = 2;             // 踢出原因
+}
+
+// Gate 注册/心跳
+message GateRegisterRequest {
+    string gate_id = 1;
+    string address = 2;            // Gate 的 gRPC 地址
+    int32 current_connections = 3;
+}
+
+message GateHeartbeatRequest {
+    string gate_id = 1;
+    int32 current_connections = 2;
+}
+
+// ============== 服务定义 ==============
+
+service ZoneService {
+    // 用户上线
+    rpc UserOnline(UserOnlineRequest) returns (swift.common.CommonResponse);
+    
+    // 用户下线
+    rpc UserOffline(UserOfflineRequest) returns (swift.common.CommonResponse);
+    
+    // 路由消息给单个用户
+    rpc RouteMessage(RouteMessageRequest) returns (RouteMessageResponse);
+    
+    // 广播消息给多个用户
+    rpc Broadcast(BroadcastRequest) returns (BroadcastResponse);
+    
+    // 获取用户在线状态
+    rpc GetUserStatus(GetUserStatusRequest) returns (GetUserStatusResponse);
+    
+    // 主动推送消息给用户
+    rpc PushToUser(PushToUserRequest) returns (swift.common.CommonResponse);
+    
+    // 踢用户下线
+    rpc KickUser(KickUserRequest) returns (swift.common.CommonResponse);
+    
+    // Gate 注册
+    rpc GateRegister(GateRegisterRequest) returns (swift.common.CommonResponse);
+    
+    // Gate 心跳
+    rpc GateHeartbeat(GateHeartbeatRequest) returns (swift.common.CommonResponse);
+}

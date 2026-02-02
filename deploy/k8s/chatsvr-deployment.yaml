@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chatsvr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chatsvr
+  template:
+    metadata:
+      labels:
+        app: chatsvr
+    spec:
+      containers:
+      - name: chatsvr
+        image: swift/chatsvr:latest
+        ports:
+        - containerPort: 9098
+          name: grpc
+        envFrom:
+        - configMapRef:
+            name: swift-config
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: swift-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chatsvr
+spec:
+  selector:
+    app: chatsvr
+  ports:
+  - port: 9098
+    targetPort: 9098
+    name: grpc

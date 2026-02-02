@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zonesvr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zonesvr
+  template:
+    metadata:
+      labels:
+        app: zonesvr
+    spec:
+      containers:
+      - name: zonesvr
+        image: swift/zonesvr:latest
+        ports:
+        - containerPort: 9092
+          name: grpc
+        envFrom:
+        - configMapRef:
+            name: swift-config
+        resources:
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zonesvr
+spec:
+  selector:
+    app: zonesvr
+  ports:
+  - port: 9092
+    targetPort: 9092
+    name: grpc

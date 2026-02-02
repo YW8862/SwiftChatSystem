@@ -1,0 +1,28 @@
+{
+  "name": "swiftchatsystem",
+  "version": "0.1.0",
+  "description": "High-performance scalable social platform",
+  "dependencies": [
+    "grpc",
+    "protobuf",
+    "rocksdb",
+    "boost-beast",
+    "boost-asio",
+    "openssl",
+    "jwt-cpp",
+    "nlohmann-json",
+    "spdlog"
+  ],
+  "features": {
+    "client": {
+      "description": "Build Qt client",
+      "dependencies": []
+    },
+    "tests": {
+      "description": "Build tests",
+      "dependencies": [
+        "gtest"
+      ]
+    }
+  }
+}

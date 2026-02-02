@@ -1,0 +1,585 @@
+# 高性能可扩展社交平台 —— 完整开发设计文档
+
+C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
+
+---
+
+## 1. 项目概述
+
+### 1.1 目标
+
+构建一个功能完整、高性能、可演示的类 QQ 实时社交系统，支持：
+
+- 私聊 / 群聊 / 好友关系 / 富媒体消息
+- 消息撤回 / @提醒 / 已读回执 / 离线推送 / 消息搜索
+- Windows 客户端（.exe 安装包）
+- 独立可复用的异步日志系统（AsyncLogger）
+- Minikube 本地 Kubernetes 部署
+
+### 1.2 核心价值
+
+| 维度     | 说明                                   |
+| -------- | -------------------------------------- |
+| 产品感   | 功能闭环，可现场安装演示               |
+| 技术深度 | C++ 系统编程 + 微服务 + 云原生         |
+| 工程规范 | gRPC IDL + CMake + Kubernetes          |
+| 可复用性 | 异步日志系统可独立使用于其他 C++ 项目  |
+
+---
+
+## 2. 系统架构
+
+### 2.1 整体架构图
+
+```
+                        ┌─────────────────┐
+                        │  LoadBalancer   │
+                        └────────┬────────┘
+                                 │
+         ┌───────────────────────┼───────────────────────┐
+         ▼                       ▼                       ▼
+    ┌─────────┐             ┌─────────┐             ┌─────────┐
+    │ GateSvr │             │ GateSvr │             │ GateSvr │
+    │  (Pod)  │             │  (Pod)  │             │  (Pod)  │
+    └────┬────┘             └────┬────┘             └────┬────┘
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 ▼
+                        ┌─────────────────┐
+                        │    ZoneSvr      │ ←── 路由层（会话状态）
+                        └────────┬────────┘
+                                 │
+          ┌──────────────────────┼──────────────────────┐
+          ▼                      ▼                      ▼
+    ┌──────────┐          ┌──────────┐          ┌──────────┐
+    │ AuthSvr  │          │ ChatSvr  │          │ FileSvr  │
+    └────┬─────┘          └────┬─────┘          └────┬─────┘
+         │                     │                     │
+    ┌────▼─────┐          ┌────▼─────┐          ┌────▼─────┐
+    │  Store   │          │  Store   │          │  Store   │
+    └──────────┘          └──────────┘          └──────────┘
+```
+
+### 2.2 关键设计决策
+
+| 决策点           | 方案                                      | 理由                       |
+| ---------------- | ----------------------------------------- | -------------------------- |
+| 客户端协议       | WebSocket + Protobuf（二进制）            | 体积小、解析快、与后端统一 |
+| 会话管理         | ZoneSvr + Redis                           | 支持多副本、高可用         |
+| 存储引擎         | RocksDB（单机）/ MySQL（集群）            | 灵活切换、渐进式扩展       |
+| 日志方案         | 异步日志库（进程内）                      | 高性能、可复用、无网络开销 |
+| 服务合并         | ChatSvr 含离线消息 + 搜索                 | 减少跨服务调用和数据同步   |
+
+---
+
+## 3. 微服务列表与职责
+
+| 服务          | 协议                    | 存储                | 关键能力                           |
+| ------------- | ----------------------- | ------------------- | ---------------------------------- |
+| GateSvr       | WebSocket + gRPC        | 内存                | 连接管理、协议解析、消息转发       |
+| ZoneSvr       | gRPC                    | Redis/内存          | 在线状态、路由广播、Gate 管理      |
+| AuthSvr       | gRPC                    | RocksDB/MySQL       | JWT 登录/注册、用户资料            |
+| FriendSvr     | gRPC                    | RocksDB/MySQL       | 好友/分组/黑名单                   |
+| ChatSvr       | gRPC                    | RocksDB/MySQL       | 消息收发/撤回/@/离线队列/搜索      |
+| FileSvr       | gRPC + HTTP             | RocksDB + 本地/MinIO | 文件上传/下载                      |
+
+**服务数量：6 个**
+
+---
+
+## 4. 存储架构设计
+
+### 4.1 分层存储架构
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        存储抽象层                                │
+├─────────────────────────────────────────────────────────────────┤
+│   Store 接口（UserStore / MessageStore / SessionStore ...）      │
+├──────────────────┬──────────────────┬───────────────────────────┤
+│   RocksDB 实现   │   MySQL 实现      │   Redis 实现              │
+│   (单机/开发)    │   (生产/多副本)   │   (会话/缓存)             │
+└──────────────────┴──────────────────┴───────────────────────────┘
+```
+
+### 4.2 各服务存储方案
+
+| 服务 | 数据类型 | 单机方案 | 集群方案 | Key 设计 |
+|------|---------|---------|---------|----------|
+| **AuthSvr** | 用户信息 | RocksDB | MySQL | `user:{id}`, `username:{name}→id` |
+| **FriendSvr** | 好友关系 | RocksDB | MySQL | `friend:{uid}:{fid}`, `block:{uid}:{tid}` |
+| **ChatSvr** | 消息数据 | RocksDB | MySQL + 分表 | `msg:{id}`, `chat:{cid}:{ts}:{mid}` |
+| **ChatSvr** | 离线消息 | RocksDB | Redis List | `offline:{uid}` |
+| **FileSvr** | 文件元信息 | RocksDB | MySQL | `file:{id}`, `md5:{hash}→id` |
+| **FileSvr** | 文件内容 | 本地磁盘 | MinIO/S3 | `/files/{date}/{file_id}` |
+| **ZoneSvr** | 在线状态 | 内存 | Redis | `session:{uid}`, `gate:{gid}` |
+
+### 4.3 RocksDB Key 设计规范
+
+```
+格式：{类型}:{主键}:{可选子键}
+
+示例：
+  user:u_123456                     → 用户数据 JSON
+  username:alice                    → u_123456
+  friend:u_123:u_456                → 好友关系数据
+  msg:m_789                         → 消息数据 JSON
+  chat:c_123:1706800000:m_789       → 消息 ID（时间线索引）
+  offline:u_123:1706800000:m_789    → 离线消息索引
+```
+
+### 4.4 Store 接口设计
+
+```cpp
+// 用户存储接口
+class UserStore {
+public:
+    virtual bool Create(const UserData& user) = 0;
+    virtual std::optional<UserData> GetById(const std::string& user_id) = 0;
+    virtual std::optional<UserData> GetByUsername(const std::string& username) = 0;
+    virtual bool Update(const UserData& user) = 0;
+};
+
+// 消息存储接口
+class MessageStore {
+public:
+    virtual bool Save(const MessageData& msg) = 0;
+    virtual std::optional<MessageData> GetById(const std::string& msg_id) = 0;
+    virtual std::vector<MessageData> GetHistory(const std::string& chat_id, 
+                                                 const std::string& before_msg_id, int limit) = 0;
+    virtual bool MarkRecalled(const std::string& msg_id) = 0;
+};
+
+// 会话存储接口
+class SessionStore {
+public:
+    virtual bool SetOnline(const UserSession& session) = 0;
+    virtual bool SetOffline(const std::string& user_id) = 0;
+    virtual std::optional<UserSession> GetSession(const std::string& user_id) = 0;
+    virtual bool IsOnline(const std::string& user_id) = 0;
+};
+```
+
+---
+
+## 5. Redis 设计（集群模式）
+
+### 5.1 用途划分
+
+| 用途 | Key 前缀 | 数据结构 | TTL |
+|------|---------|---------|-----|
+| 用户会话 | `session:` | Hash | 1h（心跳续期） |
+| Gate 节点 | `gate:` | Hash | 60s（心跳续期） |
+| Gate 列表 | `gate:list` | Set | - |
+| 离线消息队列 | `offline:` | List | 7d |
+| 消息已读位置 | `read:` | String | - |
+| 用户 Token | `token:` | String | 7d |
+
+### 5.2 Key 结构设计
+
+```
+# 用户会话
+session:{user_id} = {
+  gate_id: "gate-1",
+  gate_addr: "10.0.0.1:9091",
+  device_type: "windows",
+  online_at: 1706800000,
+  last_active: 1706800100
+}
+EXPIRE session:{user_id} 3600
+
+# Gate 节点
+gate:{gate_id} = {
+  address: "10.0.0.1:9091",
+  connections: 1500,
+  registered_at: 1706800000
+}
+EXPIRE gate:{gate_id} 60
+
+# Gate 列表
+gate:list = [gate-1, gate-2, gate-3]
+
+# 离线消息
+offline:{user_id} = [msg_id_1, msg_id_2, ...]
+```
+
+---
+
+## 6. 集群路由设计
+
+### 6.1 路由架构
+
+```
+                     ┌─────────────────┐
+                     │  LoadBalancer   │
+                     └────────┬────────┘
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        ▼                     ▼                     ▼
+   ┌─────────┐           ┌─────────┐           ┌─────────┐
+   │ Gate-1  │           │ Gate-2  │           │ Gate-3  │
+   └────┬────┘           └────┬────┘           └────┬────┘
+        │                     │                     │
+        └─────────────────────┼─────────────────────┘
+                              ▼
+                     ┌─────────────────┐
+                     │    ZoneSvr      │ ←── 查询 Redis
+                     └────────┬────────┘
+                              │
+                     ┌────────▼────────┐
+                     │     Redis       │ ←── 共享会话状态
+                     └─────────────────┘
+```
+
+### 6.2 消息路由流程
+
+```
+Alice (Gate-1) 发消息给 Bob (Gate-2)
+
+1. Gate-1 收到 Alice 的消息
+2. Gate-1 → ZoneSvr.RouteMessage(to_user=bob, payload=...)
+3. ZoneSvr 查询 Redis: HGETALL session:bob
+   → 获取 bob 在 Gate-2，地址 10.0.0.2:9091
+4. ZoneSvr → Gate-2.PushMessage(user_id=bob, payload=...)
+5. Gate-2 通过 WebSocket 推送给 Bob
+6. 如果 Bob 离线：
+   - ChatSvr 存储消息
+   - LPUSH offline:bob msg_id
+```
+
+### 6.3 Gate 注册与心跳
+
+```
+Gate 启动：
+  1. 生成唯一 gate_id
+  2. 调用 ZoneSvr.GateRegister(gate_id, address)
+  3. ZoneSvr 写入 Redis: HSET gate:{gate_id} ..., SADD gate:list {gate_id}
+
+Gate 心跳（每 30s）：
+  1. 调用 ZoneSvr.GateHeartbeat(gate_id, connections)
+  2. ZoneSvr 更新 Redis: EXPIRE gate:{gate_id} 60
+
+用户上线：
+  1. Gate 调用 ZoneSvr.UserOnline(user_id, gate_id, device_type)
+  2. ZoneSvr 写入 Redis: HSET session:{user_id} ...
+```
+
+---
+
+## 7. 部署模式
+
+### 7.1 模式对比
+
+| 模式 | 适用场景 | 存储方案 | 副本数 |
+|------|---------|---------|--------|
+| **单机模式** | 开发/演示 | RocksDB + 内存 + 本地磁盘 | 各服务 1 |
+| **集群模式** | 生产 | MySQL + Redis + MinIO | Gate 3+, 其他 2+ |
+
+### 7.2 单机模式配置
+
+```yaml
+# 环境变量
+STORE_TYPE: rocksdb
+SESSION_STORE_TYPE: memory
+FILE_STORAGE_TYPE: local
+```
+
+### 7.3 集群模式配置
+
+```yaml
+# 环境变量
+STORE_TYPE: mysql
+MYSQL_DSN: "user:pass@tcp(mysql:3306)/swift"
+SESSION_STORE_TYPE: redis
+REDIS_URL: "redis://redis:6379"
+FILE_STORAGE_TYPE: minio
+MINIO_ENDPOINT: "minio:9000"
+```
+
+### 7.4 服务端口
+
+| 服务          | gRPC 端口 | 其他端口          |
+| ------------- | --------- | ----------------- |
+| GateSvr       | 9091      | WebSocket: 9090   |
+| ZoneSvr       | 9092      | -                 |
+| AuthSvr       | 9094      | -                 |
+| FriendSvr     | 9096      | -                 |
+| ChatSvr       | 9098      | -                 |
+| FileSvr       | 9100      | HTTP: 8080        |
+
+---
+
+## 8. 异步日志系统设计（AsyncLogger）
+
+### 8.1 设计目标
+
+- **独立可复用**：作为独立库，可用于任何 C++ 项目
+- **高性能异步**：日志写入不阻塞业务线程
+- **零拷贝优化**：使用环形缓冲区 + 双缓冲交换
+- **多后端支持**：文件、stdout、远程（可扩展）
+
+### 8.2 架构设计
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     AsyncLogger 库                       │
+├─────────────────────────────────────────────────────────┤
+│  [业务线程]                                              │
+│      │                                                   │
+│      ↓ LOG_INFO("msg", args...)                         │
+│  ┌─────────────┐                                        │
+│  │ LogEntry    │  格式化 → 无锁写入                      │
+│  │ Formatter   │                                        │
+│  └──────┬──────┘                                        │
+│         ↓                                                │
+│  ┌─────────────────────────────┐                        │
+│  │   RingBuffer (Lock-Free)    │  双缓冲：写满交换       │
+│  │   [Buffer A] ←→ [Buffer B]  │                        │
+│  └──────────────┬──────────────┘                        │
+│                 ↓ (condition_variable 通知)              │
+│  ┌─────────────────────────────┐                        │
+│  │   Backend Thread (单线程)    │  批量刷盘              │
+│  └──────────────┬──────────────┘                        │
+│                 ↓                                        │
+│  ┌─────────────────────────────────────────────┐        │
+│  │ Sink 接口                                    │        │
+│  │  ├── FileSink      (按大小/时间滚动)         │        │
+│  │  ├── ConsoleSink   (stdout/stderr)          │        │
+│  │  └── RemoteSink    (gRPC/HTTP，可选扩展)     │        │
+│  └─────────────────────────────────────────────┘        │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 8.3 核心接口
+
+```cpp
+namespace asynclog {
+
+enum class Level { TRACE, DEBUG, INFO, WARN, ERROR, FATAL };
+
+struct LogConfig {
+    Level min_level = Level::INFO;
+    size_t buffer_size = 4 * 1024 * 1024;
+    std::string log_dir = "./logs";
+    std::string file_prefix = "app";
+    size_t max_file_size = 100 * 1024 * 1024;
+    int max_file_count = 10;
+    bool enable_console = true;
+};
+
+void Init(const LogConfig& config);
+void Shutdown();
+
+#define LOG_INFO(fmt, ...)  asynclog::Log(asynclog::Level::INFO, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+#define LOG_ERROR(fmt, ...) asynclog::Log(asynclog::Level::ERROR, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+
+}  // namespace asynclog
+```
+
+---
+
+## 9. 核心功能流程
+
+### 9.1 消息发送（私聊）
+
+```
+1. Client → GateSvr: WebSocket {cmd: "chat.send", payload: ...}
+2. GateSvr → ZoneSvr: RouteMessage(to_user=bob, payload=...)
+3. ZoneSvr 查询 Redis session:bob：
+   ├── 在线 → ChatSvr.SendMessage() 存储 → Gate-X.PushMessage()
+   └── 离线 → ChatSvr.SendMessage() 存储 → LPUSH offline:bob
+4. 响应 → GateSvr → Client: 发送成功
+```
+
+### 9.2 消息撤回
+
+```
+限制：2 分钟内 + 发送者本人
+操作：更新消息状态为已撤回，不删除原消息
+广播：ZoneSvr 通知会话所有在线成员
+```
+
+### 9.3 离线消息
+
+```
+1. 用户上线 → Client 调用 PullOffline(cursor, limit)
+2. ChatSvr 从 Redis LRANGE offline:{uid} 获取消息 ID 列表
+3. 根据 ID 查询消息详情，返回客户端
+4. 客户端确认后，LTRIM 清除已读消息
+```
+
+---
+
+## 10. 项目目录结构
+
+```
+SwiftChatSystem/
+├── CMakeLists.txt                    # 顶层构建配置
+├── vcpkg.json                        # 依赖声明
+├── README.md
+├── system.md                         # 本设计文档
+│
+├── backend/                          # 后端服务
+│   ├── CMakeLists.txt
+│   ├── common/                       # 公共库
+│   │   ├── CMakeLists.txt
+│   │   ├── proto/
+│   │   │   ├── CMakeLists.txt
+│   │   │   └── common.proto
+│   │   ├── include/swift/
+│   │   │   ├── common.h
+│   │   │   ├── config.h
+│   │   │   ├── utils.h
+│   │   │   └── result.h
+│   │   └── src/
+│   │
+│   ├── gatesvr/                      # 接入网关
+│   │   ├── CMakeLists.txt
+│   │   ├── Dockerfile
+│   │   ├── cmd/main.cpp
+│   │   ├── proto/gate.proto
+│   │   └── internal/
+│   │       ├── handler/
+│   │       ├── service/
+│   │       └── config/
+│   │
+│   ├── zonesvr/                      # 路由服务
+│   │   ├── CMakeLists.txt
+│   │   ├── Dockerfile
+│   │   ├── cmd/main.cpp
+│   │   ├── proto/zone.proto
+│   │   └── internal/
+│   │       ├── handler/
+│   │       ├── service/
+│   │       ├── store/                # SessionStore
+│   │       └── config/
+│   │
+│   ├── authsvr/                      # 认证服务
+│   │   ├── CMakeLists.txt
+│   │   ├── Dockerfile
+│   │   ├── cmd/main.cpp
+│   │   ├── proto/auth.proto
+│   │   └── internal/
+│   │       ├── handler/
+│   │       ├── service/
+│   │       ├── store/                # UserStore
+│   │       └── config/
+│   │
+│   ├── friendsvr/                    # 好友服务
+│   │   ├── CMakeLists.txt
+│   │   ├── Dockerfile
+│   │   ├── cmd/main.cpp
+│   │   ├── proto/friend.proto
+│   │   └── internal/
+│   │       ├── handler/
+│   │       ├── service/
+│   │       ├── store/                # FriendStore
+│   │       └── config/
+│   │
+│   ├── chatsvr/                      # 消息服务
+│   │   ├── CMakeLists.txt
+│   │   ├── Dockerfile
+│   │   ├── cmd/main.cpp
+│   │   ├── proto/
+│   │   │   ├── chat.proto
+│   │   │   └── group.proto
+│   │   └── internal/
+│   │       ├── handler/
+│   │       ├── service/
+│   │       ├── store/                # MessageStore, ConversationStore
+│   │       └── config/
+│   │
+│   └── filesvr/                      # 文件服务
+│       ├── CMakeLists.txt
+│       ├── Dockerfile
+│       ├── cmd/main.cpp
+│       ├── proto/file.proto
+│       └── internal/
+│           ├── handler/
+│           ├── service/
+│           ├── store/                # FileStore
+│           └── config/
+│
+├── client/                           # 客户端
+│   ├── CMakeLists.txt
+│   ├── proto/                        # 客户端 Proto
+│   └── desktop/                      # Qt 桌面客户端
+│       ├── CMakeLists.txt
+│       ├── src/
+│       │   ├── main.cpp
+│       │   ├── ui/
+│       │   ├── network/
+│       │   ├── models/
+│       │   └── utils/
+│       └── resources/
+│
+├── deploy/                           # 部署配置
+│   ├── k8s/
+│   │   ├── kustomization.yaml
+│   │   ├── namespace.yaml
+│   │   ├── configmap.yaml
+│   │   ├── persistent-volume.yaml
+│   │   └── *-deployment.yaml
+│   └── docker/
+│
+├── libs/                             # 第三方库（链接 AsyncLogger）
+└── docs/                             # 文档
+```
+
+---
+
+## 11. 技术栈汇总
+
+| 类别     | 技术                                    |
+| -------- | --------------------------------------- |
+| 语言     | C++17                                   |
+| RPC      | gRPC + Protobuf                         |
+| 网络     | Boost.Beast (WebSocket)                 |
+| 存储     | RocksDB（单机）/ MySQL（集群）          |
+| 缓存     | Redis（会话状态、离线队列）             |
+| 对象存储 | 本地磁盘（单机）/ MinIO（集群）         |
+| 日志     | AsyncLogger（自研异步日志库）           |
+| 构建     | CMake + vcpkg                           |
+| 部署     | Minikube + Kubernetes                   |
+| 客户端   | Qt 5.15 → Windows .exe (NSIS 安装包)    |
+
+---
+
+## 12. 升级路径
+
+```
+阶段 1：单机开发
+  └── RocksDB + 内存 + 本地文件
+
+阶段 2：引入 Redis
+  └── ZoneSvr 会话存储迁移到 Redis
+  └── 支持多 Gate 副本
+
+阶段 3：引入 MySQL
+  └── AuthSvr/FriendSvr/ChatSvr 迁移到 MySQL
+  └── 消息表按月分表
+
+阶段 4：引入对象存储
+  └── FileSvr 迁移到 MinIO
+  └── CDN 加速
+
+阶段 5：完全云原生
+  └── HPA 自动扩缩
+  └── Prometheus + Grafana 监控
+```
+
+---
+
+## 13. 未来扩展
+
+| 扩展点       | 说明                                              |
+| ------------ | ------------------------------------------------- |
+| 监控系统     | Prometheus + Grafana（各服务暴露 /metrics）       |
+| 日志集中化   | Fluentd → Loki（收集 stdout 日志）                |
+| 告警         | Prometheus Alertmanager → 企业微信/邮件           |
+| 多端         | Web / Android / iOS 客户端                        |
+
+---
+
+**文档版本**：v4.0（存储与路由设计）  
+**最后更新**：2026年2月2日

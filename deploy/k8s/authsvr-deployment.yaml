@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authsvr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: authsvr
+  template:
+    metadata:
+      labels:
+        app: authsvr
+    spec:
+      containers:
+      - name: authsvr
+        image: swift/authsvr:latest
+        ports:
+        - containerPort: 9094
+          name: grpc
+        envFrom:
+        - configMapRef:
+            name: swift-config
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        resources:
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: swift-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authsvr
+spec:
+  selector:
+    app: authsvr
+  ports:
+  - port: 9094
+    targetPort: 9094
+    name: grpc

@@ -1,0 +1,168 @@
+syntax = "proto3";
+
+package swift.chat;
+
+import "common.proto";
+
+option cc_generic_services = true;
+
+// ============== 请求/响应 ==============
+
+message SendMessageRequest {
+    string from_user_id = 1;
+    string to_id = 2;              // user_id（私聊）或 group_id（群聊）
+    int32 chat_type = 3;           // 1=私聊, 2=群聊
+    string content = 4;            // 文本内容
+    string media_url = 5;          // 媒体文件 URL
+    string media_type = 6;         // text, image, file, voice, video
+    repeated string mentions = 7;  // @提醒的用户列表
+    string reply_to_msg_id = 8;    // 回复的消息 ID
+    string client_msg_id = 9;      // 客户端消息 ID（去重）
+}
+
+message SendMessageResponse {
+    int32 code = 1;
+    string message = 2;
+    string msg_id = 3;             // 服务端生成的消息 ID
+    int64 timestamp = 4;           // 服务端时间戳
+}
+
+message RecallMessageRequest {
+    string msg_id = 1;
+    string user_id = 2;            // 撤回者（必须是发送者）
+}
+
+message PullOfflineRequest {
+    string user_id = 1;
+    int32 limit = 2;               // 单次拉取上限，默认 100
+    string cursor = 3;             // 分页游标
+}
+
+message PullOfflineResponse {
+    int32 code = 1;
+    string message = 2;
+    repeated ChatMessage messages = 3;
+    string next_cursor = 4;
+    bool has_more = 5;
+}
+
+message SearchMessagesRequest {
+    string user_id = 1;
+    string keyword = 2;
+    string chat_id = 3;            // 可选，限定会话
+    int32 chat_type = 4;           // 可选，1=私聊, 2=群聊
+    int64 start_time = 5;          // 可选，时间范围
+    int64 end_time = 6;
+    int32 limit = 7;               // 默认 20
+}
+
+message SearchMessagesResponse {
+    int32 code = 1;
+    string message = 2;
+    repeated ChatMessage messages = 3;
+    int32 total = 4;
+}
+
+message MarkReadRequest {
+    string user_id = 1;
+    string chat_id = 2;            // 会话 ID
+    int32 chat_type = 3;
+    string last_msg_id = 4;        // 已读到的最后一条消息
+}
+
+message GetHistoryRequest {
+    string user_id = 1;
+    string chat_id = 2;
+    int32 chat_type = 3;
+    string before_msg_id = 4;      // 获取此消息之前的历史
+    int32 limit = 5;
+}
+
+message GetHistoryResponse {
+    int32 code = 1;
+    string message = 2;
+    repeated ChatMessage messages = 3;
+    bool has_more = 4;
+}
+
+message SyncConversationsRequest {
+    string user_id = 1;
+    int64 last_sync_time = 2;      // 上次同步时间
+}
+
+message SyncConversationsResponse {
+    int32 code = 1;
+    string message = 2;
+    repeated Conversation conversations = 3;
+}
+
+message DeleteConversationRequest {
+    string user_id = 1;
+    string chat_id = 2;
+    int32 chat_type = 3;
+}
+
+// ============== 数据结构 ==============
+
+message ChatMessage {
+    string msg_id = 1;
+    string from_user_id = 2;
+    string to_id = 3;
+    int32 chat_type = 4;           // 1=私聊, 2=群聊
+    string content = 5;
+    string media_url = 6;
+    string media_type = 7;         // text, image, file, voice, video
+    repeated string mentions = 8;
+    string reply_to_msg_id = 9;
+    int64 timestamp = 10;
+    int32 status = 11;             // 0=正常, 1=已撤回, 2=已删除
+    int64 recall_at = 12;          // 撤回时间（如果已撤回）
+}
+
+message Conversation {
+    string chat_id = 1;            // 会话 ID
+    int32 chat_type = 2;           // 1=私聊, 2=群聊
+    string peer_id = 3;            // 对方 ID（私聊）或群 ID
+    string peer_name = 4;
+    string peer_avatar = 5;
+    ChatMessage last_message = 6;
+    int32 unread_count = 7;
+    int64 updated_at = 8;
+    bool is_pinned = 9;            // 是否置顶
+    bool is_muted = 10;            // 是否免打扰
+}
+
+message ReadReceipt {
+    string chat_id = 1;
+    string user_id = 2;
+    string last_read_msg_id = 3;
+    int64 read_at = 4;
+}
+
+// ============== 服务定义 ==============
+
+service ChatService {
+    // 发送消息
+    rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+    
+    // 撤回消息（2分钟内）
+    rpc RecallMessage(RecallMessageRequest) returns (swift.common.CommonResponse);
+    
+    // 拉取离线消息
+    rpc PullOffline(PullOfflineRequest) returns (PullOfflineResponse);
+    
+    // 搜索消息
+    rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
+    
+    // 标记已读
+    rpc MarkRead(MarkReadRequest) returns (swift.common.CommonResponse);
+    
+    // 获取历史消息
+    rpc GetHistory(GetHistoryRequest) returns (GetHistoryResponse);
+    
+    // 同步会话列表
+    rpc SyncConversations(SyncConversationsRequest) returns (SyncConversationsResponse);
+    
+    // 删除会话
+    rpc DeleteConversation(DeleteConversationRequest) returns (swift.common.CommonResponse);
+}
