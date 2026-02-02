@@ -27,3 +27,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
     OpenSSL::SSL
     OpenSSL::Crypto
 )
+
+# 测试程序
+add_executable(test_utils tests/test_utils.cpp)
+target_link_libraries(test_utils PRIVATE ${PROJECT_NAME})
