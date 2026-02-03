@@ -72,6 +72,12 @@ TEST_F(FriendStoreTest, AddFriend_Success) {
     EXPECT_TRUE(store_->IsFriend("u2", "u1"));
 }
 
+TEST_F(FriendStoreTest, GetFriends_EmptyGroupId_Excluded) {
+    store_->AddFriend(MakeFriend("u1", "u2", ""));  // 非法：空分组
+    auto list = store_->GetFriends("u1");
+    EXPECT_EQ(list.size(), 0u);
+}
+
 TEST_F(FriendStoreTest, AddFriend_Duplicate_Fail) {
     FriendData d = MakeFriend("u1", "u2");
     EXPECT_TRUE(store_->AddFriend(d));
@@ -86,8 +92,8 @@ TEST_F(FriendStoreTest, RemoveFriend_Success) {
 }
 
 TEST_F(FriendStoreTest, GetFriends_All) {
-    store_->AddFriend(MakeFriend("u1", "u2", "", 1));
-    store_->AddFriend(MakeFriend("u1", "u3", "", 2));
+    store_->AddFriend(MakeFriend("u1", "u2", kDefaultFriendGroupId, 1));
+    store_->AddFriend(MakeFriend("u1", "u3", kDefaultFriendGroupId, 2));
     store_->AddFriend(MakeFriend("u1", "u4", "g1", 3));
 
     auto list = store_->GetFriends("u1");
@@ -107,7 +113,7 @@ TEST_F(FriendStoreTest, GetFriends_ByGroup) {
 }
 
 TEST_F(FriendStoreTest, UpdateRemark_Success) {
-    store_->AddFriend(MakeFriend("u1", "u2"));
+    store_->AddFriend(MakeFriend("u1", "u2", kDefaultFriendGroupId));
     EXPECT_TRUE(store_->UpdateRemark("u1", "u2", "new_remark"));
 
     auto list = store_->GetFriends("u1");
@@ -189,7 +195,7 @@ TEST_F(FriendStoreTest, CreateGroup_Duplicate_Fail) {
     EXPECT_FALSE(store_->CreateGroup(MakeGroup("u1", "g1", "B")));
 }
 
-TEST_F(FriendStoreTest, DeleteGroup_MovesFriendsToNoGroup) {
+TEST_F(FriendStoreTest, DeleteGroup_MovesFriendsToDefault) {
     store_->CreateGroup(MakeGroup("u1", "g1", "组1"));
     store_->AddFriend(MakeFriend("u1", "u2", "g1"));
     EXPECT_TRUE(store_->DeleteGroup("u1", "g1"));
@@ -197,7 +203,7 @@ TEST_F(FriendStoreTest, DeleteGroup_MovesFriendsToNoGroup) {
     EXPECT_EQ(store_->GetGroups("u1").size(), 0u);
     auto friends = store_->GetFriends("u1");
     ASSERT_EQ(friends.size(), 1u);
-    EXPECT_TRUE(friends[0].group_id.empty());
+    EXPECT_EQ(friends[0].group_id, kDefaultFriendGroupId);
 }
 
 // ============================================================================
@@ -227,7 +233,7 @@ TEST_F(FriendStoreTest, GetBlockList) {
 // ============================================================================
 
 TEST_F(FriendStoreTest, PersistenceAcrossReopen) {
-    store_->AddFriend(MakeFriend("u1", "u2"));
+    store_->AddFriend(MakeFriend("u1", "u2", kDefaultFriendGroupId));
     store_->CreateRequest(MakeRequest("req1", "u1", "u2"));
     store_->CreateGroup(MakeGroup("u1", "g1", "默认"));
     store_->Block("u1", "u3");
@@ -236,6 +242,9 @@ TEST_F(FriendStoreTest, PersistenceAcrossReopen) {
     store_ = std::make_unique<RocksDBFriendStore>(test_db_path_);
 
     EXPECT_TRUE(store_->IsFriend("u1", "u2"));
+    auto friends = store_->GetFriends("u1");
+    ASSERT_EQ(friends.size(), 1u);
+    EXPECT_EQ(friends[0].group_id, kDefaultFriendGroupId);
     ASSERT_TRUE(store_->GetRequest("req1").has_value());
     EXPECT_EQ(store_->GetGroups("u1").size(), 1u);
     EXPECT_TRUE(store_->IsBlocked("u1", "u3"));

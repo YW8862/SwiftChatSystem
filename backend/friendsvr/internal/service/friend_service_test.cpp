@@ -5,6 +5,7 @@
 
 #include "friend_service.h"
 #include "../store/friend_store.h"
+#include "swift/error_code.h"
 #include <chrono>
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -44,7 +45,7 @@ TEST_F(FriendServiceTest, AddFriend_Self_Fail) {
 }
 
 TEST_F(FriendServiceTest, AddFriend_AlreadyFriends_Fail) {
-    store_->AddFriend(FriendData{"u1", "u2", "", "", 1000});
+    store_->AddFriend(FriendData{"u1", "u2", "", kDefaultFriendGroupId, 1000});
     EXPECT_FALSE(service_->AddFriend("u1", "u2", ""));
 }
 
@@ -75,7 +76,7 @@ TEST_F(FriendServiceTest, HandleRequest_Reject) {
 }
 
 TEST_F(FriendServiceTest, RemoveFriend) {
-    store_->AddFriend(FriendData{"u1", "u2", "", "", 1000});
+    store_->AddFriend(FriendData{"u1", "u2", "", kDefaultFriendGroupId, 1000});
     EXPECT_TRUE(service_->RemoveFriend("u1", "u2"));
     EXPECT_FALSE(store_->IsFriend("u1", "u2"));
 }
@@ -94,16 +95,70 @@ TEST_F(FriendServiceTest, CreateFriendGroup) {
     EXPECT_TRUE(service_->CreateFriendGroup("u1", "同事", &gid));
     EXPECT_FALSE(gid.empty());
     auto groups = service_->GetFriendGroups("u1");
-    ASSERT_EQ(groups.size(), 1u);
-    EXPECT_EQ(groups[0].group_name, "同事");
+    ASSERT_GE(groups.size(), 1u);
+    bool has_colleague = false;
+    for (const auto& g : groups)
+        if (g.group_name == "同事") { has_colleague = true; break; }
+    EXPECT_TRUE(has_colleague);
 }
 
 TEST_F(FriendServiceTest, SetRemark) {
-    store_->AddFriend(FriendData{"u1", "u2", "old", "", 1000});
+    store_->AddFriend(FriendData{"u1", "u2", "old", kDefaultFriendGroupId, 1000});
     EXPECT_TRUE(service_->SetRemark("u1", "u2", "new_remark"));
     auto friends = service_->GetFriends("u1");
     ASSERT_EQ(friends.size(), 1u);
     EXPECT_EQ(friends[0].remark, "new_remark");
+}
+
+TEST_F(FriendServiceTest, GetFriendGroups_ReturnsDefaultGroup) {
+    auto groups = service_->GetFriendGroups("u1");
+    ASSERT_GE(groups.size(), 1u);
+    bool has_default = false;
+    for (const auto& g : groups)
+        if (g.group_id == kDefaultFriendGroupId && g.group_name == kDefaultFriendGroupName) {
+            has_default = true;
+            break;
+        }
+    EXPECT_TRUE(has_default);
+}
+
+TEST_F(FriendServiceTest, HandleRequest_Accept_EmptyGroup_UsesDefault) {
+    EXPECT_TRUE(service_->AddFriend("u1", "u2", "hi"));
+    auto received = service_->GetFriendRequests("u2", 1);
+    ASSERT_EQ(received.size(), 1u);
+    std::string req_id = received[0].request_id;
+    EXPECT_TRUE(service_->HandleRequest("u2", req_id, true, ""));
+    auto friends = service_->GetFriends("u2");
+    ASSERT_EQ(friends.size(), 1u);
+    EXPECT_EQ(friends[0].group_id, kDefaultFriendGroupId);
+}
+
+TEST_F(FriendServiceTest, DeleteFriendGroup_Default_Fail) {
+    service_->GetFriendGroups("u1");
+    swift::ErrorCode ec = service_->DeleteFriendGroup("u1", kDefaultFriendGroupId);
+    EXPECT_EQ(ec, swift::ErrorCode::FRIEND_GROUP_DEFAULT);
+}
+
+TEST_F(FriendServiceTest, DeleteFriendGroup_EmptyId_Fail) {
+    swift::ErrorCode ec = service_->DeleteFriendGroup("u1", "");
+    EXPECT_EQ(ec, swift::ErrorCode::FRIEND_GROUP_DEFAULT);
+}
+
+TEST_F(FriendServiceTest, DeleteFriendGroup_NotFound_Fail) {
+    swift::ErrorCode ec = service_->DeleteFriendGroup("u1", "nonexistent_gid");
+    EXPECT_EQ(ec, swift::ErrorCode::FRIEND_GROUP_NOT_FOUND);
+}
+
+TEST_F(FriendServiceTest, DeleteFriendGroup_Success_MovesToDefault) {
+    std::string gid;
+    service_->CreateFriendGroup("u1", "自定义", &gid);
+    service_->GetFriendGroups("u1");
+    store_->AddFriend(FriendData{"u1", "u2", "", gid, 1000});
+    swift::ErrorCode ec = service_->DeleteFriendGroup("u1", gid);
+    EXPECT_EQ(ec, swift::ErrorCode::OK);
+    auto friends = service_->GetFriends("u1");
+    ASSERT_EQ(friends.size(), 1u);
+    EXPECT_EQ(friends[0].group_id, kDefaultFriendGroupId);
 }
 
 }  // namespace swift::friend_
