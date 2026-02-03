@@ -18,6 +18,7 @@ set(ROCKSDB_LIBS
 # 源文件
 set(SOURCES
     cmd/main.cpp
+    internal/config/config.cpp
     internal/store/user_store.cpp
     internal/service/auth_service.cpp
     internal/handler/auth_handler.cpp

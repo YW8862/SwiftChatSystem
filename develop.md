@@ -784,6 +784,50 @@ TEST_F(AuthServiceTest, VerifyCredentials_WrongPassword) {
 }
 ```
 
+#### 运行 main 并测试 gRPC
+
+验证 `cmd/main.cpp` 启动的 AuthSvr 进程是否正常对外提供 gRPC 接口：
+
+**方式一：脚本自动测（推荐）**
+
+```bash
+# 项目根目录执行；若无 bin/authsvr 会先 make build
+chmod +x scripts/test_authsvr.sh
+./scripts/test_authsvr.sh
+```
+
+脚本会：启动 AuthSvr（临时数据目录、默认 9094 端口）→ 用 grpcurl 依次调用 Register、VerifyCredentials、GetProfile、UpdateProfile → 检查 code=0 → 退出并清理。未安装 grpcurl 时仅启动服务并打印下方手动命令。
+
+**方式二：手动测试**
+
+```bash
+# 1. 构建
+make build
+
+# 2. 启动（当前终端或后台）
+export AUTHSVR_PORT=9094
+export AUTHSVR_ROCKSDB_PATH=./data/auth
+mkdir -p ./data/auth
+./bin/authsvr
+
+# 3. 另开终端，用 grpcurl 调用（需安装 grpcurl）
+GRPCURL_OPTS=(-plaintext -import-path backend/common/proto -import-path backend/authsvr/proto -proto backend/authsvr/proto/auth.proto)
+
+# 注册
+grpcurl "${GRPCURL_OPTS[@]}" -d '{"username":"alice","password":"pass1234","nickname":"Alice"}' localhost:9094 swift.auth.AuthService/Register
+
+# 校验凭证（登录用）
+grpcurl "${GRPCURL_OPTS[@]}" -d '{"username":"alice","password":"pass1234"}' localhost:9094 swift.auth.AuthService/VerifyCredentials
+
+# 获取资料（将 <user_id> 换成上一步返回的 user_id）
+grpcurl "${GRPCURL_OPTS[@]}" -d '{"user_id":"<user_id>"}' localhost:9094 swift.auth.AuthService/GetProfile
+
+# 更新资料
+grpcurl "${GRPCURL_OPTS[@]}" -d '{"user_id":"<user_id>","nickname":"Alice Updated"}' localhost:9094 swift.auth.AuthService/UpdateProfile
+```
+
+**预期**：Register/VerifyCredentials 成功时返回 `"code":0` 及 `user_id`；GetProfile 返回 UserProfile；UpdateProfile 返回 `"code":0`。失败时 `code` 为错误码（如 105 用户已存在）、`message` 为错误说明。
+
 ---
 
 ## 6. 阶段四：FriendSvr 好友服务

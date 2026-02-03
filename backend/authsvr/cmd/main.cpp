@@ -1,70 +1,105 @@
 /**
- * AuthSvr - 认证服务（日志测试版）
+ * AuthSvr - 认证服务
+ * 提供注册、校验凭证、获取/更新资料等 gRPC 接口。
  */
 
-#include <iostream>
-#include <csignal>
 #include <atomic>
-#include <thread>
-#include <chrono>
+#include <csignal>
+#include <cstdlib>
+#include <iostream>
+#include <memory>
+#include <string>
 
-// 只需引用这一个头文件
+#include <grpcpp/security/server_credentials.h>
+#include <grpcpp/server.h>
+#include <grpcpp/server_builder.h>
 #include <swift/log_helper.h>
 
+#include "config/config.h"
+#include "handler/auth_handler.h"
+#include "service/auth_service.h"
+#include "store/user_store.h"
+
+namespace {
 std::atomic<bool> g_running{true};
+std::unique_ptr<grpc::Server> g_server;
+} // namespace
 
 void SignalHandler(int signal) {
-    LogInfo("Received signal " << signal << ", shutting down...");
-    g_running = false;
+  LogInfo("Received signal " << signal << ", shutting down...");
+  g_running = false;
+  if (g_server) {
+    g_server->Shutdown();
+  }
 }
 
-int main(int argc, char* argv[]) {
-    (void)argc;
-    (void)argv;
-    
-    // 注册信号处理
-    std::signal(SIGINT, SignalHandler);
-    std::signal(SIGTERM, SignalHandler);
-    
-    // 初始化日志
-    if (!swift::log::InitFromEnv("authsvr")) {
-        std::cerr << "Failed to initialize logger!" << std::endl;
-        return 1;
+int main(int argc, char *argv[]) {
+  std::string config_file;
+  if (argc > 1) {
+    config_file = argv[1];
+  } else {
+    const char *env_config = std::getenv("AUTHSVR_CONFIG");
+    config_file = env_config ? env_config : "authsvr.conf";
+  }
+
+  std::signal(SIGINT, SignalHandler);
+  std::signal(SIGTERM, SignalHandler);
+
+  if (!swift::log::InitFromEnv("authsvr")) {
+    std::cerr << "Failed to initialize logger!" << std::endl;
+    return 1;
+  }
+
+  LogInfo("========================================");
+  LogInfo("AuthSvr starting...");
+  LogInfo("========================================");
+
+  swift::auth::AuthConfig config = swift::auth::LoadConfig(config_file);
+  LogInfo("Config: host=" << config.host << " port=" << config.port
+                          << " store=" << config.store_type
+                          << " path=" << config.rocksdb_path);
+
+  // 存储
+  std::shared_ptr<swift::auth::UserStore> store;
+  if (config.store_type == "rocksdb") {
+    try {
+      store =
+          std::make_shared<swift::auth::RocksDBUserStore>(config.rocksdb_path);
+      LogInfo("RocksDB opened: " << config.rocksdb_path);
+    } catch (const std::exception &e) {
+      LogError("Failed to open RocksDB: " << e.what());
+      swift::log::Shutdown();
+      return 1;
     }
-    
-    LogInfo("========================================");
-    LogInfo("AuthSvr starting...");
-    LogInfo("========================================");
-    
-    // 测试各级别日志
-    LogTrace("This is TRACE level");
-    LogDebug("This is DEBUG level");
-    LogInfo("This is INFO level");
-    LogWarning("This is WARNING level");
-    LogError("This is ERROR level");
-    
-    // 测试带变量的日志
-    int port = 9094;
-    std::string version = "1.0.0";
-    LogInfo("Server version: " << version << ", port: " << port);
-    
-    // 测试带 Tag 的日志
-    LogInfo(TAG("service", "authsvr"), "Service initialized");
-    LogInfo(TAG("user", "alice").Add("action", "login"), "User action logged");
-    
-    LogInfo("AuthSvr is running (press Ctrl+C to stop)");
-    
-    // 简单运行几秒后退出（测试用）
-    int count = 0;
-    while (g_running && count < 5) {
-        LogDebug("Heartbeat " << count);
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        count++;
-    }
-    
-    LogInfo("AuthSvr shutting down...");
+  } else {
+    LogError("Unsupported store_type: " << config.store_type);
     swift::log::Shutdown();
-    
-    std::cout << "Done! Check ./logs/ for log files." << std::endl;
-    return 0;
+    return 1;
+  }
+
+  // 业务层与 Handler
+  auto service_core = std::make_shared<swift::auth::AuthServiceCore>(store);
+  swift::auth::AuthHandler handler(service_core);
+
+  // gRPC 服务
+  std::string addr = config.host + ":" + std::to_string(config.port);
+  grpc::ServerBuilder builder;
+  builder.AddListeningPort(addr, grpc::InsecureServerCredentials());
+  builder.RegisterService(&handler);
+
+  g_server = builder.BuildAndStart();
+  if (!g_server) {
+    LogError("Failed to start gRPC server on " << addr);
+    swift::log::Shutdown();
+    return 1;
+  }
+
+  LogInfo("AuthSvr listening on " << addr << " (press Ctrl+C to stop)");
+
+  g_server->Wait();
+
+  g_server.reset();
+  LogInfo("AuthSvr shut down.");
+  swift::log::Shutdown();
+  return 0;
 }
