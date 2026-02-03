@@ -17,7 +17,7 @@ protected:
         auto suffix = std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
         user_db_path_ = "/tmp/auth_service_user_" + suffix;
         store_ = std::make_shared<RocksDBUserStore>(user_db_path_);
-        service_ = std::make_unique<AuthService>(store_);
+        service_ = std::make_unique<AuthServiceCore>(store_);
     }
 
     void TearDown() override {
@@ -28,7 +28,7 @@ protected:
 
     std::string user_db_path_;
     std::shared_ptr<RocksDBUserStore> store_;
-    std::unique_ptr<AuthService> service_;
+    std::unique_ptr<AuthServiceCore> service_;
 };
 
 // ============================================================================

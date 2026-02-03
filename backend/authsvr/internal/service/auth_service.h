@@ -5,14 +5,16 @@
 #include <optional>
 #include <cstdint>
 #include <utility>
+#include "swift/error_code.h"
 #include "../store/user_store.h"
 
 namespace swift::auth {
 
 /**
  * 用户资料（对外可见，不含密码）
+ * 注：与 proto UserProfile 对应，业务层用此结构体，Handler 层转成 proto 消息。
  */
-struct UserProfile {
+struct AuthProfile {
     std::string user_id;
     std::string username;
     std::string nickname;
@@ -24,17 +26,19 @@ struct UserProfile {
 
 /**
  * 认证服务业务逻辑（身份 + 资料；登录/登出/Token 统一走 OnlineSvr）
+ * 注：类名带 Core 以区分 proto 生成的 AuthService。
  */
-class AuthService {
+class AuthServiceCore {
 public:
-    explicit AuthService(std::shared_ptr<UserStore> store);
-    ~AuthService();
+    explicit AuthServiceCore(std::shared_ptr<UserStore> store);
+    ~AuthServiceCore();
 
     // 注册
     struct RegisterResult {
         bool success = false;
         std::string user_id;
         std::string error;
+        swift::ErrorCode error_code = swift::ErrorCode::OK;
     };
     RegisterResult Register(const std::string& username, const std::string& password,
                             const std::string& nickname, const std::string& email,
@@ -44,18 +48,20 @@ public:
     struct VerifyCredentialsResult {
         bool success = false;
         std::string user_id;
-        std::optional<UserProfile> profile;
+        std::optional<AuthProfile> profile;
         std::string error;
+        swift::ErrorCode error_code = swift::ErrorCode::OK;
     };
     VerifyCredentialsResult VerifyCredentials(const std::string& username, const std::string& password);
 
     // 获取用户资料
-    std::optional<UserProfile> GetProfile(const std::string& user_id);
+    std::optional<AuthProfile> GetProfile(const std::string& user_id);
 
     // 更新用户资料（空字符串表示不更新该字段）
     struct UpdateProfileResult {
         bool success = false;
         std::string error;
+        swift::ErrorCode error_code = swift::ErrorCode::OK;
     };
     UpdateProfileResult UpdateProfile(const std::string& user_id,
                                       const std::string& nickname,
@@ -66,7 +72,7 @@ private:
     std::string GenerateUserId();
     std::string HashPassword(const std::string& password);
     bool VerifyPassword(const std::string& password, const std::string& hash);
-    UserProfile ToProfile(const UserData& user);
+    AuthProfile ToProfile(const UserData& user);
 
     std::shared_ptr<UserStore> store_;
 };

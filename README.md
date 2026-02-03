@@ -13,26 +13,28 @@
 - Windows 客户端（Qt5）
 - Minikube 本地 Kubernetes 部署
 
+认证与登录：**AuthSvr** 负责注册、校验用户名密码（VerifyCredentials）、用户资料；**OnlineSvr** 负责登录会话、Token 签发与校验（Login/Logout/ValidateToken）。详见 `system.md`、`develop.md`。
+
 ## 项目结构
 
 ```
 SwiftChatSystem/
 ├── backend/                    # 后端服务
-│   ├── proto/                  # Protobuf 协议定义
-│   ├── common/                 # 公共库
-│   ├── gatesvr/               # 接入网关（WebSocket）
-│   ├── zonesvr/               # 路由服务（在线状态）
-│   ├── authsvr/               # 认证服务
-│   ├── friendsvr/             # 好友服务
-│   ├── chatsvr/               # 消息服务
-│   └── filesvr/               # 文件服务
+│   ├── common/                 # 公共库（utils、jwt_helper、proto 等）
+│   ├── authsvr/                # 认证服务（注册、VerifyCredentials、资料）
+│   ├── onlinesvr/              # 登录会话服务（Login/Logout/ValidateToken、JWT）
+│   ├── zonesvr/                 # 路由服务（在线状态、消息路由）
+│   ├── gatesvr/                 # 接入网关（WebSocket）
+│   ├── friendsvr/               # 好友服务
+│   ├── chatsvr/                 # 消息服务
+│   └── filesvr/                 # 文件服务
 ├── client/                     # 客户端
 │   ├── proto/                  # 客户端协议
-│   └── desktop/               # Qt 桌面客户端
+│   └── desktop/                # Qt 桌面客户端
+├── component/                  # 内部组件（如 AsyncLogger）
 ├── deploy/                     # 部署配置
-│   └── k8s/                   # Kubernetes YAML
-├── libs/                       # 第三方库
-└── docs/                       # 文档
+│   └── k8s/                    # Kubernetes YAML
+└── develop.md / system.md      # 开发与架构文档
 ```
 
 ## 技术栈
@@ -53,8 +55,9 @@ SwiftChatSystem/
 ### 1. 安装依赖
 
 ```bash
-# 使用 vcpkg
-vcpkg install grpc protobuf rocksdb boost-beast openssl
+# 使用 vcpkg（需指定工具链）
+vcpkg install grpc protobuf rocksdb boost-beast openssl nlohmann-json
+# 或从项目根目录：cmake -B build -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
 ```
 
 ### 2. 构建项目
@@ -82,21 +85,22 @@ minikube service gatesvr --url
 
 | 服务       | gRPC 端口 | 其他端口          |
 | ---------- | --------- | ----------------- |
-| GateSvr    | 9090      | WebSocket: 9090   |
+| GateSvr    | 9091      | WebSocket: 9090   |
 | ZoneSvr    | 9092      | -                 |
 | AuthSvr    | 9094      | -                 |
+| OnlineSvr  | 9095      | -                 |
 | FriendSvr  | 9096      | -                 |
 | ChatSvr    | 9098      | -                 |
 | FileSvr    | 9100      | HTTP: 8080        |
 
 ## 开发进度
 
-- [ ] 阶段 1：基础设施（Proto、AsyncLogger）
-- [ ] 阶段 2：认证与好友服务
-- [ ] 阶段 3：消息核心服务
-- [ ] 阶段 4：接入与路由层
+- [x] 阶段 1：基础设施（Proto、AsyncLogger、common 公共库与 JWT）
+- [x] 阶段 2：AuthSvr（注册、VerifyCredentials、资料）、OnlineSvr（登录会话、JWT）
+- [ ] 阶段 3：FriendSvr / ChatSvr / FileSvr 业务服务
+- [ ] 阶段 4：ZoneSvr 路由与 GateSvr 接入
 - [ ] 阶段 5：Qt 客户端
-- [ ] 阶段 6：容器化与部署
+- [ ] 阶段 6：容器化与 K8s 部署
 
 ## License
 

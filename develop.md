@@ -550,178 +550,138 @@ bool RocksDBUserStore::UsernameExists(const std::string& username) {
 }
 ```
 
-#### Step 2: 实现 SessionStore（RocksDB）
+#### Step 2: AuthSvr 无 SessionStore / JWT
+
+**当前设计：** AuthSvr 仅负责身份与资料，**不**包含 SessionStore 与 JWT。
+
+- **登录会话**（SessionStore、单设备策略、Token 签发）在 **OnlineSvr** 实现，见 [15. OnlineSvr 登录会话服务](#15-onlinesvr-登录会话服务)。
+- **JWT 工具**（HS256）在 **backend/common** 的 `swift/jwt_helper.h`、`jwt_helper.cpp` 中统一实现，供 OnlineSvr 等使用。
+
+AuthSvr 的 AuthService 仅依赖 **UserStore**，提供：Register、VerifyCredentials、GetProfile、UpdateProfile。
+
+#### Step 3: 实现 AuthService（身份与资料）
 
 ```cpp
-// backend/authsvr/internal/store/session_store.h
+// backend/authsvr/internal/service/auth_service.h
 
-struct SessionData {
-    std::string user_id;
-    std::string device_id;
-    std::string token;
-    int64_t login_time;
-    int64_t expire_at;
-};
+AuthService::AuthService(std::shared_ptr<UserStore> store);  // 仅 UserStore，无 SessionStore
 
-class SessionStore {
-public:
-    virtual bool SetSession(const SessionData& session) = 0;
-    virtual std::optional<SessionData> GetSession(const std::string& user_id) = 0;
-    virtual bool RemoveSession(const std::string& user_id) = 0;
-};
-```
-
-- RocksDB Key：`session:{user_id}`  
-- Value：JSON（device_id、token、login_time、expire_at）  
-- 作用：记录当前在线设备 + JWT，用来限制“单设备在线”并做 Token 幂等
-
-#### Step 3: 实现 JwtHelper（HS256）
-
-为避免依赖第三方库，使用 OpenSSL + nlohmann/json 自行实现 HS256：
-
-```cpp
-// backend/authsvr/internal/service/jwt_helper.cpp
-
-std::string JwtCreate(const std::string& user_id,
-                      const std::string& secret,
-                      int expire_hours);
-
-JwtPayload JwtVerify(const std::string& token,
-                     const std::string& secret);
-```
-
-- Header：`{"alg":"HS256","typ":"JWT"}`  
-- Payload：`iss / sub / iat / exp`  
-- 签名：`Base64UrlEncode(HMAC_SHA256(header.payload, secret))`  
-- 校验：同时检查签名、issuer、过期时间
-
-#### Step 4: 实现 AuthService（单设备登录）
-
-```cpp
-AuthService::AuthService(std::shared_ptr<UserStore> store,
-                         std::shared_ptr<SessionStore> session_store,
-                         const std::string& jwt_secret);
-
-AuthService::LoginResult AuthService::Login(..., const std::string& device_id, ...) {
-    auto user = store_->GetByUsername(username);
-    ...
-    auto session = session_store_->GetSession(user->user_id);
-    if (session && session->device_id != device_id) {
-        return { .success = false, .error = "User already logged in on another device" };
-    }
-    if (session && session->device_id == device_id && token 未过期) {
-        // 幂等返回同一个 token
-        return 已保存的 SessionData;
-    }
-    auto [token, expire_at] = GenerateToken(user->user_id);
-    session_store_->SetSession({user->user_id, device_id, token, now, expire_at});
-    ...
-}
-
-AuthService::TokenResult AuthService::ValidateToken(const std::string& token) {
-    auto payload = JwtVerify(token, jwt_secret_);
-    auto session = session_store_->GetSession(payload.user_id);
-    return payload.valid && session && session->token == token;
-}
-
-AuthService::LogoutResult AuthService::Logout(const std::string& user_id, const std::string& token) {
-    session_store_->RemoveSession(user_id); // 幂等
-}
+AuthService::RegisterResult AuthService::Register(username, password, nickname, email, avatar_url);
+AuthService::VerifyCredentialsResult AuthService::VerifyCredentials(username, password);
+std::optional<UserProfile> AuthService::GetProfile(user_id);
+AuthService::UpdateProfileResult AuthService::UpdateProfile(user_id, nickname, avatar_url, signature);
 ```
 
 关键行为：
 
 | 功能 | 说明 |
 |------|------|
-| 注册 | 校验用户名、生成 user_id、密码加盐哈希、写入 RocksDB |
-| 登录 | 同一设备返回相同 token，其他设备登录会被拒绝；成功后写入 SessionStore |
-| ValidateToken | 除验签外，还要确认 SessionStore 里存在匹配 token |
-| Logout | 清理 SessionStore，会话 idempotent，登出后其他设备可登录 |
-| GetProfile / UpdateProfile | 读写 UserStore，保持原逻辑 |
+| Register | 校验用户名、生成 user_id、密码加盐哈希、写入 UserStore |
+| VerifyCredentials | 校验用户名密码，返回 user_id 与 profile（供 ZoneSvr 后接 OnlineSvr.Login） |
+| GetProfile / UpdateProfile | 读写 UserStore |
 
-> 提示：如需改为“踢掉旧设备”，只需要在 SessionStore 中覆盖旧记录即可。
+#### Step 4: 实现 Handler（对外 API）
 
-#### Step 5: 实现 Handler（对外 API）
+Handler 层直接实现 gRPC 接口（Register、VerifyCredentials、GetProfile、UpdateProfile）。业务逻辑类命名为 `AuthServiceCore`，与 proto 生成的 `AuthService` 区分；用户资料用 `AuthProfile`，避免与 proto 的 `UserProfile` 重名。
 
-Handler 层直接实现 gRPC 接口，即对外 API 入口：
+```cpp
+// backend/authsvr/internal/handler/auth_handler.h
+
+#include <memory>
+#include "auth.grpc.pb.h"   // 由 swift_proto 提供（build 生成）
+
+namespace swift::auth {
+class AuthServiceCore;  // 业务逻辑类
+
+class AuthHandler : public AuthService::Service {
+public:
+    explicit AuthHandler(std::shared_ptr<AuthServiceCore> service);
+    ~AuthHandler() override;
+
+    ::grpc::Status Register(::grpc::ServerContext* context,
+                            const ::swift::auth::RegisterRequest* request,
+                            ::swift::auth::RegisterResponse* response) override;
+
+    ::grpc::Status VerifyCredentials(::grpc::ServerContext* context,
+                                      const ::swift::auth::VerifyCredentialsRequest* request,
+                                      ::swift::auth::VerifyCredentialsResponse* response) override;
+
+    ::grpc::Status GetProfile(::grpc::ServerContext* context,
+                              const ::swift::auth::GetProfileRequest* request,
+                              ::swift::auth::UserProfile* response) override;
+
+    ::grpc::Status UpdateProfile(::grpc::ServerContext* context,
+                                  const ::swift::auth::UpdateProfileRequest* request,
+                                  ::swift::common::CommonResponse* response) override;
+
+private:
+    std::shared_ptr<AuthServiceCore> service_;
+};
+}
+```
 
 ```cpp
 // backend/authsvr/internal/handler/auth_handler.cpp
 
 #include "auth_handler.h"
 #include "../service/auth_service.h"
-#include "auth.grpc.pb.h"
 
-class AuthServiceImpl final : public swift::auth::AuthService::Service {
-public:
-    explicit AuthServiceImpl(std::shared_ptr<::swift::auth::AuthService> service)
-        : service_(std::move(service)) {}
-    
-    grpc::Status Register(grpc::ServerContext* context,
-                          const swift::auth::RegisterRequest* request,
-                          swift::auth::RegisterResponse* response) override {
-        
-        auto result = service_->Register(
-            request->username(),
-            request->password(),
-            request->nickname(),
-            request->email()
-        );
-        
-        if (result.success) {
-            response->set_code(0);
-            response->set_user_id(result.user_id);
-        } else {
-            response->set_code(1);
-            response->set_message(result.error);
-        }
-        
-        return grpc::Status::OK;
-    }
-    
-    grpc::Status Login(grpc::ServerContext* context,
-                       const swift::auth::LoginRequest* request,
-                       swift::auth::LoginResponse* response) override {
-        
-        auto result = service_->Login(
-            request->username(),
-            request->password(),
-            request->device_id(),
-            request->device_type()
-        );
-        
-        if (result.success) {
-            response->set_code(0);
-            response->set_user_id(result.user_id);
-            response->set_token(result.token);
-            response->set_expire_at(result.expire_at);
-        } else {
-            response->set_code(1);
-            response->set_message(result.error);
-        }
-        
-        return grpc::Status::OK;
-    }
-    
-    grpc::Status ValidateToken(grpc::ServerContext* context,
-                                const swift::auth::TokenRequest* request,
-                                swift::auth::TokenResponse* response) override {
-        
-        auto result = service_->ValidateToken(request->token());
-        
+namespace swift::auth {
+
+::grpc::Status AuthHandler::Register(::grpc::ServerContext* context,
+                                      const ::swift::auth::RegisterRequest* request,
+                                      ::swift::auth::RegisterResponse* response) {
+    auto result = service_->Register(
+        request->username(), request->password(),
+        request->nickname(), request->email(), request->avatar_url());
+    if (result.success) {
         response->set_code(0);
-        response->set_valid(result.valid);
-        if (result.valid) {
-            response->set_user_id(result.user_id);
-        }
-        
-        return grpc::Status::OK;
+        response->set_user_id(result.user_id);
+    } else {
+        response->set_code(1);
+        response->set_message(result.error);
     }
-    
-private:
-    std::shared_ptr<::swift::auth::AuthService> service_;
-};
+    return ::grpc::Status::OK;
+}
+
+::grpc::Status AuthHandler::VerifyCredentials(...) {
+    auto result = service_->VerifyCredentials(request->username(), request->password());
+    if (result.success) {
+        response->set_code(0);
+        response->set_user_id(result.user_id);
+        if (result.profile) {
+            auto* p = response->mutable_profile();
+            p->set_user_id(result.profile->user_id);
+            p->set_username(result.profile->username);
+            // ... nickname, avatar_url, signature, gender, created_at
+        }
+    } else {
+        response->set_code(1);
+        response->set_message(result.error);
+    }
+    return ::grpc::Status::OK;
+}
+
+::grpc::Status AuthHandler::GetProfile(...) {
+    auto profile = service_->GetProfile(request->user_id());
+    if (!profile) return ::grpc::Status(::grpc::StatusCode::NOT_FOUND, "user not found");
+    response->set_user_id(profile->user_id);
+    // ... 其余字段
+    return ::grpc::Status::OK;
+}
+
+::grpc::Status AuthHandler::UpdateProfile(...) {
+    auto result = service_->UpdateProfile(
+        request->user_id(), request->nickname(),
+        request->avatar_url(), request->signature());
+    response->set_code(result.success ? 0 : 1);
+    if (!result.success) response->set_message(result.error);
+    return ::grpc::Status::OK;
+}
+}
 ```
+
+说明：proto 生成目录由 `swift_proto` 的 `target_include_directories` 提供，authsvr 链接 `swift_proto` 后即可包含 `auth.grpc.pb.h`。
 
 #### Step 6: 实现 main.cpp
 
@@ -746,13 +706,11 @@ int main(int argc, char* argv[]) {
     
     LOG_INFO("AuthSvr starting...");
     
-    // 初始化存储
-    auto user_store = std::make_shared<swift::auth::RocksDBUserStore>(config.user_db_path);
-    auto session_store = std::make_shared<swift::auth::RocksDBSessionStore>(config.session_db_path);
+    // 初始化存储（仅 UserStore，无 SessionStore）
+    auto user_store = std::make_shared<swift::auth::RocksDBUserStore>(config.rocksdb_path);
     
     // 初始化服务
-    auto service = std::make_shared<swift::auth::AuthService>(
-        user_store, session_store, config.jwt_secret);
+    auto service = std::make_shared<swift::auth::AuthService>(user_store);
     
     // 启动 gRPC 服务器
     std::string server_address = config.host + ":" + std::to_string(config.port);
@@ -778,71 +736,51 @@ int main(int argc, char* argv[]) {
 #### 单元测试
 
 ```cpp
-// backend/authsvr/tests/test_auth_service.cpp
+// backend/authsvr/internal/service/auth_service_test.cpp
 
+#include "auth_service.h"
+#include "../store/user_store.h"
 #include <gtest/gtest.h>
-#include "../internal/service/auth_service.h"
-#include "../internal/store/user_store.h"
-#include "../internal/store/session_store.h"
+#include <filesystem>
+#include <chrono>
 
 class AuthServiceTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        auto suffix = std::to_string(
-            std::chrono::high_resolution_clock::now().time_since_epoch().count());
-        user_db_ = "/tmp/test_auth_user_" + suffix;
-        session_db_ = "/tmp/test_auth_session_" + suffix;
-        store_ = std::make_shared<swift::auth::RocksDBUserStore>(user_db_);
-        session_store_ = std::make_shared<swift::auth::RocksDBSessionStore>(session_db_);
-        service_ = std::make_unique<swift::auth::AuthService>(
-            store_, session_store_, "test_jwt_secret");
+        auto suffix = std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+        user_db_path_ = "/tmp/auth_service_user_" + suffix;
+        store_ = std::make_shared<swift::auth::RocksDBUserStore>(user_db_path_);
+        service_ = std::make_unique<swift::auth::AuthService>(store_);
     }
-    
     void TearDown() override {
         service_.reset();
         store_.reset();
-        session_store_.reset();
-        std::filesystem::remove_all(user_db_);
-        std::filesystem::remove_all(session_db_);
+        std::filesystem::remove_all(user_db_path_);
     }
-    
-    std::string user_db_;
-    std::string session_db_;
+    std::string user_db_path_;
     std::shared_ptr<swift::auth::RocksDBUserStore> store_;
-    std::shared_ptr<swift::auth::RocksDBSessionStore> session_store_;
     std::unique_ptr<swift::auth::AuthService> service_;
 };
 
-TEST_F(AuthServiceTest, LoginSingleDeviceSuccess) {
-    service_->Register("testuser", "password123", "Test User", "test@example.com");
-    auto result = service_->Login("testuser", "password123", "deviceA", "windows");
+TEST_F(AuthServiceTest, Register_Success) {
+    auto result = service_->Register("alice", "password123", "Alice", "alice@example.com");
     EXPECT_TRUE(result.success);
-    EXPECT_FALSE(result.token.empty());
+    EXPECT_FALSE(result.user_id.empty());
 }
 
-TEST_F(AuthServiceTest, LoginWrongPassword) {
-    service_->Register("testuser", "password123", "Test User", "test@example.com");
-    auto result = service_->Login("testuser", "wrongpassword", "device1", "windows");
+TEST_F(AuthServiceTest, VerifyCredentials_Success) {
+    auto reg = service_->Register("alice", "password123", "Alice", "alice@example.com");
+    ASSERT_TRUE(reg.success);
+    auto result = service_->VerifyCredentials("alice", "password123");
+    EXPECT_TRUE(result.success);
+    EXPECT_EQ(result.user_id, reg.user_id);
+    ASSERT_TRUE(result.profile.has_value());
+}
+
+TEST_F(AuthServiceTest, VerifyCredentials_WrongPassword) {
+    service_->Register("alice", "password123", "Alice", "");
+    auto result = service_->VerifyCredentials("alice", "wrongpassword");
     EXPECT_FALSE(result.success);
-}
-
-TEST_F(AuthServiceTest, LoginRejectedOnSecondDevice) {
-    service_->Register("testuser", "password123", "Test User", "test@example.com");
-    auto first = service_->Login("testuser", "password123", "deviceA", "windows");
-    ASSERT_TRUE(first.success);
-
-    auto second = service_->Login("testuser", "password123", "deviceB", "windows");
-    EXPECT_FALSE(second.success);
-}
-
-TEST_F(AuthServiceTest, LogoutAllowsReLogin) {
-    service_->Register("testuser", "password123", "Test User", "test@example.com");
-    auto first = service_->Login("testuser", "password123", "deviceA", "windows");
-    ASSERT_TRUE(first.success);
-
-    service_->Logout(first.user_id, first.token);
-    auto second = service_->Login("testuser", "password123", "deviceB", "windows");
-    EXPECT_TRUE(second.success);
 }
 ```
 
@@ -2060,8 +1998,7 @@ backend/onlinesvr/
     ├── config/config.h/cpp
     ├── store/session_store.h/cpp   # RocksDB 会话存储
     ├── service/
-    │   ├── jwt_helper.h/cpp        # JWT 签发与校验（iss=swift-online）
-    │   └── online_service.h/cpp
+    │   └── online_service.h/cpp   # 使用 common 的 swift::JwtCreate/JwtVerify（swift/jwt_helper.h）
     └── handler/online_handler.h/cpp
 ```
 

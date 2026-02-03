@@ -116,21 +116,21 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 │                                                                    │
 │  ┌──────────────────────────────────────────────────────────────┐  │
 │  │                    RPC Clients (统一持有)                     │  │
-│  │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ │  │
-│  │  │AuthClient  │ │OnlineClient│ │ChatClient  │ │FriendClient│ │FileClient  │ │  │
-│  │  └─────┬──────┘ └─────┬──────┘ └─────┬──────┘ └─────┬──────┘ │  │
-│  └────────┼──────────────┼──────────────┼──────────────┼────────┘  │
-│           │              │              │              │           │
-│  ┌────────┼──────────────┼──────────────┼──────────────┼────────┐  │
-│  │        │         SessionStore (消息路由)            │        │  │
-│  └────────┼──────────────┼──────────────┼──────────────┼────────┘  │
-└───────────┼──────────────┼──────────────┼──────────────┼───────────┘
-            │              │              │              │
-            ▼              ▼              ▼              ▼
+│  │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ │  │
+│  │  │AuthClient  │ │OnlineClient│ │ChatClient  │ │FriendClient│ │ FileClient │ │  │
+│  │  └─────┬──────┘ └─────┬──────┘ └─────┬──────┘ └─────┬──────┘ └─────┬──────┘ │  │
+│  └────────┼──────────────┼──────────────┼──────────────┼──────────────┘  │
+│           │              │              │              │              │
+│  ┌────────┼──────────────┼──────────────┼──────────────┼──────────────┐  │
+│  │        │         SessionStore (消息路由)                 │        │  │
+│  └────────┼──────────────┼──────────────┼──────────────┼──────────────┘  │
+└───────────┼──────────────┼──────────────┼──────────────┼──────────────┘
+            │              │              │              │              │
+            ▼              ▼              ▼              ▼              ▼
        ┌─────────┐ ┌─────────┐ ┌─────────┐    ┌─────────┐    ┌─────────┐
        │ AuthSvr │ │OnlineSvr│ │ ChatSvr │───→│ FileSvr │    │FriendSvr│
        │(身份/资料)│ │(登录会话)│ │(实际逻辑)│    │(实际逻辑)│   │(实际逻辑)│
-       └─────────┘    └─────────┘    └─────────┘    └─────────┘
+       └─────────┘ └─────────┘ └─────────┘    └─────────┘    └─────────┘
                            │              ↑
                            └──────────────┘
                           (服务间直接调用)
@@ -196,7 +196,7 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 | **Service** | 业务逻辑 | 核心业务处理 |
 | **Store** | 数据持久化 | 存储抽象与实现 |
 
-- **OnlineSvr** 的 Service 层依赖 `SessionStore`（RocksDB）记录登录会话 + JWT 签发，单设备在线策略在此实现；ZoneSvr 登录/登出直接调 OnlineSvr。**AuthSvr** 提供 VerifyCredentials（校验用户名密码并返回 user_id、profile），供 ZoneSvr 登录时先校验再调 OnlineSvr.Login；AuthSvr 仍保留 Login/Logout/ValidateToken（本地 SessionStore）供直连客户端兼容。
+- **OnlineSvr** 的 Service 层依赖 `SessionStore`（RocksDB）记录登录会话，使用公共库 `swift/jwt_helper.h` 签发/校验 JWT，单设备在线策略在此实现；登录/登出/验 Token 统一走 OnlineSvr。**AuthSvr** 仅负责注册、VerifyCredentials（校验用户名密码并返回 user_id、profile）、GetProfile、UpdateProfile，无 SessionStore，无 Login/Logout/ValidateToken。
 
 ### 2.4 关键设计决策
 
@@ -658,8 +658,12 @@ SwiftChatSystem/
 │   │   │   ├── common.h
 │   │   │   ├── config.h
 │   │   │   ├── utils.h
-│   │   │   └── result.h
+│   │   │   ├── jwt_helper.h          # 公共 JWT（HS256），供 OnlineSvr 等使用
+│   │   │   └── log_helper.h
 │   │   └── src/
+│   │       ├── utils.cpp
+│   │       ├── config.cpp
+│   │       └── jwt_helper.cpp
 │   │
 │   ├── gatesvr/                      # 接入网关
 │   │   ├── CMakeLists.txt
@@ -688,6 +692,7 @@ SwiftChatSystem/
 │   │       ├── rpc/                  # RPC 客户端封装
 │   │       │   ├── rpc_client_base.h/cpp
 │   │       │   ├── auth_rpc_client.h/cpp
+│   │       │   ├── online_rpc_client.h/cpp   # 登录/登出/ValidateToken 走 OnlineSvr
 │   │       │   ├── chat_rpc_client.h/cpp
 │   │       │   ├── friend_rpc_client.h/cpp
 │   │       │   ├── group_rpc_client.h/cpp
@@ -698,7 +703,7 @@ SwiftChatSystem/
 │   │       ├── store/                # SessionStore
 │   │       └── config/
 │   │
-│   ├── authsvr/                      # 认证服务
+│   ├── authsvr/                      # 认证服务（身份+资料，无会话）
 │   │   ├── CMakeLists.txt
 │   │   ├── Dockerfile
 │   │   ├── cmd/main.cpp
@@ -706,7 +711,18 @@ SwiftChatSystem/
 │   │   └── internal/
 │   │       ├── handler/
 │   │       ├── service/
-│   │       ├── store/                # UserStore
+│   │       ├── store/                # UserStore（无 SessionStore）
+│   │       └── config/
+│   │
+│   ├── onlinesvr/                    # 登录会话服务
+│   │   ├── CMakeLists.txt
+│   │   ├── Dockerfile
+│   │   ├── cmd/main.cpp
+│   │   ├── proto/online.proto
+│   │   └── internal/
+│   │       ├── handler/
+│   │       ├── service/              # 使用 common 的 swift::JwtCreate/JwtVerify
+│   │       ├── store/                # SessionStore（RocksDB）
 │   │       └── config/
 │   │
 │   ├── friendsvr/                    # 好友服务

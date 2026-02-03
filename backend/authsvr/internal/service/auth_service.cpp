@@ -39,16 +39,16 @@ bool ValidatePassword(const std::string& password) {
 // 构造/析构
 // ============================================================================
 
-AuthService::AuthService(std::shared_ptr<UserStore> store)
+AuthServiceCore::AuthServiceCore(std::shared_ptr<UserStore> store)
     : store_(std::move(store)) {}
 
-AuthService::~AuthService() = default;
+AuthServiceCore::~AuthServiceCore() = default;
 
 // ============================================================================
 // Register
 // ============================================================================
 
-AuthService::RegisterResult AuthService::Register(
+AuthServiceCore::RegisterResult AuthServiceCore::Register(
     const std::string& username,
     const std::string& password,
     const std::string& nickname,
@@ -60,18 +60,21 @@ AuthService::RegisterResult AuthService::Register(
     if (!ValidateUsername(username)) {
         result.success = false;
         result.error = "Username must be 3-32 chars, alphanumeric and underscore";
+        result.error_code = swift::ErrorCode::USERNAME_INVALID;
         return result;
     }
 
     if (!ValidatePassword(password)) {
         result.success = false;
         result.error = "Password must be at least 6 characters";
+        result.error_code = swift::ErrorCode::PASSWORD_TOO_WEAK;
         return result;
     }
 
     if (store_->UsernameExists(username)) {
         result.success = false;
         result.error = "Username already exists";
+        result.error_code = swift::ErrorCode::USER_ALREADY_EXISTS;
         return result;
     }
 
@@ -96,6 +99,7 @@ AuthService::RegisterResult AuthService::Register(
     } else {
         result.success = false;
         result.error = "Failed to create user";
+        result.error_code = swift::ErrorCode::ROCKSDB_ERROR;
     }
 
     return result;
@@ -105,7 +109,7 @@ AuthService::RegisterResult AuthService::Register(
 // VerifyCredentials
 // ============================================================================
 
-AuthService::VerifyCredentialsResult AuthService::VerifyCredentials(
+AuthServiceCore::VerifyCredentialsResult AuthServiceCore::VerifyCredentials(
     const std::string& username,
     const std::string& password) {
 
@@ -115,12 +119,14 @@ AuthService::VerifyCredentialsResult AuthService::VerifyCredentials(
     if (!user) {
         result.success = false;
         result.error = "User not found";
+        result.error_code = swift::ErrorCode::USER_NOT_FOUND;
         return result;
     }
 
     if (!VerifyPassword(password, user->password_hash)) {
         result.success = false;
         result.error = "Wrong password";
+        result.error_code = swift::ErrorCode::PASSWORD_WRONG;
         return result;
     }
 
@@ -134,7 +140,7 @@ AuthService::VerifyCredentialsResult AuthService::VerifyCredentials(
 // GetProfile
 // ============================================================================
 
-std::optional<UserProfile> AuthService::GetProfile(const std::string& user_id) {
+std::optional<AuthProfile> AuthServiceCore::GetProfile(const std::string& user_id) {
     auto user = store_->GetById(user_id);
     if (!user) return std::nullopt;
     return ToProfile(*user);
@@ -144,7 +150,7 @@ std::optional<UserProfile> AuthService::GetProfile(const std::string& user_id) {
 // UpdateProfile
 // ============================================================================
 
-AuthService::UpdateProfileResult AuthService::UpdateProfile(
+AuthServiceCore::UpdateProfileResult AuthServiceCore::UpdateProfile(
     const std::string& user_id,
     const std::string& nickname,
     const std::string& avatar_url,
@@ -156,6 +162,7 @@ AuthService::UpdateProfileResult AuthService::UpdateProfile(
     if (!user) {
         result.success = false;
         result.error = "User not found";
+        result.error_code = swift::ErrorCode::USER_NOT_FOUND;
         return result;
     }
 
@@ -170,6 +177,7 @@ AuthService::UpdateProfileResult AuthService::UpdateProfile(
     } else {
         result.success = false;
         result.error = "Failed to update profile";
+        result.error_code = swift::ErrorCode::ROCKSDB_ERROR;
     }
 
     return result;
@@ -179,20 +187,20 @@ AuthService::UpdateProfileResult AuthService::UpdateProfile(
 // 私有方法
 // ============================================================================
 
-std::string AuthService::GenerateUserId() {
+std::string AuthServiceCore::GenerateUserId() {
     return swift::utils::GenerateShortId("u_", 12);
 }
 
-std::string AuthService::HashPassword(const std::string& password) {
+std::string AuthServiceCore::HashPassword(const std::string& password) {
     return swift::utils::SHA256(password + kPasswordSalt);
 }
 
-bool AuthService::VerifyPassword(const std::string& password, const std::string& hash) {
+bool AuthServiceCore::VerifyPassword(const std::string& password, const std::string& hash) {
     return HashPassword(password) == hash;
 }
 
-UserProfile AuthService::ToProfile(const UserData& user) {
-    UserProfile p;
+AuthProfile AuthServiceCore::ToProfile(const UserData& user) {
+    AuthProfile p;
     p.user_id = user.user_id;
     p.username = user.username;
     p.nickname = user.nickname;

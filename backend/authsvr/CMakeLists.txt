@@ -20,17 +20,16 @@ set(SOURCES
     cmd/main.cpp
     internal/store/user_store.cpp
     internal/service/auth_service.cpp
-    # internal/config/config.cpp
-    # internal/handler/auth_handler.cpp
+    internal/handler/auth_handler.cpp
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-# 包含目录
+# 包含目录（含 proto 生成头 auth.grpc.pb.h 等，来自 swift_proto 的生成目录）
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/internal
-    ${CMAKE_CURRENT_SOURCE_DIR}/proto
     ${CMAKE_SOURCE_DIR}/backend/common/include
+    $<TARGET_PROPERTY:swift_proto,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
 # 链接库

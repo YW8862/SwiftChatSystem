@@ -69,6 +69,10 @@ std::string BytesToHex(const unsigned char *data, size_t len) {
 // ID 生成函数实现
 // ============================================================================
 
+/**
+ * GenerateUUID 使用 C++11 std::mt19937_64 生成符合 UUID v4 的 36 字符字符串，
+ * 适用于会话 ID、请求 ID 等。如需密码学强度随机数，可改用 OpenSSL RAND_bytes。
+ */
 std::string GenerateUUID() {
   auto &gen = GetRandomEngine();
   std::uniform_int_distribution<uint64_t> dis;
@@ -182,16 +186,18 @@ int64_t ParseTimestamp(const std::string &time_str, const std::string &format) {
 // 哈希函数实现 (OpenSSL)
 // ============================================================================
 
+/**
+ * SHA256：对 input 计算 SHA-256，返回 64 字符小写十六进制串。
+ * 用途：密码/盐哈希、内容指纹、签名输入等。
+ */
 std::string SHA256(const std::string &input) {
   unsigned char hash[SHA256_DIGEST_LENGTH]; // 32 字节
 
-  // 计算 SHA256
   SHA256_CTX ctx;
   SHA256_Init(&ctx);
   SHA256_Update(&ctx, input.c_str(), input.size());
   SHA256_Final(hash, &ctx);
 
-  // 转换为十六进制字符串
   return BytesToHex(hash, SHA256_DIGEST_LENGTH);
 }
 
