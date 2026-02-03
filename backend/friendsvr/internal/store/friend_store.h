@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 #include <optional>
@@ -81,6 +82,44 @@ public:
     virtual bool Unblock(const std::string& user_id, const std::string& target_id) = 0;
     virtual bool IsBlocked(const std::string& user_id, const std::string& target_id) = 0;
     virtual std::vector<std::string> GetBlockList(const std::string& user_id) = 0;
+};
+
+/**
+ * RocksDB 实现
+ */
+class RocksDBFriendStore : public FriendStore {
+public:
+    explicit RocksDBFriendStore(const std::string& db_path);
+    ~RocksDBFriendStore() override;
+
+    bool AddFriend(const FriendData& data) override;
+    bool RemoveFriend(const std::string& user_id, const std::string& friend_id) override;
+    std::vector<FriendData> GetFriends(const std::string& user_id,
+                                       const std::string& group_id = "") override;
+    bool IsFriend(const std::string& user_id, const std::string& friend_id) override;
+    bool UpdateRemark(const std::string& user_id, const std::string& friend_id,
+                     const std::string& remark) override;
+    bool MoveFriend(const std::string& user_id, const std::string& friend_id,
+                    const std::string& to_group_id) override;
+
+    bool CreateRequest(const FriendRequestData& req) override;
+    std::optional<FriendRequestData> GetRequest(const std::string& request_id) override;
+    bool UpdateRequestStatus(const std::string& request_id, int status) override;
+    std::vector<FriendRequestData> GetReceivedRequests(const std::string& user_id) override;
+    std::vector<FriendRequestData> GetSentRequests(const std::string& user_id) override;
+
+    bool CreateGroup(const FriendGroupData& group) override;
+    std::vector<FriendGroupData> GetGroups(const std::string& user_id) override;
+    bool DeleteGroup(const std::string& user_id, const std::string& group_id) override;
+
+    bool Block(const std::string& user_id, const std::string& target_id) override;
+    bool Unblock(const std::string& user_id, const std::string& target_id) override;
+    bool IsBlocked(const std::string& user_id, const std::string& target_id) override;
+    std::vector<std::string> GetBlockList(const std::string& user_id) override;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace swift::friend_
