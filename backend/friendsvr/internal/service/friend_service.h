@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "../store/friend_store.h"
+#include "swift/error_code.h"
 
 namespace swift::friend_ {
 
@@ -41,6 +42,9 @@ public:
     // 获取全部分组
     std::vector<FriendGroupData> GetFriendGroups(const std::string& user_id);
 
+    // 删除好友分组（分组内好友移至默认分组；默认分组不能删除）
+    swift::ErrorCode DeleteFriendGroup(const std::string& user_id, const std::string& group_id);
+
     // 移动好友到指定分组
     bool MoveFriend(const std::string& user_id, const std::string& friend_id,
                     const std::string& to_group_id);
@@ -53,6 +57,9 @@ public:
     std::vector<FriendRequestData> GetFriendRequests(const std::string& user_id, int type = 0);
 
 private:
+    /** 确保默认分组「我的好友」存在（不存在则创建） */
+    void EnsureDefaultGroup(const std::string& user_id);
+
     std::shared_ptr<FriendStore> store_;
 };
 

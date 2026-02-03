@@ -78,7 +78,9 @@ enum class ErrorCode {
     BLOCK_LIMIT_REACHED = 208,     // 黑名单数量已达上限
     ALREADY_BLOCKED = 209,         // 已在黑名单中
     NOT_BLOCKED = 210,             // 不在黑名单中
-    
+    FRIEND_GROUP_DEFAULT = 211,    // 默认分组不能删除
+    FRIEND_GROUP_NOT_FOUND = 212,  // 好友分组不存在
+
     // ========== 消息错误 300-399 ==========
     MSG_NOT_FOUND = 300,           // 消息不存在
     RECALL_TIMEOUT = 301,          // 超过撤回时间限制
@@ -126,6 +128,7 @@ enum class ErrorCode {
     ADMIN_LIMIT_REACHED = 514,     // 管理员数量已达上限
     OWNER_CANNOT_LEAVE = 515,      // 群主不能退群
     CANNOT_KICK_ADMIN = 516,       // 不能踢出管理员
+    GROUP_MEMBERS_TOO_FEW = 517,   // 建群至少需 3 人（含创建者），不允许 1 人或 2 人建群
     
     // ========== 网关错误 600-699 ==========
     CONNECTION_CLOSED = 600,       // 连接已关闭
@@ -226,6 +229,8 @@ inline const char* ErrorCodeToString(ErrorCode code) {
         {ErrorCode::BLOCK_LIMIT_REACHED, "block limit reached"},
         {ErrorCode::ALREADY_BLOCKED, "already blocked"},
         {ErrorCode::NOT_BLOCKED, "not blocked"},
+        {ErrorCode::FRIEND_GROUP_DEFAULT, "default friend group cannot be deleted"},
+        {ErrorCode::FRIEND_GROUP_NOT_FOUND, "friend group not found"},
         
         // ========== 消息错误 300-399 ==========
         {ErrorCode::MSG_NOT_FOUND, "message not found"},
@@ -274,6 +279,7 @@ inline const char* ErrorCodeToString(ErrorCode code) {
         {ErrorCode::ADMIN_LIMIT_REACHED, "admin limit reached"},
         {ErrorCode::OWNER_CANNOT_LEAVE, "owner cannot leave"},
         {ErrorCode::CANNOT_KICK_ADMIN, "cannot kick admin"},
+        {ErrorCode::GROUP_MEMBERS_TOO_FEW, "group requires at least 3 members"},
         
         // ========== 网关错误 600-699 ==========
         {ErrorCode::CONNECTION_CLOSED, "connection closed"},

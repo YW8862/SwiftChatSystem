@@ -80,6 +80,12 @@ message MoveFriendRequest {
     string to_group_id = 3;
 }
 
+// 删除好友分组（分组内好友会移至默认分组；默认分组不能删除）
+message DeleteFriendGroupRequest {
+    string user_id = 1;
+    string group_id = 2;
+}
+
 message SetRemarkRequest {
     string user_id = 1;
     string friend_id = 2;
@@ -158,6 +164,9 @@ service FriendService {
     
     // 移动好友到分组
     rpc MoveFriend(MoveFriendRequest) returns (swift.common.CommonResponse);
+    
+    // 删除好友分组（分组内好友会移至默认分组；默认分组不能删除）
+    rpc DeleteFriendGroup(DeleteFriendGroupRequest) returns (swift.common.CommonResponse);
     
     // 设置好友备注
     rpc SetRemark(SetRemarkRequest) returns (swift.common.CommonResponse);

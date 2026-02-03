@@ -1,11 +1,14 @@
-# 使用 build 目录的 compile_commands.json（与真实编译一致，含 proto 生成头路径）
+# 使用 build 目录的 compile_commands.json（与真实编译一致）
+# 以下 Add 作为后备，保证编辑器能解析头文件（编译正常但 IDE 报错时生效）
 CompileFlags:
   CompilationDatabase: build
   Add:
     - -I/usr/include
     - -I/usr/include/rocksdb
     - -I/usr/include/nlohmann
-    # proto 生成头（如 auth.grpc.pb.h）所在目录，build 一次后存在；无 build 时编辑器可能仍报错
+    # common 头（swift/utils.h、swift/error_code.h 等）
+    - -Ibackend/common/include
+    # proto 生成头（auth.grpc.pb.h 等），build 一次后存在
     - -Ibuild/backend/common/proto/generated
   Remove:
     - -W*

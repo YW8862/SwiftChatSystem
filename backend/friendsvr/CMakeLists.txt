@@ -9,8 +9,10 @@ set(ROCKSDB_LIBS rocksdb pthread dl z snappy lz4 bz2)
 
 add_executable(${PROJECT_NAME}
     cmd/main.cpp
+    internal/config/config.cpp
     internal/store/friend_store.cpp
     internal/service/friend_service.cpp
+    internal/handler/friend_handler.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE

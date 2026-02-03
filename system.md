@@ -104,7 +104,7 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 | **AuthSystem** | 登录/登出走 OnlineSvr，身份与资料走 AuthSvr（VerifyCredentials + OnlineSvr.Login） |
 | **ChatSystem** | RPC 转发层，调用 ChatSvr，协调消息路由 |
 | **FriendSystem** | RPC 转发层，调用 FriendSvr |
-| **GroupSystem** | RPC 转发层，调用 ChatSvr(GroupService) |
+| **GroupSystem** | RPC 转发层，调用 ChatSvr(GroupService)；创建群至少 3 人，邀请仅对非成员生效 |
 | **FileSystem** | RPC 转发层，调用 FileSvr |
 | **SessionStore** | ZoneSvr 内在线会话（消息路由）；登录会话在 OnlineSvr |
 

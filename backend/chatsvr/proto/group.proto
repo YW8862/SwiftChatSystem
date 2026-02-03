@@ -13,7 +13,8 @@ message CreateGroupRequest {
     string creator_id = 1;
     string group_name = 2;
     string avatar_url = 3;
-    repeated string member_ids = 4;   // 初始成员
+    // 初始成员（不含创建者）。创建者 + member_ids 至少 3 人，不允许 1 人或 2 人建群
+    repeated string member_ids = 4;
 }
 
 message CreateGroupResponse {
@@ -45,6 +46,7 @@ message UpdateGroupRequest {
     string announcement = 5;
 }
 
+// 邀请非群成员进群（仅对当前不在群内的用户生效）
 message InviteMembersRequest {
     string group_id = 1;
     string inviter_id = 2;

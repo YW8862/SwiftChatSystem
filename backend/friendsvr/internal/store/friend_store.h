@@ -40,6 +40,11 @@ struct FriendGroupData {
     int sort_order = 0;
 };
 
+/** 默认分组 ID（不可删除，默认创建，名称「我的好友」） */
+constexpr const char* kDefaultFriendGroupId = "default";
+/** 默认分组显示名称 */
+constexpr const char* kDefaultFriendGroupName = "我的好友";
+
 /**
  * 好友存储接口
  * 

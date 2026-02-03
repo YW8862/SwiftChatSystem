@@ -61,13 +61,16 @@ bool FriendService::HandleRequest(const std::string& user_id, const std::string&
         return false;  // 已处理过
 
     if (accept) {
-        // 接收方(user_id) 添加 发送方(from_user_id) 为好友，放入 group_id
+        // 接收方(user_id) 添加 发送方(from_user_id) 为好友，放入 group_id；空则放入默认分组
+        std::string target_group = group_id.empty() ? kDefaultFriendGroupId : group_id;
+        EnsureDefaultGroup(user_id);
+
         int64_t now = swift::utils::GetTimestampMs();
         FriendData data;
         data.user_id = user_id;
         data.friend_id = req->from_user_id;
         data.remark = "";
-        data.group_id = group_id;
+        data.group_id = target_group;
         data.added_at = now;
         if (!store_->AddFriend(data))
             return false;  // 可能已互为好友或其它错误
@@ -147,7 +150,33 @@ bool FriendService::CreateFriendGroup(const std::string& user_id,
 std::vector<FriendGroupData> FriendService::GetFriendGroups(const std::string& user_id) {
     if (user_id.empty())
         return {};
+    EnsureDefaultGroup(user_id);
     return store_->GetGroups(user_id);
+}
+
+swift::ErrorCode FriendService::DeleteFriendGroup(const std::string& user_id,
+                                                   const std::string& group_id) {
+    if (user_id.empty())
+        return swift::ErrorCode::INVALID_PARAM;
+    // 默认分组不能删除（空或 "default" 均视为默认分组）
+    if (group_id.empty() || group_id == kDefaultFriendGroupId)
+        return swift::ErrorCode::FRIEND_GROUP_DEFAULT;
+
+    auto groups = store_->GetGroups(user_id);
+    bool found = false;
+    for (const auto& g : groups) {
+        if (g.group_id == group_id) {
+            found = true;
+            break;
+        }
+    }
+    if (!found)
+        return swift::ErrorCode::FRIEND_GROUP_NOT_FOUND;
+
+    // Store 已实现：删除分组时将该分组下所有好友的 group_id 置为 ""（默认分组）
+    if (!store_->DeleteGroup(user_id, group_id))
+        return swift::ErrorCode::INTERNAL_ERROR;
+    return swift::ErrorCode::OK;
 }
 
 bool FriendService::MoveFriend(const std::string& user_id, const std::string& friend_id,
@@ -166,6 +195,22 @@ bool FriendService::SetRemark(const std::string& user_id, const std::string& fri
     if (!store_->IsFriend(user_id, friend_id))
         return false;
     return store_->UpdateRemark(user_id, friend_id, remark);
+}
+
+void FriendService::EnsureDefaultGroup(const std::string& user_id) {
+    if (user_id.empty())
+        return;
+    auto groups = store_->GetGroups(user_id);
+    for (const auto& g : groups) {
+        if (g.group_id == kDefaultFriendGroupId)
+            return;
+    }
+    FriendGroupData def;
+    def.group_id = kDefaultFriendGroupId;
+    def.user_id = user_id;
+    def.group_name = kDefaultFriendGroupName;
+    def.sort_order = 0;
+    store_->CreateGroup(def);
 }
 
 // ============================================================================

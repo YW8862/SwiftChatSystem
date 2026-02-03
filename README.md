@@ -9,6 +9,7 @@
 ### 核心功能
 
 - 私聊 / 群聊 / 好友关系 / 富媒体消息
+- 群聊：创建群至少 3 人（不允许 1 人或 2 人建群），现有群支持邀请非成员进群
 - 消息撤回 / @提醒 / 已读回执 / 离线推送 / 消息搜索
 - Windows 客户端（Qt5）
 - Minikube 本地 Kubernetes 部署
@@ -26,7 +27,7 @@ SwiftChatSystem/
 │   ├── zonesvr/                 # 路由服务（在线状态、消息路由）
 │   ├── gatesvr/                 # 接入网关（WebSocket）
 │   ├── friendsvr/               # 好友服务
-│   ├── chatsvr/                 # 消息服务
+│   ├── chatsvr/                 # 消息与群组服务（GroupStore/GroupService）
 │   └── filesvr/                 # 文件服务
 ├── client/                     # 客户端
 │   ├── proto/                  # 客户端协议
