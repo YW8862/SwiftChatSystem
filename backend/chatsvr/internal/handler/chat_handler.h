@@ -7,7 +7,8 @@ namespace swift::chat {
 class ChatService;
 
 /**
- * ChatService gRPC 处理器
+ * 对外 API 层（Handler）
+ * 直接实现 proto 定义的 ChatService gRPC 接口，无独立 API 层。
  */
 class ChatHandler {
 public:

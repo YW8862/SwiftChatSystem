@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package swift.online;
+
+import "common.proto";
+
+// ============== 登录会话服务 ==============
+// 管理登录会话与 Token，供 ZoneSvr 等调用；AuthSvr 仅负责身份校验（VerifyCredentials）。
+
+message LoginRequest {
+    string user_id = 1;
+    string device_id = 2;
+    string device_type = 3;   // windows, android, ios, web
+}
+
+message LoginResponse {
+    int32 code = 1;
+    string message = 2;
+    string token = 3;
+    int64 expire_at = 4;
+}
+
+message LogoutRequest {
+    string user_id = 1;
+    string token = 2;
+}
+
+message TokenRequest {
+    string token = 1;
+}
+
+message TokenResponse {
+    int32 code = 1;
+    string message = 2;
+    string user_id = 3;
+    bool valid = 4;
+}
+
+service OnlineService {
+    rpc Login(LoginRequest) returns (LoginResponse);
+    rpc Logout(LogoutRequest) returns (swift.common.CommonResponse);
+    rpc ValidateToken(TokenRequest) returns (TokenResponse);
+}

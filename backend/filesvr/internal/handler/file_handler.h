@@ -6,6 +6,10 @@ namespace swift::file {
 
 class FileService;
 
+/**
+ * 对外 API 层（Handler）
+ * 直接实现 proto 定义的 FileService gRPC 接口，无独立 API 层。
+ */
 class FileHandler {
 public:
     explicit FileHandler(std::shared_ptr<FileService> service);
@@ -22,7 +26,8 @@ private:
 };
 
 /**
- * HTTP 下载处理器
+ * HTTP 下载对外接口（Handler）
+ * GET /files/{file_id} 直接对外提供
  */
 class HttpDownloadHandler {
 public:

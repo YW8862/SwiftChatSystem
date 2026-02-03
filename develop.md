@@ -20,6 +20,7 @@
 12. [阶段十：容器化与部署](#12-阶段十容器化与部署)
 13. [测试与调试](#13-测试与调试)
 14. [常见问题](#14-常见问题)
+15. [OnlineSvr 登录会话服务](#15-onlinesvr-登录会话服务)
 
 ---
 
@@ -443,16 +444,19 @@ ls backend/authsvr/proto/*.pb.h
 
 ## 5. 阶段三：AuthSvr 认证服务
 
-AuthSvr 是最基础的服务，其他服务都依赖它进行用户验证。
+AuthSvr 是最基础的服务，负责**身份与用户资料**；**登录会话**由 OnlineSvr 独立提供，ZoneSvr 登录/登出直接走 OnlineSvr。
+
+**分层说明：** 对外 API 由 Handler 层直接实现，无独立 API 层。结构为 Handler（gRPC 接口）→ Service（业务逻辑）→ Store（数据持久化）。
+
+**登录流程（ZoneSvr）：** 1）AuthSvr.VerifyCredentials(username, password) → user_id、profile；2）OnlineSvr.Login(user_id, device_id, device_type) → token。登出：OnlineSvr.Logout(user_id, token)。Token 校验：OnlineSvr.ValidateToken(token)。
 
 ### 5.1 功能清单
 
 - [x] 用户注册
-- [x] 用户登录
-- [x] Token 验证
+- [x] VerifyCredentials（校验用户名密码，返回 user_id 与 profile，供登录时先校验再调 OnlineSvr.Login）
 - [x] 获取/更新用户资料
 - [x] 密码加密存储
-- [x] JWT Token 生成
+- 登录/登出/ValidateToken 统一走 **OnlineSvr**，AuthSvr 不再提供
 
 ### 5.2 实现步骤
 
@@ -546,137 +550,100 @@ bool RocksDBUserStore::UsernameExists(const std::string& username) {
 }
 ```
 
-#### Step 2: 实现 AuthService
+#### Step 2: 实现 SessionStore（RocksDB）
 
 ```cpp
-// backend/authsvr/internal/service/auth_service.cpp
+// backend/authsvr/internal/store/session_store.h
 
-#include "auth_service.h"
-#include <jwt-cpp/jwt.h>
-#include <openssl/sha.h>
+struct SessionData {
+    std::string user_id;
+    std::string device_id;
+    std::string token;
+    int64_t login_time;
+    int64_t expire_at;
+};
 
-AuthService::AuthService(std::shared_ptr<UserStore> store)
-    : store_(std::move(store)) {}
+class SessionStore {
+public:
+    virtual bool SetSession(const SessionData& session) = 0;
+    virtual std::optional<SessionData> GetSession(const std::string& user_id) = 0;
+    virtual bool RemoveSession(const std::string& user_id) = 0;
+};
+```
 
-AuthService::RegisterResult AuthService::Register(
-    const std::string& username,
-    const std::string& password,
-    const std::string& nickname,
-    const std::string& email) {
-    
-    RegisterResult result;
-    
-    // 检查用户名是否已存在
-    if (store_->UsernameExists(username)) {
-        result.success = false;
-        result.error = "Username already exists";
-        return result;
-    }
-    
-    // 生成用户 ID
-    std::string user_id = GenerateUserId();
-    
-    // 加密密码
-    std::string password_hash = HashPassword(password);
-    
-    // 创建用户
-    UserData user;
-    user.user_id = user_id;
-    user.username = username;
-    user.password_hash = password_hash;
-    user.nickname = nickname.empty() ? username : nickname;
-    user.created_at = swift::utils::GetTimestampMs();
-    
-    if (store_->Create(user)) {
-        result.success = true;
-        result.user_id = user_id;
-    } else {
-        result.success = false;
-        result.error = "Failed to create user";
-    }
-    
-    return result;
-}
+- RocksDB Key：`session:{user_id}`  
+- Value：JSON（device_id、token、login_time、expire_at）  
+- 作用：记录当前在线设备 + JWT，用来限制“单设备在线”并做 Token 幂等
 
-AuthService::LoginResult AuthService::Login(
-    const std::string& username,
-    const std::string& password,
-    const std::string& device_id,
-    const std::string& device_type) {
-    
-    LoginResult result;
-    
-    // 查找用户
+#### Step 3: 实现 JwtHelper（HS256）
+
+为避免依赖第三方库，使用 OpenSSL + nlohmann/json 自行实现 HS256：
+
+```cpp
+// backend/authsvr/internal/service/jwt_helper.cpp
+
+std::string JwtCreate(const std::string& user_id,
+                      const std::string& secret,
+                      int expire_hours);
+
+JwtPayload JwtVerify(const std::string& token,
+                     const std::string& secret);
+```
+
+- Header：`{"alg":"HS256","typ":"JWT"}`  
+- Payload：`iss / sub / iat / exp`  
+- 签名：`Base64UrlEncode(HMAC_SHA256(header.payload, secret))`  
+- 校验：同时检查签名、issuer、过期时间
+
+#### Step 4: 实现 AuthService（单设备登录）
+
+```cpp
+AuthService::AuthService(std::shared_ptr<UserStore> store,
+                         std::shared_ptr<SessionStore> session_store,
+                         const std::string& jwt_secret);
+
+AuthService::LoginResult AuthService::Login(..., const std::string& device_id, ...) {
     auto user = store_->GetByUsername(username);
-    if (!user) {
-        result.success = false;
-        result.error = "User not found";
-        return result;
+    ...
+    auto session = session_store_->GetSession(user->user_id);
+    if (session && session->device_id != device_id) {
+        return { .success = false, .error = "User already logged in on another device" };
     }
-    
-    // 验证密码
-    if (!VerifyPassword(password, user->password_hash)) {
-        result.success = false;
-        result.error = "Wrong password";
-        return result;
+    if (session && session->device_id == device_id && token 未过期) {
+        // 幂等返回同一个 token
+        return 已保存的 SessionData;
     }
-    
-    // 生成 Token
-    result.success = true;
-    result.user_id = user->user_id;
-    result.token = GenerateToken(user->user_id);
-    result.expire_at = swift::utils::GetTimestampMs() + 7 * 24 * 3600 * 1000;  // 7天
-    
-    return result;
-}
-
-std::string AuthService::GenerateToken(const std::string& user_id) {
-    auto token = jwt::create()
-        .set_issuer("swift-auth")
-        .set_subject(user_id)
-        .set_issued_at(std::chrono::system_clock::now())
-        .set_expires_at(std::chrono::system_clock::now() + std::chrono::hours(24 * 7))
-        .sign(jwt::algorithm::hs256{jwt_secret_});
-    
-    return token;
+    auto [token, expire_at] = GenerateToken(user->user_id);
+    session_store_->SetSession({user->user_id, device_id, token, now, expire_at});
+    ...
 }
 
 AuthService::TokenResult AuthService::ValidateToken(const std::string& token) {
-    TokenResult result;
-    
-    try {
-        auto decoded = jwt::decode(token);
-        auto verifier = jwt::verify()
-            .allow_algorithm(jwt::algorithm::hs256{jwt_secret_})
-            .with_issuer("swift-auth");
-        
-        verifier.verify(decoded);
-        
-        result.valid = true;
-        result.user_id = decoded.get_subject();
-    } catch (const std::exception& e) {
-        result.valid = false;
-    }
-    
-    return result;
+    auto payload = JwtVerify(token, jwt_secret_);
+    auto session = session_store_->GetSession(payload.user_id);
+    return payload.valid && session && session->token == token;
 }
 
-std::string AuthService::HashPassword(const std::string& password) {
-    // 使用 SHA256 + salt（生产环境建议使用 bcrypt）
-    std::string salted = password + "swift_salt_2026";
-    return swift::utils::SHA256(salted);
-}
-
-bool AuthService::VerifyPassword(const std::string& password, const std::string& hash) {
-    return HashPassword(password) == hash;
-}
-
-std::string AuthService::GenerateUserId() {
-    return "u_" + swift::utils::GenerateUUID().substr(0, 12);
+AuthService::LogoutResult AuthService::Logout(const std::string& user_id, const std::string& token) {
+    session_store_->RemoveSession(user_id); // 幂等
 }
 ```
 
-#### Step 3: 实现 gRPC Handler
+关键行为：
+
+| 功能 | 说明 |
+|------|------|
+| 注册 | 校验用户名、生成 user_id、密码加盐哈希、写入 RocksDB |
+| 登录 | 同一设备返回相同 token，其他设备登录会被拒绝；成功后写入 SessionStore |
+| ValidateToken | 除验签外，还要确认 SessionStore 里存在匹配 token |
+| Logout | 清理 SessionStore，会话 idempotent，登出后其他设备可登录 |
+| GetProfile / UpdateProfile | 读写 UserStore，保持原逻辑 |
+
+> 提示：如需改为“踢掉旧设备”，只需要在 SessionStore 中覆盖旧记录即可。
+
+#### Step 5: 实现 Handler（对外 API）
+
+Handler 层直接实现 gRPC 接口，即对外 API 入口：
 
 ```cpp
 // backend/authsvr/internal/handler/auth_handler.cpp
@@ -756,7 +723,7 @@ private:
 };
 ```
 
-#### Step 4: 实现 main.cpp
+#### Step 6: 实现 main.cpp
 
 ```cpp
 // backend/authsvr/cmd/main.cpp
@@ -780,10 +747,12 @@ int main(int argc, char* argv[]) {
     LOG_INFO("AuthSvr starting...");
     
     // 初始化存储
-    auto store = std::make_shared<swift::auth::RocksDBUserStore>(config.rocksdb_path);
+    auto user_store = std::make_shared<swift::auth::RocksDBUserStore>(config.user_db_path);
+    auto session_store = std::make_shared<swift::auth::RocksDBSessionStore>(config.session_db_path);
     
     // 初始化服务
-    auto service = std::make_shared<swift::auth::AuthService>(store);
+    auto service = std::make_shared<swift::auth::AuthService>(
+        user_store, session_store, config.jwt_secret);
     
     // 启动 gRPC 服务器
     std::string server_address = config.host + ":" + std::to_string(config.port);
@@ -814,39 +783,39 @@ int main(int argc, char* argv[]) {
 #include <gtest/gtest.h>
 #include "../internal/service/auth_service.h"
 #include "../internal/store/user_store.h"
+#include "../internal/store/session_store.h"
 
 class AuthServiceTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        store_ = std::make_shared<swift::auth::RocksDBUserStore>("/tmp/test_auth_db");
-        service_ = std::make_shared<swift::auth::AuthService>(store_);
+        auto suffix = std::to_string(
+            std::chrono::high_resolution_clock::now().time_since_epoch().count());
+        user_db_ = "/tmp/test_auth_user_" + suffix;
+        session_db_ = "/tmp/test_auth_session_" + suffix;
+        store_ = std::make_shared<swift::auth::RocksDBUserStore>(user_db_);
+        session_store_ = std::make_shared<swift::auth::RocksDBSessionStore>(session_db_);
+        service_ = std::make_unique<swift::auth::AuthService>(
+            store_, session_store_, "test_jwt_secret");
     }
     
     void TearDown() override {
-        // 清理测试数据库
-        std::filesystem::remove_all("/tmp/test_auth_db");
+        service_.reset();
+        store_.reset();
+        session_store_.reset();
+        std::filesystem::remove_all(user_db_);
+        std::filesystem::remove_all(session_db_);
     }
     
-    std::shared_ptr<swift::auth::UserStore> store_;
-    std::shared_ptr<swift::auth::AuthService> service_;
+    std::string user_db_;
+    std::string session_db_;
+    std::shared_ptr<swift::auth::RocksDBUserStore> store_;
+    std::shared_ptr<swift::auth::RocksDBSessionStore> session_store_;
+    std::unique_ptr<swift::auth::AuthService> service_;
 };
 
-TEST_F(AuthServiceTest, RegisterSuccess) {
-    auto result = service_->Register("testuser", "password123", "Test User", "test@example.com");
-    EXPECT_TRUE(result.success);
-    EXPECT_FALSE(result.user_id.empty());
-}
-
-TEST_F(AuthServiceTest, RegisterDuplicateUsername) {
+TEST_F(AuthServiceTest, LoginSingleDeviceSuccess) {
     service_->Register("testuser", "password123", "Test User", "test@example.com");
-    auto result = service_->Register("testuser", "password456", "Test User 2", "test2@example.com");
-    EXPECT_FALSE(result.success);
-    EXPECT_EQ(result.error, "Username already exists");
-}
-
-TEST_F(AuthServiceTest, LoginSuccess) {
-    service_->Register("testuser", "password123", "Test User", "test@example.com");
-    auto result = service_->Login("testuser", "password123", "device1", "windows");
+    auto result = service_->Login("testuser", "password123", "deviceA", "windows");
     EXPECT_TRUE(result.success);
     EXPECT_FALSE(result.token.empty());
 }
@@ -857,34 +826,24 @@ TEST_F(AuthServiceTest, LoginWrongPassword) {
     EXPECT_FALSE(result.success);
 }
 
-TEST_F(AuthServiceTest, ValidateToken) {
+TEST_F(AuthServiceTest, LoginRejectedOnSecondDevice) {
     service_->Register("testuser", "password123", "Test User", "test@example.com");
-    auto login_result = service_->Login("testuser", "password123", "device1", "windows");
-    
-    auto token_result = service_->ValidateToken(login_result.token);
-    EXPECT_TRUE(token_result.valid);
-    EXPECT_EQ(token_result.user_id, login_result.user_id);
+    auto first = service_->Login("testuser", "password123", "deviceA", "windows");
+    ASSERT_TRUE(first.success);
+
+    auto second = service_->Login("testuser", "password123", "deviceB", "windows");
+    EXPECT_FALSE(second.success);
 }
-```
 
-#### 使用 grpcurl 测试
+TEST_F(AuthServiceTest, LogoutAllowsReLogin) {
+    service_->Register("testuser", "password123", "Test User", "test@example.com");
+    auto first = service_->Login("testuser", "password123", "deviceA", "windows");
+    ASSERT_TRUE(first.success);
 
-```bash
-# 启动服务
-./build/backend/authsvr/authsvr
-
-# 另一个终端，使用 grpcurl 测试
-# 注册
-grpcurl -plaintext -d '{"username":"alice","password":"123456","nickname":"Alice"}' \
-    localhost:9094 swift.auth.AuthService/Register
-
-# 登录
-grpcurl -plaintext -d '{"username":"alice","password":"123456"}' \
-    localhost:9094 swift.auth.AuthService/Login
-
-# 验证 Token（使用登录返回的 token）
-grpcurl -plaintext -d '{"token":"<token>"}' \
-    localhost:9094 swift.auth.AuthService/ValidateToken
+    service_->Logout(first.user_id, first.token);
+    auto second = service_->Login("testuser", "password123", "deviceB", "windows");
+    EXPECT_TRUE(second.success);
+}
 ```
 
 ---
@@ -906,7 +865,7 @@ grpcurl -plaintext -d '{"token":"<token>"}' \
 
 1. **FriendStore** - 实现 RocksDB 存储
 2. **FriendService** - 实现业务逻辑
-3. **FriendHandler** - 实现 gRPC 接口
+3. **FriendHandler** - 对外 API（实现 gRPC 接口，无独立 API 层）
 4. **main.cpp** - 服务启动
 
 ### 6.3 关键数据结构
@@ -2074,6 +2033,50 @@ ghz --insecure \
 1. 安装 Qt5 开发包
 2. 设置 `Qt5_DIR` 环境变量
 3. 或在 CMake 中指定：`-DQt5_DIR=/path/to/qt5/lib/cmake/Qt5`
+
+---
+
+## 15. OnlineSvr 登录会话服务
+
+OnlineSvr 独立管理**登录会话**与 **Token 签发**，ZoneSvr 的登录/登出直接走 OnlineSvr；AuthSvr 提供 VerifyCredentials（校验用户名密码并返回 user_id、profile），供 ZoneSvr 登录时先校验再调 OnlineSvr.Login。
+
+### 15.1 职责
+
+| 接口 | 说明 |
+|------|------|
+| **Login(user_id, device_id, device_type)** | 创建会话、签发 JWT，单设备策略（同设备幂等，异设备拒绝） |
+| **Logout(user_id, token)** | 移除会话，使 Token 失效 |
+| **ValidateToken(token)** | 校验 Token 并返回 user_id |
+
+### 15.2 目录结构
+
+```
+backend/onlinesvr/
+├── proto/online.proto           # Login / Logout / ValidateToken
+├── cmd/main.cpp
+├── CMakeLists.txt
+├── Dockerfile
+└── internal/
+    ├── config/config.h/cpp
+    ├── store/session_store.h/cpp   # RocksDB 会话存储
+    ├── service/
+    │   ├── jwt_helper.h/cpp        # JWT 签发与校验（iss=swift-online）
+    │   └── online_service.h/cpp
+    └── handler/online_handler.h/cpp
+```
+
+### 15.3 ZoneSvr 登录流程
+
+1. **登录**：AuthSvr.VerifyCredentials(username, password) → user_id、profile；再 OnlineSvr.Login(user_id, device_id, device_type) → token。
+2. **登出**：OnlineSvr.Logout(user_id, token)。
+3. **Token 校验**：OnlineSvr.ValidateToken(token) → user_id。
+
+AuthSystem 持有 AuthRpcClient 与 OnlineRpcClient，Login/Logout/ValidateToken 走 OnlineSvr。
+
+### 15.4 端口与部署
+
+- gRPC 端口：9095
+- K8s：`deploy/k8s/onlinesvr-deployment.yaml`，已加入 kustomization
 
 ---
 

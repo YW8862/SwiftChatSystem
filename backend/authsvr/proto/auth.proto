@@ -22,36 +22,17 @@ message RegisterResponse {
     string user_id = 3;
 }
 
-message LoginRequest {
+// 校验用户名密码，返回 user_id 与 profile（供 ZoneSvr 后接 OnlineSvr.Login）
+message VerifyCredentialsRequest {
     string username = 1;
     string password = 2;
-    string device_id = 3;      // 设备标识
-    string device_type = 4;    // windows, android, ios, web
 }
 
-message LoginResponse {
+message VerifyCredentialsResponse {
     int32 code = 1;
     string message = 2;
     string user_id = 3;
-    string token = 4;          // JWT token
-    int64 expire_at = 5;       // token 过期时间戳
-    UserProfile profile = 6;
-}
-
-message TokenRequest {
-    string token = 1;
-}
-
-message TokenResponse {
-    int32 code = 1;
-    string message = 2;
-    string user_id = 3;
-    bool valid = 4;
-}
-
-message LogoutRequest {
-    string user_id = 1;
-    string token = 2;
+    UserProfile profile = 4;
 }
 
 message GetProfileRequest {
@@ -82,16 +63,10 @@ message UserProfile {
 service AuthService {
     // 用户注册
     rpc Register(RegisterRequest) returns (RegisterResponse);
-    
-    // 用户登录
-    rpc Login(LoginRequest) returns (LoginResponse);
-    
-    // 验证 Token
-    rpc ValidateToken(TokenRequest) returns (TokenResponse);
-    
-    // 用户登出
-    rpc Logout(LogoutRequest) returns (swift.common.CommonResponse);
-    
+
+    // 校验用户名密码，返回 user_id 与 profile（登录时先调此接口，再调 OnlineSvr.Login）
+    rpc VerifyCredentials(VerifyCredentialsRequest) returns (VerifyCredentialsResponse);
+
     // 获取用户资料
     rpc GetProfile(GetProfileRequest) returns (UserProfile);
     

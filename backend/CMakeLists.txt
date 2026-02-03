@@ -9,6 +9,7 @@ add_subdirectory(common)
 
 # 后端服务
 add_subdirectory(authsvr)
+add_subdirectory(onlinesvr)
 add_subdirectory(gatesvr)
 add_subdirectory(zonesvr)
 add_subdirectory(friendsvr)

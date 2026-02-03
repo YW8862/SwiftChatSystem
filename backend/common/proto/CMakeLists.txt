@@ -27,6 +27,7 @@ set(PROTO_FILES
     ${BACKEND_DIR}/friendsvr/proto/friend.proto
     ${BACKEND_DIR}/filesvr/proto/file.proto
     ${BACKEND_DIR}/gatesvr/proto/gate.proto
+    ${BACKEND_DIR}/onlinesvr/proto/online.proto
     ${BACKEND_DIR}/zonesvr/proto/zone.proto
 )
 
@@ -38,6 +39,7 @@ set(PROTO_PATHS
     ${BACKEND_DIR}/friendsvr/proto
     ${BACKEND_DIR}/filesvr/proto
     ${BACKEND_DIR}/gatesvr/proto
+    ${BACKEND_DIR}/onlinesvr/proto
     ${BACKEND_DIR}/zonesvr/proto
 )
 

@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: onlinesvr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: onlinesvr
+  template:
+    metadata:
+      labels:
+        app: onlinesvr
+    spec:
+      containers:
+      - name: onlinesvr
+        image: swift/onlinesvr:latest
+        ports:
+        - containerPort: 9095
+          name: grpc
+        envFrom:
+        - configMapRef:
+            name: swift-config
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        resources:
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: swift-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: onlinesvr
+spec:
+  selector:
+    app: onlinesvr
+  ports:
+  - port: 9095
+    targetPort: 9095
+    name: grpc

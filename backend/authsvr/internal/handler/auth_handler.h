@@ -8,9 +8,10 @@ class UserStore;
 class AuthService;
 
 /**
- * AuthService gRPC 处理器
+ * 对外 API 层（Handler）
  * 
- * 实现 proto 中定义的 AuthService 接口
+ * 直接实现 proto 定义的 gRPC AuthService 接口，无独立 API 层。
+ * 解析请求、调用 AuthService、组装响应。
  */
 class AuthHandler {
 public:
@@ -19,9 +20,7 @@ public:
     
     // gRPC 接口实现
     // Status Register(ServerContext*, const RegisterRequest*, RegisterResponse*);
-    // Status Login(ServerContext*, const LoginRequest*, LoginResponse*);
-    // Status ValidateToken(ServerContext*, const TokenRequest*, TokenResponse*);
-    // Status Logout(ServerContext*, const LogoutRequest*, CommonResponse*);
+    // Status VerifyCredentials(ServerContext*, const VerifyCredentialsRequest*, VerifyCredentialsResponse*);
     // Status GetProfile(ServerContext*, const GetProfileRequest*, UserProfile*);
     // Status UpdateProfile(ServerContext*, const UpdateProfileRequest*, CommonResponse*);
     

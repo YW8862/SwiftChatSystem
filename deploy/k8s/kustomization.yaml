@@ -10,6 +10,7 @@ resources:
   - gatesvr-deployment.yaml
   - zonesvr-deployment.yaml
   - authsvr-deployment.yaml
+  - onlinesvr-deployment.yaml
   - friendsvr-deployment.yaml
   - chatsvr-deployment.yaml
   - filesvr-deployment.yaml

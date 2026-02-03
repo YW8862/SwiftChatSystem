@@ -4,7 +4,7 @@ project(swift_common)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# 查找 OpenSSL（必需）
+# 查找 OpenSSL、nlohmann_json（必需）
 find_package(OpenSSL REQUIRED)
 message(STATUS "OpenSSL version: ${OPENSSL_VERSION}")
 
@@ -15,6 +15,7 @@ add_subdirectory(proto)
 set(SOURCES
     src/utils.cpp
     src/config.cpp
+    src/jwt_helper.cpp
 )
 
 # 公共库
@@ -30,6 +31,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
     OpenSSL::SSL
     OpenSSL::Crypto
 )
+# nlohmann_json 由 vcpkg/工具链提供 include，无需显式 link
 
 # 测试程序
 add_executable(test_utils tests/test_utils.cpp)

@@ -1,0 +1,10 @@
+CompileFlags:
+  Add:
+    - -I/usr/include
+    - -I/usr/include/rocksdb
+    - -I/usr/include/nlohmann
+  Remove:
+    - -W*
+
+Diagnostics:
+  UnusedIncludes: None

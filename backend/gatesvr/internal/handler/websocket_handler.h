@@ -8,7 +8,8 @@ namespace swift::gate {
 class GateService;
 
 /**
- * WebSocket 连接处理器
+ * 对外 API 层（Handler）
+ * WebSocket 连接与消息处理，直接对外提供。
  */
 class WebSocketHandler {
 public:
@@ -32,8 +33,7 @@ private:
 };
 
 /**
- * GateInternalService gRPC 处理器
- * 
+ * 对内 gRPC 接口（Handler）
  * 供 ZoneSvr 调用，推送消息给客户端
  */
 class GateInternalHandler {

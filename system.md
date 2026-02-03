@@ -49,15 +49,15 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
                         │    ZoneSvr      │ ←── 路由层（会话状态）
                         └────────┬────────┘
                                  │
-          ┌──────────────────────┼──────────────────────┐
-          ▼                      ▼                      ▼
-    ┌──────────┐          ┌──────────┐          ┌──────────┐
-    │ AuthSvr  │          │ ChatSvr  │          │ FileSvr  │
-    └────┬─────┘          └────┬─────┘          └────┬─────┘
-         │                     │                     │
-    ┌────▼─────┐          ┌────▼─────┐          ┌────▼─────┐
-    │  Store   │          │  Store   │          │  Store   │
-    └──────────┘          └──────────┘          └──────────┘
+          ┌──────────────────────┼──────────────────────┬──────────────────────┐
+          ▼                      ▼                      ▼                      ▼
+    ┌──────────┐          ┌──────────┐          ┌──────────┐          ┌──────────┐
+    │ AuthSvr  │          │OnlineSvr │          │ ChatSvr  │          │ FileSvr  │
+    └────┬─────┘          └────┬─────┘          └────┬─────┘          └────┬─────┘
+         │                     │                     │                     │
+    ┌────▼─────┐          ┌────▼─────┐          ┌────▼─────┐          ┌────▼─────┐
+    │  Store   │          │  Store   │          │  Store   │          │  Store   │
+    └──────────┘          └──────────┘          └──────────┘          └──────────┘
 ```
 
 ### 2.2 ZoneSvr-System 架构（核心设计）
@@ -101,12 +101,12 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 | 组件 | 职责 |
 |------|------|
 | **SystemManager** | 管理所有 System 的生命周期，分发请求 |
-| **AuthSystem** | RPC 转发层，调用 AuthSvr |
+| **AuthSystem** | 登录/登出走 OnlineSvr，身份与资料走 AuthSvr（VerifyCredentials + OnlineSvr.Login） |
 | **ChatSystem** | RPC 转发层，调用 ChatSvr，协调消息路由 |
 | **FriendSystem** | RPC 转发层，调用 FriendSvr |
 | **GroupSystem** | RPC 转发层，调用 ChatSvr(GroupService) |
 | **FileSystem** | RPC 转发层，调用 FileSvr |
-| **SessionStore** | 管理用户会话状态（所有 System 共享） |
+| **SessionStore** | ZoneSvr 内在线会话（消息路由）；登录会话在 OnlineSvr |
 
 **架构模式：API Gateway + 微服务**
   find . -name '.*' -prune -o -type f -print | wc -l
@@ -117,7 +117,7 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 │  ┌──────────────────────────────────────────────────────────────┐  │
 │  │                    RPC Clients (统一持有)                     │  │
 │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ │  │
-│  │  │AuthClient  │ │ChatClient  │ │FriendClient│ │FileClient  │ │  │
+│  │  │AuthClient  │ │OnlineClient│ │ChatClient  │ │FriendClient│ │FileClient  │ │  │
 │  │  └─────┬──────┘ └─────┬──────┘ └─────┬──────┘ └─────┬──────┘ │  │
 │  └────────┼──────────────┼──────────────┼──────────────┼────────┘  │
 │           │              │              │              │           │
@@ -127,9 +127,9 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 └───────────┼──────────────┼──────────────┼──────────────┼───────────┘
             │              │              │              │
             ▼              ▼              ▼              ▼
-       ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
-       │ AuthSvr │    │ ChatSvr │───→│ FileSvr │    │FriendSvr│
-       │(实际逻辑)│   │(实际逻辑)│    │(实际逻辑)│   │(实际逻辑)│
+       ┌─────────┐ ┌─────────┐ ┌─────────┐    ┌─────────┐    ┌─────────┐
+       │ AuthSvr │ │OnlineSvr│ │ ChatSvr │───→│ FileSvr │    │FriendSvr│
+       │(身份/资料)│ │(登录会话)│ │(实际逻辑)│    │(实际逻辑)│   │(实际逻辑)│
        └─────────┘    └─────────┘    └─────────┘    └─────────┘
                            │              ↑
                            └──────────────┘
@@ -165,11 +165,45 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 - **职责清晰**：ZoneSvr 只转发，业务逻辑在后端服务
 - **服务解耦**：后端服务间调用自己管理，互不影响
 
-### 2.3 关键设计决策
+### 2.3 后端服务分层（无独立 API 层）
+
+各后端服务（AuthSvr、ChatSvr 等）采用三层结构，**对外 API 由 Handler 层直接实现**，不设单独的 API 层：
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Handler 层（对外 API）                                  │
+│  - 实现 proto 定义的 gRPC 接口                            │
+│  - 解析请求、组装响应，调用 Service                       │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│  Service 层（业务逻辑）                                  │
+│  - 注册/登录、消息收发、好友关系等                        │
+│  - 调用 Store 读写数据                                   │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│  Store 层（数据持久化）                                  │
+│  - RocksDB/MySQL/Redis 读写                              │
+└─────────────────────────────────────────────────────────┘
+```
+
+| 层级 | 职责 | 说明 |
+|------|------|------|
+| **Handler** | 对外 API | 直接实现 gRPC Service，无单独 API 层 |
+| **Service** | 业务逻辑 | 核心业务处理 |
+| **Store** | 数据持久化 | 存储抽象与实现 |
+
+- **OnlineSvr** 的 Service 层依赖 `SessionStore`（RocksDB）记录登录会话 + JWT 签发，单设备在线策略在此实现；ZoneSvr 登录/登出直接调 OnlineSvr。**AuthSvr** 提供 VerifyCredentials（校验用户名密码并返回 user_id、profile），供 ZoneSvr 登录时先校验再调 OnlineSvr.Login；AuthSvr 仍保留 Login/Logout/ValidateToken（本地 SessionStore）供直连客户端兼容。
+
+### 2.4 关键设计决策
 
 | 决策点           | 方案                                      | 理由                       |
 | ---------------- | ----------------------------------------- | -------------------------- |
 | 架构模式         | Zone-System 模式                          | 统一入口、状态共享、便于维护 |
+| 对外 API         | Handler 层直接实现                        | 无独立 API 层，Handler 即 gRPC 接口 |
 | 客户端协议       | WebSocket + Protobuf（二进制）            | 体积小、解析快、与后端统一 |
 | 会话管理         | ZoneSvr + Redis                           | 支持多副本、高可用         |
 | 存储引擎         | RocksDB（单机）/ MySQL（集群）            | 灵活切换、渐进式扩展       |
@@ -184,12 +218,13 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 | ------------- | ----------------------- | ------------------- | ---------------------------------- |
 | GateSvr       | WebSocket + gRPC        | 内存                | 连接管理、协议解析、消息转发       |
 | ZoneSvr       | gRPC                    | Redis/内存          | 在线状态、路由广播、Gate 管理      |
-| AuthSvr       | gRPC                    | RocksDB/MySQL       | JWT 登录/注册、用户资料            |
+| AuthSvr       | gRPC                    | RocksDB             | 注册、VerifyCredentials、GetProfile、UpdateProfile（身份与资料） |
+| **OnlineSvr** | gRPC                    | RocksDB             | **登录会话、Login/Logout/ValidateToken、JWT 签发、单设备策略** |
 | FriendSvr     | gRPC                    | RocksDB/MySQL       | 好友/分组/黑名单                   |
 | ChatSvr       | gRPC                    | RocksDB/MySQL       | 消息收发/撤回/@/离线队列/搜索      |
 | FileSvr       | gRPC + HTTP             | RocksDB + 本地/MinIO | 文件上传/下载                      |
 
-**服务数量：6 个**
+**服务数量：7 个**（含 OnlineSvr）
 
 ---
 
@@ -213,6 +248,7 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 | 服务 | 数据类型 | 单机方案 | 集群方案 | Key 设计 |
 |------|---------|---------|---------|----------|
 | **AuthSvr** | 用户信息 | RocksDB | MySQL | `user:{id}`, `username:{name}→id` |
+| **OnlineSvr** | 登录会话 | RocksDB | Redis（可选扩展） | `session:{user_id}`（ZoneSvr 登录/登出走此服务） |
 | **FriendSvr** | 好友关系 | RocksDB | MySQL | `friend:{uid}:{fid}`, `block:{uid}:{tid}` |
 | **ChatSvr** | 消息数据 | RocksDB | MySQL + 分表 | `msg:{id}`, `chat:{cid}:{ts}:{mid}` |
 | **ChatSvr** | 离线消息 | RocksDB | Redis List | `offline:{uid}` |
@@ -494,6 +530,7 @@ MINIO_ENDPOINT: "minio:9000"
 | GateSvr       | 9091      | WebSocket: 9090   |
 | ZoneSvr       | 9092      | -                 |
 | AuthSvr       | 9094      | -                 |
+| OnlineSvr     | 9095      | -                 |
 | FriendSvr     | 9096      | -                 |
 | ChatSvr       | 9098      | -                 |
 | FileSvr       | 9100      | HTTP: 8080        |
