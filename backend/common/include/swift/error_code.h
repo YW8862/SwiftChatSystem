@@ -95,6 +95,7 @@ enum class ErrorCode {
     MSG_FILTERED = 310,            // 消息被过滤（敏感词）
     RECEIVER_OFFLINE = 311,        // 接收方不在线
     RECEIVER_BLOCKED = 312,        // 被接收方拉黑
+    CONVERSATION_PRIVATE_CANNOT_DELETE = 313,  // 私聊不能删除会话，需删除好友后由系统处理
     
     // ========== 文件错误 400-499 ==========
     FILE_TOO_LARGE = 400,          // 文件过大
@@ -244,6 +245,7 @@ inline const char* ErrorCodeToString(ErrorCode code) {
         {ErrorCode::MSG_FILTERED, "message filtered"},
         {ErrorCode::RECEIVER_OFFLINE, "receiver offline"},
         {ErrorCode::RECEIVER_BLOCKED, "receiver blocked"},
+        {ErrorCode::CONVERSATION_PRIVATE_CANNOT_DELETE, "private conversation cannot be deleted"},
         
         // ========== 文件错误 400-499 ==========
         {ErrorCode::FILE_TOO_LARGE, "file too large"},

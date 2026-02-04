@@ -1,31 +1,55 @@
 #pragma once
 
 #include <memory>
+#include "chat.grpc.pb.h"
 
 namespace swift::chat {
 
-class ChatService;
+class ChatServiceCore;  // 业务逻辑类，与 proto 生成的 ChatService 区分
 
 /**
  * 对外 API 层（Handler）
- * 直接实现 proto 定义的 ChatService gRPC 接口，无独立 API 层。
+ * 直接实现 proto 定义的 ChatService gRPC 接口。
  */
-class ChatHandler {
+class ChatHandler : public ::swift::chat::ChatService::Service {
 public:
-    explicit ChatHandler(std::shared_ptr<ChatService> service);
-    ~ChatHandler();
-    
-    // gRPC 接口
-    // Status SendMessage(...);
-    // Status RecallMessage(...);
-    // Status PullOffline(...);
-    // Status SearchMessages(...);
-    // Status MarkRead(...);
-    // Status GetHistory(...);
-    // Status SyncConversations(...);
-    
+    explicit ChatHandler(std::shared_ptr<ChatServiceCore> service);
+    ~ChatHandler() override;
+
+    ::grpc::Status SendMessage(::grpc::ServerContext* context,
+                               const ::swift::chat::SendMessageRequest* request,
+                               ::swift::chat::SendMessageResponse* response) override;
+
+    ::grpc::Status RecallMessage(::grpc::ServerContext* context,
+                                 const ::swift::chat::RecallMessageRequest* request,
+                                 ::swift::common::CommonResponse* response) override;
+
+    ::grpc::Status PullOffline(::grpc::ServerContext* context,
+                               const ::swift::chat::PullOfflineRequest* request,
+                               ::swift::chat::PullOfflineResponse* response) override;
+
+    ::grpc::Status SearchMessages(::grpc::ServerContext* context,
+                                  const ::swift::chat::SearchMessagesRequest* request,
+                                  ::swift::chat::SearchMessagesResponse* response) override;
+
+    ::grpc::Status MarkRead(::grpc::ServerContext* context,
+                            const ::swift::chat::MarkReadRequest* request,
+                            ::swift::common::CommonResponse* response) override;
+
+    ::grpc::Status GetHistory(::grpc::ServerContext* context,
+                              const ::swift::chat::GetHistoryRequest* request,
+                              ::swift::chat::GetHistoryResponse* response) override;
+
+    ::grpc::Status SyncConversations(::grpc::ServerContext* context,
+                                     const ::swift::chat::SyncConversationsRequest* request,
+                                     ::swift::chat::SyncConversationsResponse* response) override;
+
+    ::grpc::Status DeleteConversation(::grpc::ServerContext* context,
+                                      const ::swift::chat::DeleteConversationRequest* request,
+                                      ::swift::common::CommonResponse* response) override;
+
 private:
-    std::shared_ptr<ChatService> service_;
+    std::shared_ptr<ChatServiceCore> service_;
 };
 
 }  // namespace swift::chat

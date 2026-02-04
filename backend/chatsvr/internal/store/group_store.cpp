@@ -34,6 +34,7 @@ std::string SerializeGroup(const GroupData& g) {
     j["announcement"] = g.announcement;
     j["created_at"] = g.created_at;
     j["updated_at"] = g.updated_at;
+    j["status"] = g.status;
     return j.dump();
 }
 
@@ -48,6 +49,7 @@ GroupData DeserializeGroup(const std::string& data) {
     g.announcement = j.value("announcement", "");
     g.created_at = j.value("created_at", static_cast<int64_t>(0));
     g.updated_at = j.value("updated_at", static_cast<int64_t>(0));
+    g.status = j.value("status", 0);
     return g;
 }
 
@@ -212,6 +214,43 @@ bool RocksDBGroupStore::DeleteGroup(const std::string& group_id) {
 
     rocksdb::WriteBatch batch;
     batch.Delete(KeyGroup(group_id));
+    for (const auto& uid : user_ids) {
+        batch.Delete(KeyGroupMember(group_id, uid));
+        batch.Delete(KeyUserGroup(uid, group_id));
+    }
+
+    rocksdb::WriteOptions wo;
+    wo.sync = true;
+    return impl_->db->Write(wo, &batch).ok();
+}
+
+bool RocksDBGroupStore::DissolveGroup(const std::string& group_id) {
+    if (!impl_->db || group_id.empty())
+        return false;
+
+    auto g = GetGroup(group_id);
+    if (!g)
+        return false;
+    if (g->status == 1)
+        return true;  // 已解散，幂等
+
+    std::string prefix = PrefixGroupMember(group_id);
+    rocksdb::Slice prefix_slice(prefix);
+    std::unique_ptr<rocksdb::Iterator> it(impl_->db->NewIterator(rocksdb::ReadOptions()));
+    std::vector<std::string> user_ids;
+    for (it->Seek(prefix); it->Valid(); it->Next()) {
+        if (!it->key().starts_with(prefix_slice))
+            break;
+        std::string key = it->key().ToString();
+        size_t pos = prefix.size();
+        if (pos < key.size())
+            user_ids.push_back(key.substr(pos));
+    }
+
+    rocksdb::WriteBatch batch;
+    g->status = 1;
+    g->member_count = 0;
+    batch.Put(KeyGroup(group_id), SerializeGroup(*g));
     for (const auto& uid : user_ids) {
         batch.Delete(KeyGroupMember(group_id, uid));
         batch.Delete(KeyUserGroup(uid, group_id));

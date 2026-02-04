@@ -12,7 +12,9 @@ add_executable(${PROJECT_NAME}
     internal/store/group_store.cpp
     internal/store/message_store.cpp
     internal/service/group_service.cpp
+    internal/service/chat_service.cpp
     internal/handler/group_handler.cpp
+    internal/handler/chat_handler.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE

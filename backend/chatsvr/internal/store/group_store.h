@@ -20,6 +20,7 @@ struct GroupData {
     std::string announcement;
     int64_t created_at = 0;
     int64_t updated_at = 0;
+    int32_t status = 0;  // 0=正常, 1=已解散（会话结束，群 ID 不可复用）
 };
 
 /**
@@ -52,6 +53,8 @@ public:
                              int64_t updated_at = 0) = 0;
     virtual bool UpdateGroupOwner(const std::string& group_id, const std::string& new_owner_id) = 0;
     virtual bool DeleteGroup(const std::string& group_id) = 0;
+    /** 群主解散群：status=1，移除所有成员索引，群 ID 保留不可复用；消息仍存服务器 */
+    virtual bool DissolveGroup(const std::string& group_id) = 0;
 
     // === 成员 ===
     virtual bool AddMember(const std::string& group_id, const GroupMemberData& member) = 0;
@@ -84,6 +87,7 @@ public:
                      int64_t updated_at = 0) override;
     bool UpdateGroupOwner(const std::string& group_id, const std::string& new_owner_id) override;
     bool DeleteGroup(const std::string& group_id) override;
+    bool DissolveGroup(const std::string& group_id) override;
 
     bool AddMember(const std::string& group_id, const GroupMemberData& member) override;
     bool RemoveMember(const std::string& group_id, const std::string& user_id) override;
