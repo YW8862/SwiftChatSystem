@@ -6,12 +6,14 @@
 #include "group_handler.h"
 #include "../service/group_service.h"
 #include "swift/error_code.h"
+#include "swift/grpc_auth.h"
 #include <grpcpp/server_context.h>
 
 namespace swift::group_ {
 
-GroupHandler::GroupHandler(std::shared_ptr<GroupService> service)
-    : service_(std::move(service)) {}
+GroupHandler::GroupHandler(std::shared_ptr<GroupService> service,
+                           const std::string& jwt_secret)
+    : service_(std::move(service)), jwt_secret_(jwt_secret) {}
 
 GroupHandler::~GroupHandler() = default;
 
@@ -52,9 +54,14 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
 ::grpc::Status GroupHandler::CreateGroup(::grpc::ServerContext* context,
                                          const ::swift::group::CreateGroupRequest* request,
                                          ::swift::group::CreateGroupResponse* response) {
-    (void)context;
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
+        response->set_message("token invalid or missing");
+        return ::grpc::Status::OK;
+    }
     std::vector<std::string> member_ids(request->member_ids().begin(), request->member_ids().end());
-    auto result = service_->CreateGroup(request->creator_id(), request->group_name(),
+    auto result = service_->CreateGroup(uid, request->group_name(),
                                         request->avatar_url(), member_ids);
     response->set_code(swift::ErrorCodeToInt(result.error_code));
     response->set_message(swift::ErrorCodeToString(result.error_code));
@@ -66,8 +73,12 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
 ::grpc::Status GroupHandler::DismissGroup(::grpc::ServerContext* context,
                                            const ::swift::group::DismissGroupRequest* request,
                                            ::swift::common::CommonResponse* response) {
-    (void)context;
-    swift::ErrorCode code = service_->DismissGroup(request->group_id(), request->operator_id());
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        return ::grpc::Status::OK;
+    }
+    swift::ErrorCode code = service_->DismissGroup(request->group_id(), uid);
     if (code == swift::ErrorCode::OK)
         SetCommonOk(response);
     else
@@ -78,7 +89,12 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
 ::grpc::Status GroupHandler::GetGroupInfo(::grpc::ServerContext* context,
                                            const ::swift::group::GetGroupInfoRequest* request,
                                            ::swift::group::GroupInfoResponse* response) {
-    (void)context;
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
+        response->set_message("token invalid or missing");
+        return ::grpc::Status::OK;
+    }
     auto g = service_->GetGroupInfo(request->group_id());
     if (!g) {
         response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::GROUP_NOT_FOUND));
@@ -93,8 +109,12 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
 ::grpc::Status GroupHandler::UpdateGroup(::grpc::ServerContext* context,
                                            const ::swift::group::UpdateGroupRequest* request,
                                            ::swift::common::CommonResponse* response) {
-    (void)context;
-    swift::ErrorCode code = service_->UpdateGroup(request->group_id(), request->operator_id(),
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        return ::grpc::Status::OK;
+    }
+    swift::ErrorCode code = service_->UpdateGroup(request->group_id(), uid,
                                                    request->group_name(), request->avatar_url(),
                                                    request->announcement());
     if (code == swift::ErrorCode::OK)
@@ -107,9 +127,13 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
 ::grpc::Status GroupHandler::InviteMembers(::grpc::ServerContext* context,
                                             const ::swift::group::InviteMembersRequest* request,
                                             ::swift::common::CommonResponse* response) {
-    (void)context;
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        return ::grpc::Status::OK;
+    }
     std::vector<std::string> member_ids(request->member_ids().begin(), request->member_ids().end());
-    swift::ErrorCode code = service_->InviteMembers(request->group_id(), request->inviter_id(),
+    swift::ErrorCode code = service_->InviteMembers(request->group_id(), uid,
                                                      member_ids);
     if (code == swift::ErrorCode::OK)
         SetCommonOk(response);
@@ -121,8 +145,12 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
 ::grpc::Status GroupHandler::RemoveMember(::grpc::ServerContext* context,
                                             const ::swift::group::RemoveMemberRequest* request,
                                             ::swift::common::CommonResponse* response) {
-    (void)context;
-    swift::ErrorCode code = service_->RemoveMember(request->group_id(), request->operator_id(),
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        return ::grpc::Status::OK;
+    }
+    swift::ErrorCode code = service_->RemoveMember(request->group_id(), uid,
                                                     request->member_id());
     if (code == swift::ErrorCode::OK)
         SetCommonOk(response);
@@ -134,8 +162,12 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
 ::grpc::Status GroupHandler::LeaveGroup(::grpc::ServerContext* context,
                                          const ::swift::group::LeaveGroupRequest* request,
                                          ::swift::common::CommonResponse* response) {
-    (void)context;
-    swift::ErrorCode code = service_->LeaveGroup(request->group_id(), request->user_id());
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        return ::grpc::Status::OK;
+    }
+    swift::ErrorCode code = service_->LeaveGroup(request->group_id(), uid);
     if (code == swift::ErrorCode::OK)
         SetCommonOk(response);
     else
@@ -146,7 +178,12 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
 ::grpc::Status GroupHandler::GetGroupMembers(::grpc::ServerContext* context,
                                               const ::swift::group::GetGroupMembersRequest* request,
                                               ::swift::group::GroupMembersResponse* response) {
-    (void)context;
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
+        response->set_message("token invalid or missing");
+        return ::grpc::Status::OK;
+    }
     int page = request->page() > 0 ? request->page() : 1;
     int page_size = request->page_size() > 0 ? request->page_size() : 50;
     int total = 0;
@@ -162,8 +199,12 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
 ::grpc::Status GroupHandler::TransferOwner(::grpc::ServerContext* context,
                                              const ::swift::group::TransferOwnerRequest* request,
                                              ::swift::common::CommonResponse* response) {
-    (void)context;
-    swift::ErrorCode code = service_->TransferOwner(request->group_id(), request->old_owner_id(),
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        return ::grpc::Status::OK;
+    }
+    swift::ErrorCode code = service_->TransferOwner(request->group_id(), uid,
                                                      request->new_owner_id());
     if (code == swift::ErrorCode::OK)
         SetCommonOk(response);
@@ -175,8 +216,12 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
 ::grpc::Status GroupHandler::SetMemberRole(::grpc::ServerContext* context,
                                             const ::swift::group::SetMemberRoleRequest* request,
                                             ::swift::common::CommonResponse* response) {
-    (void)context;
-    swift::ErrorCode code = service_->SetMemberRole(request->group_id(), request->operator_id(),
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        return ::grpc::Status::OK;
+    }
+    swift::ErrorCode code = service_->SetMemberRole(request->group_id(), uid,
                                                      request->member_id(), request->role());
     if (code == swift::ErrorCode::OK)
         SetCommonOk(response);
@@ -188,8 +233,13 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
 ::grpc::Status GroupHandler::GetUserGroups(::grpc::ServerContext* context,
                                             const ::swift::group::GetUserGroupsRequest* request,
                                             ::swift::group::UserGroupsResponse* response) {
-    (void)context;
-    auto groups = service_->GetUserGroups(request->user_id());
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
+        response->set_message("token invalid or missing");
+        return ::grpc::Status::OK;
+    }
+    auto groups = service_->GetUserGroups(uid);
     response->set_code(static_cast<int>(swift::ErrorCode::OK));
     for (const auto& g : groups) {
         FillGroupInfo(response->add_groups(), g);
@@ -200,7 +250,11 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
 ::grpc::Status GroupHandler::MuteGroup(::grpc::ServerContext* context,
                                          const ::swift::group::MuteGroupRequest* request,
                                          ::swift::common::CommonResponse* response) {
-    (void)context;
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        return ::grpc::Status::OK;
+    }
     (void)request;
     // 免打扰为客户端本地设置，服务端暂不持久化
     SetCommonOk(response);

@@ -14,7 +14,9 @@ class AuthServiceCore; // 业务逻辑类，与 proto 生成的 AuthService 区�
  */
 class AuthHandler : public AuthService::Service {
 public:
-  explicit AuthHandler(std::shared_ptr<AuthServiceCore> service);
+  /** @param jwt_secret 与 OnlineSvr 一致，GetProfile/UpdateProfile 从 metadata 校验 Token */
+  AuthHandler(std::shared_ptr<AuthServiceCore> service,
+              const std::string& jwt_secret);
   ~AuthHandler() override;
 
   ::grpc::Status Register(::grpc::ServerContext *context,
@@ -37,6 +39,7 @@ public:
 
 private:
   std::shared_ptr<AuthServiceCore> service_;
+  std::string jwt_secret_;
 };
 
 } // namespace swift::auth

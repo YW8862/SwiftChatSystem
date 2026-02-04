@@ -36,3 +36,11 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
 # 测试程序
 add_executable(test_utils tests/test_utils.cpp)
 target_link_libraries(test_utils PRIVATE ${PROJECT_NAME})
+
+# ============================================================================
+# gRPC 鉴权辅助库（供 FriendSvr、ChatSvr 等从 metadata 解析 JWT 得到 user_id）
+# ============================================================================
+find_library(GRPC_CPP_LIBRARY grpc++ REQUIRED)
+add_library(swift_grpc_auth STATIC src/grpc_auth.cpp)
+target_include_directories(swift_grpc_auth PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(swift_grpc_auth PUBLIC ${PROJECT_NAME} ${GRPC_CPP_LIBRARY})

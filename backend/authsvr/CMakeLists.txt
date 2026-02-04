@@ -37,6 +37,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME} PRIVATE
     swift_common
     swift_proto
+    swift_grpc_auth
     ${ROCKSDB_LIBS}
 )
 

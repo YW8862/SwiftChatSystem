@@ -13,7 +13,8 @@ class GroupService;  // 业务逻辑，与 proto 的 swift::group::GroupService 
  */
 class GroupHandler : public ::swift::group::GroupService::Service {
 public:
-    explicit GroupHandler(std::shared_ptr<GroupService> service);
+    /** @param jwt_secret 与 OnlineSvr 一致，用于从 metadata 校验 Token，得到当前用户 id */
+    GroupHandler(std::shared_ptr<GroupService> service, const std::string& jwt_secret);
     ~GroupHandler() override;
 
     ::grpc::Status CreateGroup(::grpc::ServerContext* context,
@@ -66,6 +67,7 @@ public:
 
 private:
     std::shared_ptr<GroupService> service_;
+    std::string jwt_secret_;
 };
 
 }  // namespace swift::group_

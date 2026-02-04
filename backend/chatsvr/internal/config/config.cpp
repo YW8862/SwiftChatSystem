@@ -54,6 +54,8 @@ void ApplyEnvOverrides(ChatConfig& config) {
         config.offline_max_count = ParseInt(p, config.offline_max_count);
     if ((p = std::getenv("CHATSVR_HISTORY_PAGE_SIZE")) != nullptr && p[0] != '\0')
         config.history_page_size = ParseInt(p, config.history_page_size);
+    if ((p = std::getenv("CHATSVR_JWT_SECRET")) != nullptr && p[0] != '\0')
+        config.jwt_secret = p;
 
     if ((p = std::getenv("CHATSVR_LOG_DIR")) != nullptr && p[0] != '\0')
         config.log_dir = p;
@@ -90,6 +92,8 @@ void ParseLine(const std::string& line, ChatConfig& config) {
         config.offline_max_count = ParseInt(value, config.offline_max_count);
     else if (k == "history_page_size")
         config.history_page_size = ParseInt(value, config.history_page_size);
+    else if (k == "jwt_secret")
+        config.jwt_secret = value;
     else if (k == "log_dir")
         config.log_dir = value;
     else if (k == "log_level")

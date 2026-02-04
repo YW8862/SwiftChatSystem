@@ -9,6 +9,7 @@
 #include "chat_handler.h"
 #include "../service/chat_service.h"
 #include "swift/error_code.h"
+#include "swift/grpc_auth.h"
 #include <grpcpp/server_context.h>
 #include <algorithm>
 #include <optional>
@@ -21,8 +22,9 @@ constexpr int kMaxSearchLimit = 100;
 constexpr int kMaxHistoryLimit = 100;
 }  // namespace
 
-ChatHandler::ChatHandler(std::shared_ptr<ChatServiceCore> service)
-    : service_(std::move(service)) {}
+ChatHandler::ChatHandler(std::shared_ptr<ChatServiceCore> service,
+                         const std::string& jwt_secret)
+    : service_(std::move(service)), jwt_secret_(jwt_secret) {}
 
 ChatHandler::~ChatHandler() = default;
 
@@ -94,8 +96,13 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
 ::grpc::Status ChatHandler::SendMessage(::grpc::ServerContext* context,
                                          const ::swift::chat::SendMessageRequest* request,
                                          ::swift::chat::SendMessageResponse* response) {
-    (void)context;
-    if (request->from_user_id().empty() || request->to_id().empty()) {
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
+        response->set_message("token invalid or missing");
+        return ::grpc::Status::OK;
+    }
+    if (request->to_id().empty()) {
         response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::INVALID_PARAM));
         response->set_message(swift::ErrorCodeToString(swift::ErrorCode::INVALID_PARAM));
         return ::grpc::Status::OK;
@@ -103,7 +110,7 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
     std::vector<std::string> mentions(request->mentions().begin(), request->mentions().end());
     ChatType ctype = request->chat_type() == 2 ? ChatType::GROUP : ChatType::PRIVATE;
     auto result = service_->SendMessage(
-        request->from_user_id(), request->to_id(), ctype,
+        uid, request->to_id(), ctype,
         request->content(), request->media_url(), request->media_type(),
         mentions, request->reply_to_msg_id());
     if (result.success) {
@@ -122,12 +129,16 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
 ::grpc::Status ChatHandler::RecallMessage(::grpc::ServerContext* context,
                                            const ::swift::chat::RecallMessageRequest* request,
                                            ::swift::common::CommonResponse* response) {
-    (void)context;
-    if (request->msg_id().empty() || request->user_id().empty()) {
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        return ::grpc::Status::OK;
+    }
+    if (request->msg_id().empty()) {
         SetCommonFail(response, swift::ErrorCode::INVALID_PARAM);
         return ::grpc::Status::OK;
     }
-    auto result = service_->RecallMessage(request->msg_id(), request->user_id());
+    auto result = service_->RecallMessage(request->msg_id(), uid);
     if (result.success)
         SetCommonOk(response);
     else
@@ -138,14 +149,14 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
 ::grpc::Status ChatHandler::PullOffline(::grpc::ServerContext* context,
                                          const ::swift::chat::PullOfflineRequest* request,
                                          ::swift::chat::PullOfflineResponse* response) {
-    (void)context;
-    if (request->user_id().empty()) {
-        response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::INVALID_PARAM));
-        response->set_message(swift::ErrorCodeToString(swift::ErrorCode::INVALID_PARAM));
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
+        response->set_message("token invalid or missing");
         return ::grpc::Status::OK;
     }
     int limit = request->limit() > 0 ? std::min(request->limit(), kMaxPullOfflineLimit) : 100;
-    auto result = service_->PullOffline(request->user_id(), request->cursor(), limit);
+    auto result = service_->PullOffline(uid, request->cursor(), limit);
     response->set_code(static_cast<int>(swift::ErrorCode::OK));
     response->set_message(swift::ErrorCodeToString(swift::ErrorCode::OK));
     response->set_next_cursor(result.next_cursor);
@@ -159,16 +170,16 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
 ::grpc::Status ChatHandler::SearchMessages(::grpc::ServerContext* context,
                                              const ::swift::chat::SearchMessagesRequest* request,
                                              ::swift::chat::SearchMessagesResponse* response) {
-    (void)context;
-    if (request->user_id().empty()) {
-        response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::INVALID_PARAM));
-        response->set_message(swift::ErrorCodeToString(swift::ErrorCode::INVALID_PARAM));
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
+        response->set_message("token invalid or missing");
         return ::grpc::Status::OK;
     }
     int limit = request->limit() > 0 ? std::min(request->limit(), kMaxSearchLimit) : 20;
     ChatType ctype = request->chat_type() == 2 ? ChatType::GROUP : ChatType::PRIVATE;
     auto messages = service_->SearchMessages(
-        request->user_id(), request->keyword(), request->chat_id(), ctype, limit);
+        uid, request->keyword(), request->chat_id(), ctype, limit);
     response->set_code(static_cast<int>(swift::ErrorCode::OK));
     response->set_message(swift::ErrorCodeToString(swift::ErrorCode::OK));
     response->set_total(static_cast<int32_t>(messages.size()));
@@ -181,13 +192,17 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
 ::grpc::Status ChatHandler::MarkRead(::grpc::ServerContext* context,
                                       const ::swift::chat::MarkReadRequest* request,
                                       ::swift::common::CommonResponse* response) {
-    (void)context;
-    if (request->user_id().empty() || request->chat_id().empty()) {
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        return ::grpc::Status::OK;
+    }
+    if (request->chat_id().empty()) {
         SetCommonFail(response, swift::ErrorCode::INVALID_PARAM);
         return ::grpc::Status::OK;
     }
     ChatType ctype = request->chat_type() == 2 ? ChatType::GROUP : ChatType::PRIVATE;
-    bool ok = service_->MarkRead(request->user_id(), request->chat_id(), ctype, request->last_msg_id());
+    bool ok = service_->MarkRead(uid, request->chat_id(), ctype, request->last_msg_id());
     if (ok)
         SetCommonOk(response);
     else
@@ -198,15 +213,20 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
 ::grpc::Status ChatHandler::GetHistory(::grpc::ServerContext* context,
                                         const ::swift::chat::GetHistoryRequest* request,
                                         ::swift::chat::GetHistoryResponse* response) {
-    (void)context;
-    if (request->user_id().empty() || request->chat_id().empty()) {
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
+        response->set_message("token invalid or missing");
+        return ::grpc::Status::OK;
+    }
+    if (request->chat_id().empty()) {
         response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::INVALID_PARAM));
         response->set_message(swift::ErrorCodeToString(swift::ErrorCode::INVALID_PARAM));
         return ::grpc::Status::OK;
     }
     int limit = request->limit() > 0 ? std::min(request->limit(), kMaxHistoryLimit) : 50;
     ChatType ctype = request->chat_type() == 2 ? ChatType::GROUP : ChatType::PRIVATE;
-    auto messages = service_->GetHistory(request->user_id(), request->chat_id(), ctype,
+    auto messages = service_->GetHistory(uid, request->chat_id(), ctype,
                                           request->before_msg_id(), limit);
     response->set_code(static_cast<int>(swift::ErrorCode::OK));
     response->set_message(swift::ErrorCodeToString(swift::ErrorCode::OK));
@@ -220,14 +240,14 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
 ::grpc::Status ChatHandler::SyncConversations(::grpc::ServerContext* context,
                                                const ::swift::chat::SyncConversationsRequest* request,
                                                ::swift::chat::SyncConversationsResponse* response) {
-    (void)context;
     (void)request->last_sync_time();  // 可选：后续可做增量同步
-    if (request->user_id().empty()) {
-        response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::INVALID_PARAM));
-        response->set_message(swift::ErrorCodeToString(swift::ErrorCode::INVALID_PARAM));
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
+        response->set_message("token invalid or missing");
         return ::grpc::Status::OK;
     }
-    auto convs = service_->SyncConversations(request->user_id());
+    auto convs = service_->SyncConversations(uid);
     response->set_code(static_cast<int>(swift::ErrorCode::OK));
     response->set_message(swift::ErrorCodeToString(swift::ErrorCode::OK));
     for (const auto& c : convs) {
@@ -245,13 +265,17 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
 ::grpc::Status ChatHandler::DeleteConversation(::grpc::ServerContext* context,
                                                 const ::swift::chat::DeleteConversationRequest* request,
                                                 ::swift::common::CommonResponse* response) {
-    (void)context;
-    if (request->user_id().empty() || request->chat_id().empty()) {
+    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+    if (uid.empty()) {
+        SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        return ::grpc::Status::OK;
+    }
+    if (request->chat_id().empty()) {
         SetCommonFail(response, swift::ErrorCode::INVALID_PARAM);
         return ::grpc::Status::OK;
     }
     ChatType ctype = request->chat_type() == 2 ? ChatType::GROUP : ChatType::PRIVATE;
-    auto result = service_->DeleteConversation(request->user_id(), request->chat_id(), ctype);
+    auto result = service_->DeleteConversation(uid, request->chat_id(), ctype);
     if (result.success)
         SetCommonOk(response);
     else

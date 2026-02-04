@@ -6,11 +6,13 @@
 #include "friend_handler.h"
 #include "../service/friend_service.h"
 #include "swift/error_code.h"
+#include "swift/grpc_auth.h"
 
 namespace swift::friend_ {
 
-FriendHandler::FriendHandler(std::shared_ptr<FriendService> service)
-    : service_(std::move(service)) {}
+FriendHandler::FriendHandler(std::shared_ptr<FriendService> service,
+                             const std::string& jwt_secret)
+    : service_(std::move(service)), jwt_secret_(jwt_secret) {}
 
 FriendHandler::~FriendHandler() = default;
 
@@ -24,7 +26,18 @@ void SetFail(::swift::common::CommonResponse *response,
              swift::ErrorCode code = swift::ErrorCode::UNKNOWN,
              const std::string &message = "operation failed") {
   response->set_code(swift::ErrorCodeToInt(code));
-  response->set_message(message);
+  response->set_message(message.empty() ? swift::ErrorCodeToString(code) : message);
+}
+
+// 从 context 校验 Token，得到当前用户 id；失败返回空并已写 response
+inline std::string RequireAuth(::grpc::ServerContext* context,
+                              const std::string& jwt_secret,
+                              ::swift::common::CommonResponse* response) {
+  std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret);
+  if (uid.empty()) {
+    SetFail(response, swift::ErrorCode::TOKEN_INVALID, "token invalid or missing");
+  }
+  return uid;
 }
 
 } // namespace
@@ -37,9 +50,9 @@ void SetFail(::swift::common::CommonResponse *response,
 FriendHandler::AddFriend(::grpc::ServerContext *context,
                          const ::swift::relation::AddFriendRequest *request,
                          ::swift::common::CommonResponse *response) {
-  (void)context;
-  bool ok = service_->AddFriend(request->user_id(), request->friend_id(),
-                                request->remark());
+  std::string uid = RequireAuth(context, jwt_secret_, response);
+  if (uid.empty()) return ::grpc::Status::OK;
+  bool ok = service_->AddFriend(uid, request->friend_id(), request->remark());
   if (ok)
     SetOk(response);
   else
@@ -51,8 +64,9 @@ FriendHandler::AddFriend(::grpc::ServerContext *context,
     ::grpc::ServerContext *context,
     const ::swift::relation::HandleFriendReq *request,
     ::swift::common::CommonResponse *response) {
-  (void)context;
-  bool ok = service_->HandleRequest(request->user_id(), request->request_id(),
+  std::string uid = RequireAuth(context, jwt_secret_, response);
+  if (uid.empty()) return ::grpc::Status::OK;
+  bool ok = service_->HandleRequest(uid, request->request_id(),
                                     request->accept(), request->group_id());
   if (ok)
     SetOk(response);
@@ -69,8 +83,9 @@ FriendHandler::AddFriend(::grpc::ServerContext *context,
     ::grpc::ServerContext *context,
     const ::swift::relation::RemoveFriendRequest *request,
     ::swift::common::CommonResponse *response) {
-  (void)context;
-  bool ok = service_->RemoveFriend(request->user_id(), request->friend_id());
+  std::string uid = RequireAuth(context, jwt_secret_, response);
+  if (uid.empty()) return ::grpc::Status::OK;
+  bool ok = service_->RemoveFriend(uid, request->friend_id());
   if (ok)
     SetOk(response);
   else
@@ -82,8 +97,13 @@ FriendHandler::AddFriend(::grpc::ServerContext *context,
 FriendHandler::GetFriends(::grpc::ServerContext *context,
                           const ::swift::relation::GetFriendsRequest *request,
                           ::swift::relation::FriendListResponse *response) {
-  (void)context;
-  auto list = service_->GetFriends(request->user_id(), request->group_id());
+  std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+  if (uid.empty()) {
+    response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
+    response->set_message("token invalid or missing");
+    return ::grpc::Status::OK;
+  }
+  auto list = service_->GetFriends(uid, request->group_id());
   response->set_code(static_cast<int>(swift::ErrorCode::OK));
   for (const auto &f : list) {
     auto *info = response->add_friends();
@@ -105,8 +125,9 @@ FriendHandler::GetFriends(::grpc::ServerContext *context,
 FriendHandler::BlockUser(::grpc::ServerContext *context,
                          const ::swift::relation::BlockUserRequest *request,
                          ::swift::common::CommonResponse *response) {
-  (void)context;
-  bool ok = service_->Block(request->user_id(), request->target_id());
+  std::string uid = RequireAuth(context, jwt_secret_, response);
+  if (uid.empty()) return ::grpc::Status::OK;
+  bool ok = service_->Block(uid, request->target_id());
   if (ok)
     SetOk(response);
   else
@@ -118,8 +139,9 @@ FriendHandler::BlockUser(::grpc::ServerContext *context,
 FriendHandler::UnblockUser(::grpc::ServerContext *context,
                            const ::swift::relation::UnblockUserRequest *request,
                            ::swift::common::CommonResponse *response) {
-  (void)context;
-  bool ok = service_->Unblock(request->user_id(), request->target_id());
+  std::string uid = RequireAuth(context, jwt_secret_, response);
+  if (uid.empty()) return ::grpc::Status::OK;
+  bool ok = service_->Unblock(uid, request->target_id());
   if (ok)
     SetOk(response);
   else
@@ -131,8 +153,13 @@ FriendHandler::UnblockUser(::grpc::ServerContext *context,
     ::grpc::ServerContext *context,
     const ::swift::relation::GetBlockListRequest *request,
     ::swift::relation::BlockListResponse *response) {
-  (void)context;
-  auto ids = service_->GetBlockList(request->user_id());
+  std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+  if (uid.empty()) {
+    response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
+    response->set_message("token invalid or missing");
+    return ::grpc::Status::OK;
+  }
+  auto ids = service_->GetBlockList(uid);
   response->set_code(static_cast<int>(swift::ErrorCode::OK));
   for (const auto &id : ids)
     response->add_blocked_ids(id);
@@ -147,10 +174,10 @@ FriendHandler::UnblockUser(::grpc::ServerContext *context,
     ::grpc::ServerContext *context,
     const ::swift::relation::CreateFriendGroupRequest *request,
     ::swift::common::CommonResponse *response) {
-  (void)context;
+  std::string uid = RequireAuth(context, jwt_secret_, response);
+  if (uid.empty()) return ::grpc::Status::OK;
   std::string group_id;
-  bool ok = service_->CreateFriendGroup(request->user_id(),
-                                        request->group_name(), &group_id);
+  bool ok = service_->CreateFriendGroup(uid, request->group_name(), &group_id);
   if (ok)
     SetOk(response);
   else
@@ -162,8 +189,13 @@ FriendHandler::UnblockUser(::grpc::ServerContext *context,
     ::grpc::ServerContext *context,
     const ::swift::relation::GetFriendGroupsRequest *request,
     ::swift::relation::FriendGroupListResponse *response) {
-  (void)context;
-  auto groups = service_->GetFriendGroups(request->user_id());
+  std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+  if (uid.empty()) {
+    response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
+    response->set_message("token invalid or missing");
+    return ::grpc::Status::OK;
+  }
+  auto groups = service_->GetFriendGroups(uid);
   response->set_code(static_cast<int>(swift::ErrorCode::OK));
   for (const auto &g : groups) {
     auto *out = response->add_groups();
@@ -171,7 +203,7 @@ FriendHandler::UnblockUser(::grpc::ServerContext *context,
     out->set_group_name(g.group_name);
     out->set_sort_order(g.sort_order);
     auto friends_in_group =
-        service_->GetFriends(request->user_id(), g.group_id);
+        service_->GetFriends(uid, g.group_id);
     out->set_friend_count(static_cast<int32_t>(friends_in_group.size()));
   }
   return ::grpc::Status::OK;
@@ -181,9 +213,10 @@ FriendHandler::UnblockUser(::grpc::ServerContext *context,
     ::grpc::ServerContext *context,
     const ::swift::relation::DeleteFriendGroupRequest *request,
     ::swift::common::CommonResponse *response) {
-  (void)context;
+  std::string uid = RequireAuth(context, jwt_secret_, response);
+  if (uid.empty()) return ::grpc::Status::OK;
   swift::ErrorCode code =
-      service_->DeleteFriendGroup(request->user_id(), request->group_id());
+      service_->DeleteFriendGroup(uid, request->group_id());
   if (code == swift::ErrorCode::OK)
     SetOk(response);
   else
@@ -195,8 +228,9 @@ FriendHandler::UnblockUser(::grpc::ServerContext *context,
 FriendHandler::MoveFriend(::grpc::ServerContext *context,
                           const ::swift::relation::MoveFriendRequest *request,
                           ::swift::common::CommonResponse *response) {
-  (void)context;
-  bool ok = service_->MoveFriend(request->user_id(), request->friend_id(),
+  std::string uid = RequireAuth(context, jwt_secret_, response);
+  if (uid.empty()) return ::grpc::Status::OK;
+  bool ok = service_->MoveFriend(uid, request->friend_id(),
                                  request->to_group_id());
   if (ok)
     SetOk(response);
@@ -209,8 +243,9 @@ FriendHandler::MoveFriend(::grpc::ServerContext *context,
 FriendHandler::SetRemark(::grpc::ServerContext *context,
                          const ::swift::relation::SetRemarkRequest *request,
                          ::swift::common::CommonResponse *response) {
-  (void)context;
-  bool ok = service_->SetRemark(request->user_id(), request->friend_id(),
+  std::string uid = RequireAuth(context, jwt_secret_, response);
+  if (uid.empty()) return ::grpc::Status::OK;
+  bool ok = service_->SetRemark(uid, request->friend_id(),
                                 request->remark());
   if (ok)
     SetOk(response);
@@ -227,9 +262,14 @@ FriendHandler::SetRemark(::grpc::ServerContext *context,
     ::grpc::ServerContext *context,
     const ::swift::relation::GetFriendRequestsRequest *request,
     ::swift::relation::FriendRequestListResponse *response) {
-  (void)context;
+  std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+  if (uid.empty()) {
+    response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
+    response->set_message("token invalid or missing");
+    return ::grpc::Status::OK;
+  }
   int type = request->type();
-  auto list = service_->GetFriendRequests(request->user_id(), type);
+  auto list = service_->GetFriendRequests(uid, type);
   response->set_code(static_cast<int>(swift::ErrorCode::OK));
   for (const auto &r : list) {
     auto *out = response->add_requests();

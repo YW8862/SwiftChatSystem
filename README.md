@@ -15,7 +15,8 @@
 - Windows 客户端（Qt5）
 - Minikube 本地 Kubernetes 部署
 
-认证与登录：**AuthSvr** 负责注册、校验用户名密码（VerifyCredentials）、用户资料；**OnlineSvr** 负责登录会话、Token 签发与校验（Login/Logout/ValidateToken）。详见 `system.md`、`develop.md`。
+认证与登录：**AuthSvr** 负责注册、校验用户名密码（VerifyCredentials）、用户资料；**OnlineSvr** 负责登录会话、Token 签发与校验（Login/Logout/ValidateToken）。  
+**API 鉴权**：涉及「当前用户」的接口（AuthSvr 的 GetProfile/UpdateProfile、FriendSvr、ChatSvr 全部接口）须在 gRPC metadata 中携带 JWT（`authorization: Bearer <token>` 或 `x-token: <token>`），服务端以 Token 解析出的 user_id 为准，不信任请求体中的 user_id，防止越权。详见 `develop.md` 第 16 节、`system.md` 2.3。
 
 ## 项目结构
 

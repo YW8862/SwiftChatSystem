@@ -18,6 +18,7 @@ namespace swift::friend_ {
  *   FRIENDSVR_MYSQL_DSN    MySQL DSN（store_type=mysql 时）
  *   FRIENDSVR_LOG_DIR      日志目录
  *   FRIENDSVR_LOG_LEVEL    日志级别：TRACE/DEBUG/INFO/WARNING/ERROR
+ *   FRIENDSVR_JWT_SECRET    JWT 校验密钥（与 OnlineSvr 签发 Token 一致，用于校验请求身份）
  */
 struct FriendConfig {
     std::string host = "0.0.0.0";
@@ -26,6 +27,9 @@ struct FriendConfig {
     std::string store_type = "rocksdb";
     std::string rocksdb_path = "/data/friend";
     std::string mysql_dsn;
+
+    /** 与 OnlineSvr 相同的 JWT 密钥，用于从 metadata 校验 Token 得到 user_id */
+    std::string jwt_secret = "swift_online_secret_2026";
 
     std::string log_dir = "/data/logs";
     std::string log_level = "INFO";

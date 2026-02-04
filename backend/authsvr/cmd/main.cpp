@@ -79,7 +79,7 @@ int main(int argc, char *argv[]) {
 
   // 业务层与 Handler
   auto service_core = std::make_shared<swift::auth::AuthServiceCore>(store);
-  swift::auth::AuthHandler handler(service_core);
+  swift::auth::AuthHandler handler(service_core, config.jwt_secret);
 
   // gRPC 服务
   std::string addr = config.host + ":" + std::to_string(config.port);

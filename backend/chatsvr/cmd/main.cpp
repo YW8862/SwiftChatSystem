@@ -99,8 +99,8 @@ int main(int argc, char* argv[]) {
   auto chat_service = std::make_shared<swift::chat::ChatServiceCore>(
       msg_store, conv_store, conv_registry, group_store);
 
-  swift::group_::GroupHandler group_handler(group_service);
-  swift::chat::ChatHandler chat_handler(chat_service);
+  swift::group_::GroupHandler group_handler(group_service, config.jwt_secret);
+  swift::chat::ChatHandler chat_handler(chat_service, config.jwt_secret);
 
   std::string addr = config.host + ":" + std::to_string(config.port);
   grpc::ServerBuilder builder;

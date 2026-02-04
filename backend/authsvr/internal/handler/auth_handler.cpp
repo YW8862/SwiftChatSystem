@@ -1,11 +1,13 @@
 #include "auth_handler.h"
 #include "../service/auth_service.h"
 #include "swift/error_code.h"
+#include "swift/grpc_auth.h"
 
 namespace swift::auth {
 
-AuthHandler::AuthHandler(std::shared_ptr<AuthServiceCore> service)
-    : service_(std::move(service)) {}
+AuthHandler::AuthHandler(std::shared_ptr<AuthServiceCore> service,
+                         const std::string& jwt_secret)
+    : service_(std::move(service)), jwt_secret_(jwt_secret) {}
 
 AuthHandler::~AuthHandler() = default;
 
@@ -62,13 +64,16 @@ AuthHandler::Register(::grpc::ServerContext *context,
 AuthHandler::GetProfile(::grpc::ServerContext *context,
                         const ::swift::auth::GetProfileRequest *request,
                         ::swift::auth::UserProfile *response) {
-  (void)context;
-
-  auto profile = service_->GetProfile(request->user_id());
+  std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+  if (uid.empty()) {
+    return ::grpc::Status(::grpc::StatusCode::UNAUTHENTICATED,
+                         "token invalid or missing");
+  }
+  (void)request;
+  auto profile = service_->GetProfile(uid);
   if (!profile) {
     return ::grpc::Status(::grpc::StatusCode::NOT_FOUND, "user not found");
   }
-
   response->set_user_id(profile->user_id);
   response->set_username(profile->username);
   response->set_nickname(profile->nickname);
@@ -83,12 +88,15 @@ AuthHandler::GetProfile(::grpc::ServerContext *context,
 AuthHandler::UpdateProfile(::grpc::ServerContext *context,
                            const ::swift::auth::UpdateProfileRequest *request,
                            ::swift::common::CommonResponse *response) {
-  (void)context;
-
+  std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+  if (uid.empty()) {
+    response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
+    response->set_message("token invalid or missing");
+    return ::grpc::Status::OK;
+  }
   auto result =
-      service_->UpdateProfile(request->user_id(), request->nickname(),
+      service_->UpdateProfile(uid, request->nickname(),
                               request->avatar_url(), request->signature());
-
   if (result.success) {
     response->set_code(static_cast<int>(swift::ErrorCode::OK));
   } else {

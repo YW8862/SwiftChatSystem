@@ -47,6 +47,8 @@ void ApplyEnvOverrides(AuthConfig &config) {
     config.rocksdb_path = p;
   if ((p = std::getenv("AUTHSVR_MYSQL_DSN")) != nullptr && p[0] != '\0')
     config.mysql_dsn = p;
+  if ((p = std::getenv("AUTHSVR_JWT_SECRET")) != nullptr && p[0] != '\0')
+    config.jwt_secret = p;
   if ((p = std::getenv("AUTHSVR_LOG_DIR")) != nullptr && p[0] != '\0')
     config.log_dir = p;
   if ((p = std::getenv("AUTHSVR_LOG_LEVEL")) != nullptr && p[0] != '\0')
@@ -76,6 +78,8 @@ void ParseLine(const std::string &line, AuthConfig &config) {
     config.rocksdb_path = value;
   else if (k == "mysql_dsn")
     config.mysql_dsn = value;
+  else if (k == "jwt_secret")
+    config.jwt_secret = value;
   else if (k == "log_dir")
     config.log_dir = value;
   else if (k == "log_level")

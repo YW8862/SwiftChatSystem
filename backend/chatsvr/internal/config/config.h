@@ -17,6 +17,9 @@ struct ChatConfig {
     int recall_timeout_seconds = 120;
     int offline_max_count = 1000;
     int history_page_size = 50;
+
+    /** 与 OnlineSvr 相同的 JWT 密钥，用于从 metadata 校验 Token 得到 user_id */
+    std::string jwt_secret = "swift_online_secret_2026";
     
     // 日志
     std::string log_dir = "/data/logs";

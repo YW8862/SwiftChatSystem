@@ -2093,5 +2093,34 @@ AuthSystem 持有 AuthRpcClient 与 OnlineRpcClient，Login/Logout/ValidateToken
 
 ---
 
+## 16. 业务服务请求身份校验（防伪造 user_id）
+
+所有携带 `user_id` 的 gRPC 请求若不做校验，则存在越权：任意客户端可伪造 `user_id` 操作他人数据。因此 **AuthSvr（GetProfile/UpdateProfile）、FriendSvr、ChatSvr** 等需「当前用户」的接口统一从 **gRPC metadata 中的 JWT** 解析出当前用户，**不再信任请求体中的 user_id**。
+
+### 16.1 约定
+
+- **客户端**：在调用需鉴权的接口时，在 gRPC metadata 中携带 Token，任选其一：
+  - `authorization: "Bearer <jwt>"`
+  - `x-token: "<jwt>"`
+- **服务端**：使用与 OnlineSvr 相同的 `jwt_secret` 校验 JWT，从 payload 得到 `user_id`，作为「当前用户」执行业务；未带 token 或 token 无效/过期则返回 `TOKEN_INVALID`（102）或 gRPC `UNAUTHENTICATED`。
+
+### 16.2 各服务说明
+
+| 服务 | 需 Token 的接口 | 不需 Token 的接口 |
+|------|-----------------|-------------------|
+| **AuthSvr** | GetProfile、UpdateProfile（仅能查/改本人资料） | Register、VerifyCredentials（登录前调用） |
+| **FriendSvr** | 全部（好友列表、分组、黑名单等） | - |
+| **ChatSvr** | 全部（消息、会话、群组相关） | - |
+
+### 16.3 实现
+
+- **公共库**：`backend/common` 提供 `swift_grpc_auth`，接口 `GetAuthenticatedUserId(ServerContext*, jwt_secret)`，从 metadata 读取 token 并调用 `JwtVerify`，成功返回 `user_id`，否则返回空串。
+- **配置**：AuthSvr、FriendSvr、ChatSvr 的 config 均增加 `jwt_secret`（默认与 OnlineSvr 一致，如 `swift_online_secret_2026`），可通过配置文件或环境变量 `AUTHSVR_JWT_SECRET` / `FRIENDSVR_JWT_SECRET` / `CHATSVR_JWT_SECRET` 覆盖。
+- **Handler**：需鉴权的 RPC 入口先调用 `GetAuthenticatedUserId`，得到 `uid`；若为空则写响应 `code=TOKEN_INVALID`（或 gRPC Status `UNAUTHENTICATED`）并 return；否则用 `uid` 作为「当前用户」调用 Service（不再使用请求体中的 `user_id` / `from_user_id` 等）。
+
+这样，即使用户 A 登录后伪造请求体中的 `user_id=B`，服务端也会以 token 中的 A 作为操作主体，无法越权操作 B 的数据。
+
+---
+
 **文档版本**：v1.0  
 **最后更新**：2026年2月2日

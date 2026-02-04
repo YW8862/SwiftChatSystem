@@ -17,6 +17,7 @@ namespace swift::auth {
  *   AUTHSVR_ROCKSDB_PATH RocksDB 数据目录
  *   AUTHSVR_LOG_DIR     日志目录
  *   AUTHSVR_LOG_LEVEL   日志级别：TRACE/DEBUG/INFO/WARNING/ERROR
+ *   AUTHSVR_JWT_SECRET   JWT 校验密钥（与 OnlineSvr 一致，GetProfile/UpdateProfile 校验请求身份）
  */
 struct AuthConfig {
   // 服务配置
@@ -27,6 +28,9 @@ struct AuthConfig {
   std::string store_type = "rocksdb"; // rocksdb / mysql
   std::string rocksdb_path = "/data/auth";
   std::string mysql_dsn;
+
+  /** 与 OnlineSvr 相同的 JWT 密钥，用于 GetProfile/UpdateProfile 从 metadata 校验 Token */
+  std::string jwt_secret = "swift_online_secret_2026";
 
   // 日志配置
   std::string log_dir = "/data/logs";

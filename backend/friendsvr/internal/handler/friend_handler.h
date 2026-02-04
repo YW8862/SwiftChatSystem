@@ -13,7 +13,8 @@ class FriendService;  // 业务逻辑类，与 proto 生成的 swift::relation::
  */
 class FriendHandler : public ::swift::relation::FriendService::Service {
 public:
-    explicit FriendHandler(std::shared_ptr<FriendService> service);
+    /** @param jwt_secret 与 OnlineSvr 一致，用于从 metadata 校验 Token，得到当前用户 id */
+    FriendHandler(std::shared_ptr<FriendService> service, const std::string& jwt_secret);
     ~FriendHandler() override;
 
     ::grpc::Status AddFriend(::grpc::ServerContext* context,
@@ -70,6 +71,7 @@ public:
 
 private:
     std::shared_ptr<FriendService> service_;
+    std::string jwt_secret_;
 };
 
 }  // namespace swift::friend_

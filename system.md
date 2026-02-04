@@ -198,6 +198,8 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 
 - **OnlineSvr** 的 Service 层依赖 `SessionStore`（RocksDB）记录登录会话，使用公共库 `swift/jwt_helper.h` 签发/校验 JWT，单设备在线策略在此实现；登录/登出/验 Token 统一走 OnlineSvr。**AuthSvr** 仅负责注册、VerifyCredentials（校验用户名密码并返回 user_id、profile）、GetProfile、UpdateProfile，无 SessionStore，无 Login/Logout/ValidateToken。
 
+- **业务接口鉴权（防伪造 user_id）**：凡涉及「当前用户」的接口（如 GetProfile、UpdateProfile、好友列表、发消息等），客户端须在 gRPC metadata 中携带 JWT（`authorization: Bearer <token>` 或 `x-token: <token>`）。AuthSvr、FriendSvr、ChatSvr 的 Handler 使用公共库 `swift_grpc_auth` 从 metadata 校验 Token 得到 `user_id`，**仅以该身份执行业务，不再信任请求体中的 user_id**，从而避免越权。Register、VerifyCredentials 为登录前接口，不需 Token。详见 develop.md 第 16 节。
+
 ### 2.4 统一会话模型（私聊与群聊）
 
 - **抽象**：私聊与群聊统一为「会话」；区别仅为可见范围与是否具备群专属能力。

@@ -13,7 +13,8 @@ class ChatServiceCore;  // 业务逻辑类，与 proto 生成的 ChatService 区
  */
 class ChatHandler : public ::swift::chat::ChatService::Service {
 public:
-    explicit ChatHandler(std::shared_ptr<ChatServiceCore> service);
+    /** @param jwt_secret 与 OnlineSvr 一致，用于从 metadata 校验 Token，得到当前用户 id */
+    ChatHandler(std::shared_ptr<ChatServiceCore> service, const std::string& jwt_secret);
     ~ChatHandler() override;
 
     ::grpc::Status SendMessage(::grpc::ServerContext* context,
@@ -50,6 +51,7 @@ public:
 
 private:
     std::shared_ptr<ChatServiceCore> service_;
+    std::string jwt_secret_;
 };
 
 }  // namespace swift::chat

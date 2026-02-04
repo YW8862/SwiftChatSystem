@@ -80,7 +80,7 @@ int main(int argc, char* argv[]) {
     }
 
     auto service = std::make_shared<swift::friend_::FriendService>(store);
-    swift::friend_::FriendHandler handler(service);
+    swift::friend_::FriendHandler handler(service, config.jwt_secret);
 
     std::string addr = config.host + ":" + std::to_string(config.port);
     grpc::ServerBuilder builder;
