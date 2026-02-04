@@ -198,10 +198,19 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 
 - **OnlineSvr** 的 Service 层依赖 `SessionStore`（RocksDB）记录登录会话，使用公共库 `swift/jwt_helper.h` 签发/校验 JWT，单设备在线策略在此实现；登录/登出/验 Token 统一走 OnlineSvr。**AuthSvr** 仅负责注册、VerifyCredentials（校验用户名密码并返回 user_id、profile）、GetProfile、UpdateProfile，无 SessionStore，无 Login/Logout/ValidateToken。
 
-### 2.4 关键设计决策
+### 2.4 统一会话模型（私聊与群聊）
+
+- **抽象**：私聊与群聊统一为「会话」；区别仅为可见范围与是否具备群专属能力。
+- **私聊**：视为**仅两人的会话**（type=private）。两好友之间**仅存在一个**私聊会话，通过 `GetOrCreatePrivateConversation(u1, u2)` 得到唯一 `conversation_id`（如 `p_<min>_<max>`）。
+- **群聊**：多人会话（type=group），`conversation_id` 即 `group_id`。**同一批人（≥3）可建多个群**（如「家人群」「家人-旅游群」）。
+- **消息**：统一按 `conversation_id` 存储与拉取历史，不区分私聊/群聊。
+- **群专属能力**：拉人进群、踢人、转让群主、设置管理员、群公告等**仅当 type=group 时允许**，接口内校验 `conversation.type == group`，否则返回错误（如 NOT_GROUP_CHAT）。
+
+### 2.5 关键设计决策
 
 | 决策点           | 方案                                      | 理由                       |
 | ---------------- | ----------------------------------------- | -------------------------- |
+| 私聊/群聊模型    | 统一会话（私聊=两人会话，群聊=多人会话） | 消息与历史逻辑统一，群能力按 type 区分 |
 | 架构模式         | Zone-System 模式                          | 统一入口、状态共享、便于维护 |
 | 对外 API         | Handler 层直接实现                        | 无独立 API 层，Handler 即 gRPC 接口 |
 | 客户端协议       | WebSocket + Protobuf（二进制）            | 体积小、解析快、与后端统一 |
@@ -250,8 +259,9 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 | **AuthSvr** | 用户信息 | RocksDB | MySQL | `user:{id}`, `username:{name}→id` |
 | **OnlineSvr** | 登录会话 | RocksDB | Redis（可选扩展） | `session:{user_id}`（ZoneSvr 登录/登出走此服务） |
 | **FriendSvr** | 好友关系 | RocksDB | MySQL | `friend:{uid}:{fid}`, `block:{uid}:{tid}` |
-| **ChatSvr** | 消息数据 | RocksDB | MySQL + 分表 | `msg:{id}`, `chat:{cid}:{ts}:{mid}` |
-| **ChatSvr** | 离线消息 | RocksDB | Redis List | `offline:{uid}` |
+| **ChatSvr** | 消息数据 | RocksDB | MySQL + 分表 | `msg:{id}`, `chat:{conversation_id}:{rev_ts}:{mid}` |
+| **ChatSvr** | 会话元信息（私聊） | RocksDB | - | `conv_meta:{conversation_id}`（私聊 get-or-create） |
+| **ChatSvr** | 离线消息 | RocksDB | Redis List | `offline:{uid}:{rev_ts}:{mid}` |
 | **FileSvr** | 文件元信息 | RocksDB | MySQL | `file:{id}`, `md5:{hash}→id` |
 | **FileSvr** | 文件内容 | 本地磁盘 | MinIO/S3 | `/files/{date}/{file_id}` |
 | **ZoneSvr** | 在线状态 | 内存 | Redis | `session:{uid}`, `gate:{gid}` |
@@ -266,8 +276,9 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
   username:alice                    → u_123456
   friend:u_123:u_456                → 好友关系数据
   msg:m_789                         → 消息数据 JSON
-  chat:c_123:1706800000:m_789       → 消息 ID（时间线索引）
-  offline:u_123:1706800000:m_789    → 离线消息索引
+  chat:c_123:rev_ts:m_789           → 会话时间线（conversation_id=私聊/群聊统一 id）
+  conv_meta:p_u1_u2                 → 私聊会话元信息（type=private）
+  offline:u_123:rev_ts:m_789        → 离线消息索引
 ```
 
 ### 4.4 Store 接口设计
@@ -282,14 +293,27 @@ public:
     virtual bool Update(const UserData& user) = 0;
 };
 
-// 消息存储接口
+// 统一会话模型：私聊 = 两人会话（type=private），两好友间唯一会话；群聊 = 多人会话（type=group），同一批人可建多群。消息统一按 conversation_id 存储。
+
+// 会话注册（私聊 get-or-create）
+class ConversationRegistry {
+public:
+    virtual std::string GetOrCreatePrivateConversation(const std::string& user_id_1,
+                                                         const std::string& user_id_2) = 0;
+};
+
+// 消息存储接口（conversation_id = 私聊会话 id 或 group_id）
 class MessageStore {
 public:
     virtual bool Save(const MessageData& msg) = 0;
     virtual std::optional<MessageData> GetById(const std::string& msg_id) = 0;
-    virtual std::vector<MessageData> GetHistory(const std::string& chat_id, 
+    virtual std::vector<MessageData> GetHistory(const std::string& conversation_id,
+                                                 int chat_type,
                                                  const std::string& before_msg_id, int limit) = 0;
-    virtual bool MarkRecalled(const std::string& msg_id) = 0;
+    virtual bool MarkRecalled(const std::string& msg_id, int64_t recall_at) = 0;
+    virtual bool AddToOffline(const std::string& user_id, const std::string& msg_id) = 0;
+    virtual std::vector<MessageData> PullOffline(...) = 0;
+    virtual bool ClearOffline(const std::string& user_id, const std::string& until_msg_id) = 0;
 };
 
 // 会话存储接口
@@ -746,7 +770,7 @@ SwiftChatSystem/
 │   │   └── internal/
 │   │       ├── handler/
 │   │       ├── service/
-│   │       ├── store/                # MessageStore, ConversationStore
+│   │       ├── store/                # MessageStore, ConversationStore, ConversationRegistry, GroupStore
 │   │       └── config/
 │   │
 │   └── filesvr/                      # 文件服务

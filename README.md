@@ -9,6 +9,7 @@
 ### 核心功能
 
 - 私聊 / 群聊 / 好友关系 / 富媒体消息
+- **统一会话模型**：私聊视为仅两人的会话（type=private），两好友间唯一一个私聊会话；群聊为多人会话（type=group），同一批人可建多个群。消息统一按 conversation_id 存储；拉人/踢人等仅对群聊开放。
 - 群聊：创建群至少 3 人（不允许 1 人或 2 人建群），现有群支持邀请非成员进群
 - 消息撤回 / @提醒 / 已读回执 / 离线推送 / 消息搜索
 - Windows 客户端（Qt5）
@@ -27,7 +28,7 @@ SwiftChatSystem/
 │   ├── zonesvr/                 # 路由服务（在线状态、消息路由）
 │   ├── gatesvr/                 # 接入网关（WebSocket）
 │   ├── friendsvr/               # 好友服务
-│   ├── chatsvr/                 # 消息与群组服务（GroupStore/GroupService）
+│   ├── chatsvr/                 # 消息与群组服务（MessageStore/ConversationRegistry/GroupStore）
 │   └── filesvr/                 # 文件服务
 ├── client/                     # 客户端
 │   ├── proto/                  # 客户端协议

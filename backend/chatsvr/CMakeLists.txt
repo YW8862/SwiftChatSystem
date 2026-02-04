@@ -10,6 +10,7 @@ add_executable(${PROJECT_NAME}
     cmd/main.cpp
     internal/config/config.cpp
     internal/store/group_store.cpp
+    internal/store/message_store.cpp
     internal/service/group_service.cpp
     internal/handler/group_handler.cpp
 )

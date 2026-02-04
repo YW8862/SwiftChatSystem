@@ -229,8 +229,6 @@ inline const char* ErrorCodeToString(ErrorCode code) {
         {ErrorCode::BLOCK_LIMIT_REACHED, "block limit reached"},
         {ErrorCode::ALREADY_BLOCKED, "already blocked"},
         {ErrorCode::NOT_BLOCKED, "not blocked"},
-        {ErrorCode::FRIEND_GROUP_DEFAULT, "default friend group cannot be deleted"},
-        {ErrorCode::FRIEND_GROUP_NOT_FOUND, "friend group not found"},
         
         // ========== 消息错误 300-399 ==========
         {ErrorCode::MSG_NOT_FOUND, "message not found"},

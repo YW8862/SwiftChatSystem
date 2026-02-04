@@ -883,6 +883,13 @@ grpcurl -plaintext -d '{"user_id":"u_alice"}' \
 
 ChatSvr 是核心服务，负责消息的存储、查询、撤回以及群组管理。
 
+### 7.0 统一会话模型
+
+- **私聊**：抽象为仅两人的会话（type=private）。两好友之间**仅有一个**私聊会话，通过 `ConversationRegistry::GetOrCreatePrivateConversation(u1, u2)` 得到唯一 `conversation_id`（如 `p_<min_uid>_<max_uid>`），消息与历史均按该 id 存储。
+- **群聊**：多人会话（type=group），`conversation_id` 即 `group_id`；同一批人（≥3）可建多个群。
+- **消息**：统一按 `conversation_id` 存时间线、拉历史，不区分私聊/群聊。
+- **群专属能力**：拉人、踢人、转让群主、设置管理员、群公告等仅在 type=group 时允许，接口内校验后否则返回 NOT_GROUP_CHAT。
+
 ### 7.1 功能清单
 
 - [x] 发送消息
@@ -900,6 +907,25 @@ ChatSvr 是核心服务，负责消息的存储、查询、撤回以及群组管
 - **邀请成员**：`InviteMembersRequest` 用于现有群邀请新成员；**仅对当前不在群内的用户生效**，已是成员的 user_id 会被跳过。
 
 ### 7.3 关键实现
+
+#### ConversationRegistry（私聊 get-or-create）
+
+```cpp
+// 两好友间唯一私聊会话 id，确定性生成
+std::string RocksDBConversationRegistry::GetOrCreatePrivateConversation(
+    const std::string& user_id_1, const std::string& user_id_2) {
+    std::string a = user_id_1, b = user_id_2;
+    if (a > b) std::swap(a, b);
+    std::string conversation_id = "p_" + a + "_" + b;
+    std::string key = "conv_meta:" + conversation_id;
+    std::string value;
+    if (!db_->Get(rocksdb::ReadOptions(), key, &value).ok()) {
+        // 首次：写入 type=private 标记
+        db_->Put(rocksdb::WriteOptions(), key, R"({"type":"private"})");
+    }
+    return conversation_id;
+}
+```
 
 #### MessageStore 核心方法
 
@@ -919,11 +945,11 @@ bool RocksDBMessageStore::Save(const MessageData& msg) {
     // 1. 存储消息本体
     batch.Put("msg:" + msg.msg_id, j.dump());
     
-    // 2. 添加到会话时间线索引
-    std::string chat_id = BuildChatId(msg.from_user_id, msg.to_id, msg.chat_type);
+    // 2. 添加到会话时间线索引（conversation_id = 私聊 get-or-create 的 id 或 group_id）
+    std::string conversation_id = msg.conversation_id.empty() ? msg.to_id : msg.conversation_id;
     std::string timeline_key = fmt::format("chat:{}:{}:{}", 
-        chat_id, msg.timestamp, msg.msg_id);
-    batch.Put(timeline_key, msg.msg_id);
+        conversation_id, rev_ts(msg.timestamp), msg.msg_id);
+    batch.Put(timeline_key, "");
     
     return db_->Write(rocksdb::WriteOptions(), &batch).ok();
 }
