@@ -30,12 +30,14 @@ ChatHandler::~ChatHandler() = default;
 
 namespace {
 
-void SetCommonOk(::swift::common::CommonResponse* response) {
+template<typename R>
+void SetCommonOk(R* response) {
     response->set_code(static_cast<int>(swift::ErrorCode::OK));
     response->set_message(swift::ErrorCodeToString(swift::ErrorCode::OK));
 }
 
-void SetCommonFail(::swift::common::CommonResponse* response,
+template<typename R>
+void SetCommonFail(R* response,
                    swift::ErrorCode code,
                    const std::string& message = "") {
     response->set_code(swift::ErrorCodeToInt(code));
@@ -128,7 +130,7 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
 
 ::grpc::Status ChatHandler::RecallMessage(::grpc::ServerContext* context,
                                            const ::swift::chat::RecallMessageRequest* request,
-                                           ::swift::common::CommonResponse* response) {
+                                           ::swift::chat::RecallMessageResponse* response) {
     std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
     if (uid.empty()) {
         SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
@@ -191,7 +193,7 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
 
 ::grpc::Status ChatHandler::MarkRead(::grpc::ServerContext* context,
                                       const ::swift::chat::MarkReadRequest* request,
-                                      ::swift::common::CommonResponse* response) {
+                                      ::swift::chat::MarkReadResponse* response) {
     std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
     if (uid.empty()) {
         SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
@@ -264,7 +266,7 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
 
 ::grpc::Status ChatHandler::DeleteConversation(::grpc::ServerContext* context,
                                                 const ::swift::chat::DeleteConversationRequest* request,
-                                                ::swift::common::CommonResponse* response) {
+                                                ::swift::chat::DeleteConversationResponse* response) {
     std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
     if (uid.empty()) {
         SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);

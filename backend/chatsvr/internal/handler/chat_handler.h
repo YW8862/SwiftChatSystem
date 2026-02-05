@@ -23,7 +23,7 @@ public:
 
     ::grpc::Status RecallMessage(::grpc::ServerContext* context,
                                  const ::swift::chat::RecallMessageRequest* request,
-                                 ::swift::common::CommonResponse* response) override;
+                                 ::swift::chat::RecallMessageResponse* response) override;
 
     ::grpc::Status PullOffline(::grpc::ServerContext* context,
                                const ::swift::chat::PullOfflineRequest* request,
@@ -35,7 +35,7 @@ public:
 
     ::grpc::Status MarkRead(::grpc::ServerContext* context,
                             const ::swift::chat::MarkReadRequest* request,
-                            ::swift::common::CommonResponse* response) override;
+                            ::swift::chat::MarkReadResponse* response) override;
 
     ::grpc::Status GetHistory(::grpc::ServerContext* context,
                               const ::swift::chat::GetHistoryRequest* request,
@@ -47,7 +47,7 @@ public:
 
     ::grpc::Status DeleteConversation(::grpc::ServerContext* context,
                                       const ::swift::chat::DeleteConversationRequest* request,
-                                      ::swift::common::CommonResponse* response) override;
+                                      ::swift::chat::DeleteConversationResponse* response) override;
 
 private:
     std::shared_ptr<ChatServiceCore> service_;

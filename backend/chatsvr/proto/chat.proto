@@ -2,22 +2,19 @@ syntax = "proto3";
 
 package swift.chat;
 
-import "common.proto";
-
-
-
 // ============== 请求/响应 ==============
 
 message SendMessageRequest {
     string from_user_id = 1;
     string to_id = 2;              // user_id（私聊）或 group_id（群聊）
     int32 chat_type = 3;           // 1=私聊, 2=群聊
-    string content = 4;            // 文本内容
-    string media_url = 5;          // 媒体文件 URL
+    string content = 4;            // 文本内容（发文件时可为文件名）
+    string media_url = 5;          // 媒体文件 URL（上传完成后由 CompleteFileMessage 写入）
     string media_type = 6;         // text, image, file, voice, video
     repeated string mentions = 7;  // @提醒的用户列表
     string reply_to_msg_id = 8;    // 回复的消息 ID
     string client_msg_id = 9;      // 客户端消息 ID（去重）
+    int64 file_size = 10;          // 发文件时必填：文件大小；先创建一条「发送文件」消息（status=上传中），再走 InitUpload+UploadFile
 }
 
 message SendMessageResponse {
@@ -30,6 +27,11 @@ message SendMessageResponse {
 message RecallMessageRequest {
     string msg_id = 1;
     string user_id = 2;            // 撤回者（必须是发送者）
+}
+
+message RecallMessageResponse {
+    int32 code = 1;
+    string message = 2;
 }
 
 message PullOfflineRequest {
@@ -70,6 +72,11 @@ message MarkReadRequest {
     string last_msg_id = 4;        // 已读到的最后一条消息
 }
 
+message MarkReadResponse {
+    int32 code = 1;
+    string message = 2;
+}
+
 message GetHistoryRequest {
     string user_id = 1;
     string chat_id = 2;
@@ -102,6 +109,11 @@ message DeleteConversationRequest {
     int32 chat_type = 3;
 }
 
+message DeleteConversationResponse {
+    int32 code = 1;
+    string message = 2;
+}
+
 // ============== 数据结构 ==============
 
 message ChatMessage {
@@ -115,8 +127,31 @@ message ChatMessage {
     repeated string mentions = 8;
     string reply_to_msg_id = 9;
     int64 timestamp = 10;
-    int32 status = 11;             // 0=正常, 1=已撤回, 2=已删除
+    int32 status = 11;             // 0=正常, 1=已撤回, 2=已删除, 3=上传中, 4=发送失败(传输中断/超时未续传)
     int64 recall_at = 12;          // 撤回时间（如果已撤回）
+}
+
+// 上传完成后由客户端调用，将「上传中」的文件消息更新为带 file_id/url 的正常消息
+message CompleteFileMessageRequest {
+    string msg_id = 1;
+    string user_id = 2;            // 发送者，用于校验
+    string file_id = 3;
+    string file_url = 4;           // 文件访问 URL（或 media_url）
+}
+
+message CompleteFileMessageResponse {
+    int32 code = 1;
+    string message = 2;
+}
+
+// 由 FileSvr 在放弃上传（24h 未续传）时调用，将关联的文件消息标为「发送失败」
+message MarkFileMessageFailedRequest {
+    string msg_id = 1;
+}
+
+message MarkFileMessageFailedResponse {
+    int32 code = 1;
+    string message = 2;
 }
 
 message Conversation {
@@ -142,11 +177,17 @@ message ReadReceipt {
 // ============== 服务定义 ==============
 
 service ChatService {
-    // 发送消息
+    // 发送消息（发文件时：先带 file_size 调用一次创建「上传中」消息，再 InitUpload+UploadFile，完成后调 CompleteFileMessage）
     rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
     
+    // 上传完成后更新文件消息的 file_id/file_url，将 status 从「上传中」改为正常
+    rpc CompleteFileMessage(CompleteFileMessageRequest) returns (CompleteFileMessageResponse);
+    
+    // 由 FileSvr 调用：放弃上传（24h 未续传）时把关联消息标为「发送失败」，消息保留
+    rpc MarkFileMessageFailed(MarkFileMessageFailedRequest) returns (MarkFileMessageFailedResponse);
+    
     // 撤回消息（2分钟内）
-    rpc RecallMessage(RecallMessageRequest) returns (swift.common.CommonResponse);
+    rpc RecallMessage(RecallMessageRequest) returns (RecallMessageResponse);
     
     // 拉取离线消息
     rpc PullOffline(PullOfflineRequest) returns (PullOfflineResponse);
@@ -155,7 +196,7 @@ service ChatService {
     rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
     
     // 标记已读
-    rpc MarkRead(MarkReadRequest) returns (swift.common.CommonResponse);
+    rpc MarkRead(MarkReadRequest) returns (MarkReadResponse);
     
     // 获取历史消息
     rpc GetHistory(GetHistoryRequest) returns (GetHistoryResponse);
@@ -164,5 +205,5 @@ service ChatService {
     rpc SyncConversations(SyncConversationsRequest) returns (SyncConversationsResponse);
     
     // 删除会话
-    rpc DeleteConversation(DeleteConversationRequest) returns (swift.common.CommonResponse);
+    rpc DeleteConversation(DeleteConversationRequest) returns (DeleteConversationResponse);
 }

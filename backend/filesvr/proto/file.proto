@@ -2,26 +2,35 @@ syntax = "proto3";
 
 package swift.file;
 
-import "common.proto";
-
-
+// 单文件大小上限：1GB（发送与接收均不可超过）
+// 常量在服务端配置中可覆盖，默认 1024*1024*1024
+// const int64 MAX_FILE_SIZE_BYTES = 1073741824;
 
 // ============== 请求/响应 ==============
 
-// 流式上传请求
+// 流式上传请求（支持断点续传）
+// 首条消息为 meta 或 resume_meta，之后为 chunk 数据
 message UploadChunk {
     oneof data {
-        UploadMeta meta = 1;       // 首个 chunk 发送元信息
-        bytes chunk = 2;           // 后续 chunk 发送文件内容
+        UploadMeta meta = 1;           // 新上传：元信息（需先调 InitUpload 获得 upload_id）
+        bytes chunk = 2;               // 文件内容块（按顺序追加）
+        ResumeUploadMeta resume_meta = 4;  // 断点续传：首条发此，upload_id + 已上传偏移，再发 chunk
     }
 }
 
 message UploadMeta {
-    string user_id = 1;
-    string file_name = 2;
-    string content_type = 3;       // MIME 类型
-    int64 file_size = 4;
-    string md5 = 5;                // 可选，用于校验
+    string upload_id = 1;          // 由 InitUpload 返回，必填
+    string user_id = 2;
+    string file_name = 3;
+    string content_type = 4;       // MIME 类型
+    int64 file_size = 5;           // 总大小，须 <= 服务端配置的 max_file_size（默认 1GB）
+    string md5 = 6;                // 可选，用于秒传/校验
+}
+
+// 断点续传时首条发送：从 offset 处继续上传
+message ResumeUploadMeta {
+    string upload_id = 1;
+    int64 offset = 2;              // 已成功上传的字节数，下次从该位置继续
 }
 
 message UploadResponse {
@@ -40,11 +49,44 @@ message GetFileUrlRequest {
 message FileUrlResponse {
     int32 code = 1;
     string message = 2;
-    string file_url = 3;
+    string file_url = 3;           // 下载 URL，支持 HTTP Range 断点续传
     string file_name = 4;
     int64 file_size = 5;
     string content_type = 6;
     int64 expire_at = 7;           // URL 过期时间
+}
+
+// 初始化上传会话（必先调用，获得 upload_id；file_size 超过 1GB 将拒绝）
+// 若与聊天文件消息关联，请传 msg_id：24h 内未续传完成则放弃上传、删除已传数据，并通知 ChatSvr 将该消息标为「发送失败」
+message InitUploadRequest {
+    string user_id = 1;
+    string file_name = 2;
+    string content_type = 3;
+    int64 file_size = 4;           // 必须 <= 服务端 max_file_size（默认 1GB）
+    string md5 = 5;                // 可选，用于秒传
+    string msg_id = 6;             // 可选，关联的聊天文件消息 ID；超时放弃时由 FileSvr 调 ChatSvr.MarkFileMessageFailed
+}
+
+message InitUploadResponse {
+    int32 code = 1;
+    string message = 2;
+    string upload_id = 3;          // 上传会话 ID，断线重连后用此 ID 续传
+    int64 expire_at = 4;           // 会话过期时间戳（默认 24 小时）；超时未完成则清理已传数据，若有 msg_id 则通知 ChatSvr 标为发送失败
+}
+
+// 查询上传进度，断线重连后客户端据此决定从哪一字节续传
+message GetUploadStateRequest {
+    string upload_id = 1;
+}
+
+message GetUploadStateResponse {
+    int32 code = 1;
+    string message = 2;
+    int64 offset = 3;              // 已接收字节数，续传时从该 offset 发送后续 chunk
+    int64 file_size = 4;           // 总文件大小
+    bool completed = 5;            // 是否已完整上传并落盘
+    string file_id = 6;            // 若 completed 则有 file_id
+    int64 expire_at = 7;           // 本上传会话过期时间；超过则视为放弃，服务端会清理并（若有 msg_id）通知 ChatSvr 标为发送失败
 }
 
 message GetFileInfoRequest {
@@ -72,6 +114,11 @@ message DeleteFileRequest {
     string user_id = 2;
 }
 
+message DeleteFileResponse {
+    int32 code = 1;
+    string message = 2;
+}
+
 message GetUploadTokenRequest {
     string user_id = 1;
     string file_name = 2;
@@ -89,18 +136,24 @@ message UploadTokenResponse {
 // ============== 服务定义 ==============
 
 service FileService {
-    // 流式上传文件
+    // 初始化上传会话（校验 file_size <= 1GB，返回 upload_id 用于续传）
+    rpc InitUpload(InitUploadRequest) returns (InitUploadResponse);
+    
+    // 查询上传进度（断线重连后调用，得到 offset 再续传）
+    rpc GetUploadState(GetUploadStateRequest) returns (GetUploadStateResponse);
+    
+    // 流式上传文件（首条 meta/resume_meta 后为 chunk；支持断点续传）
     rpc UploadFile(stream UploadChunk) returns (UploadResponse);
     
-    // 获取文件下载 URL
+    // 获取文件下载 URL（下载端支持 HTTP Range 头断点续传）
     rpc GetFileUrl(GetFileUrlRequest) returns (FileUrlResponse);
     
     // 获取文件信息
     rpc GetFileInfo(GetFileInfoRequest) returns (FileInfoResponse);
     
     // 删除文件
-    rpc DeleteFile(DeleteFileRequest) returns (swift.common.CommonResponse);
+    rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
     
-    // 获取上传凭证（可选，用于直传）
+    // 获取上传凭证（可选，用于直传；file_size 同样受 1GB 限制）
     rpc GetUploadToken(GetUploadTokenRequest) returns (UploadTokenResponse);
 }

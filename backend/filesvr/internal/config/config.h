@@ -21,9 +21,11 @@ struct FileConfig {
     std::string minio_secret_key;
     std::string minio_bucket = "swift-files";
     
-    // 限制
-    int64_t max_file_size = 100 * 1024 * 1024;  // 100MB
+    // 限制（单文件上限，发送与接收均不可超过）
+    int64_t max_file_size = 1024LL * 1024 * 1024;  // 默认 1GB
     std::string allowed_types = "image/*,video/*,audio/*,application/pdf";
+    // 上传会话过期时间（秒）；超时未续传完成则放弃上传、删除已传数据，并通知 ChatSvr 将关联消息标为发送失败
+    int64_t upload_session_expire_seconds = 24 * 3600;  // 默认 24 小时
     
     std::string log_dir = "/data/logs";
     std::string log_level = "INFO";

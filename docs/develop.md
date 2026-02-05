@@ -1080,69 +1080,121 @@ grpcurl -plaintext -d '{
 ### 8.1 功能清单
 
 - [x] 文件上传（gRPC 流式）
-- [x] 文件下载（HTTP）
+- [x] 文件下载（HTTP，支持 Range 断点续传）
 - [x] 文件元信息管理
 - [x] MD5 秒传检测
+- [x] **单文件大小限制**：仅接受 1GB 以内文件（发送与接收均受此限制，可在配置中修改 `max_file_size`）
+- [x] **断点续传**：上传与下载在断网恢复后均可从断点继续，不重复传输
+- [x] **发送文件即产生消息记录**：会话中会有一条「发送文件」消息，双方可见；上传完成后消息带 file_id/url，超时未续传则消息保留但标为「发送失败」
+- [x] **上传会话 24h 过期**：断线后若 24 小时内未上线续传，该上传请求视为放弃，已上传数据删除，关联消息标为「发送失败（传输中断）」
 
-### 8.2 关键实现
+### 8.2 发送文件与消息记录、24h 放弃、发送失败
 
-#### gRPC 流式上传
+**1. 发送文件在消息里有一条记录**
+
+- 发送文件时，**先**在会话中创建一条消息（`SendMessage` 带 `media_type=file`、`content=文件名`、`file_size`），该条消息的 `status=上传中`（3），双方都能看到「对方正在发送文件」或「你发送了文件（上传中）」。
+- 上传完成后，客户端调用 **CompleteFileMessage**(msg_id, file_id, file_url)，将该消息更新为正常（`status=0`）并写入 `media_url`，对方即可点击下载。
+
+**2. 上传会话过期时间与放弃逻辑**
+
+- 每次 **InitUpload** 创建的上传会话有一个**过期时间**（配置项 `upload_session_expire_seconds`，默认 **24 小时**）。
+- 若在过期前未通过续传完成上传，则视为**放弃该次上传**：
+  - FileSvr 删除该 `upload_id` 下已上传的**所有临时数据**；
+  - 若 InitUpload 时带了 **msg_id**（关联的聊天文件消息），FileSvr 调用 ChatSvr 的 **MarkFileMessageFailed**(msg_id)，将该条消息的 `status` 置为 **发送失败(传输中断)**（4）。
+
+**3. 放弃上传后，发送文件信息仍存在**
+
+- **消息记录不删除**：该条「发送文件」消息仍保留在会话历史中。
+- **状态可知**：双方都能看到这条消息处于「发送失败」——即因对方传输中断/超时未续传导致发送未完成。客户端可根据 `status=4` 展示「发送失败，传输未完成」等文案。
+
+**推荐流程小结**
+
+1. 客户端 **SendMessage**(media_type=file, content=文件名, file_size=…) → 得到 `msg_id`，消息 status=上传中。
+2. 客户端 **InitUpload**(…, msg_id=msg_id) → 得到 `upload_id`、`expire_at`（默认 24h）。
+3. 客户端 **UploadFile** 流式上传；断线则 **GetUploadState** → 续传。
+4. 上传完成 → **CompleteFileMessage**(msg_id, file_id, file_url) → 消息变为正常、带可下载 URL。
+5. 若 24h 内未续传完成 → FileSvr 定时清理该会话、删临时数据、调 **MarkFileMessageFailed**(msg_id) → 消息保留，status=发送失败。
+
+### 8.3 文件大小限制与断点续传
+
+**大小限制**
+
+- 服务端配置项 `max_file_size` 默认 **1GB**（`1024*1024*1024` 字节）。
+- `InitUpload`、`GetUploadToken`、流式上传首包中的 `file_size` 若超过该限制，将直接拒绝（返回错误码与说明）。
+- 下载时不会产生大于 1GB 的文件（上传已限制），下载 URL 支持按 Range 分片拉取。
+
+**上传断点续传流程**
+
+1. （发文件时）先 **SendMessage**(media_type=file, content=文件名, file_size=…) 得到 `msg_id`，再 **InitUpload**(…, msg_id=msg_id) → 返回 `upload_id`、`expire_at`（默认 24h）。若 `file_size > max_file_size` 则返回错误。
+2. 客户端通过 **UploadFile** 流式发送：首条消息为 **UploadMeta**（带 `upload_id`、file_name、file_size 等），之后按序发送 **chunk** 数据。
+3. 若中途断网，连接恢复后：
+   - 调用 **GetUploadState**(upload_id) → 得到已接收字节数 `offset` 及 `expire_at`（未过期可续传）。
+   - 再次发起 **UploadFile** 流：首条为 **ResumeUploadMeta**(upload_id, offset)，然后从 `offset` 起继续发送 **chunk**。服务端追加写入，完成后落盘并返回 file_id；客户端再调 **CompleteFileMessage** 更新消息。
+4. 若在 **expire_at** 之前都未续传完成，FileSvr 会放弃该上传、删除已传数据，并调用 **MarkFileMessageFailed**(msg_id)，消息保留且 status=发送失败。
+
+**下载断点续传**
+
+- 通过 **GetFileUrl** 获取下载 URL 后，使用 HTTP **Range** 头请求指定字节范围（如 `Range: bytes=0-1048575`）。
+- 服务端 HTTP 下载接口需支持 **Range**：解析 `Range`，从文件 `offset` 起读取对应长度并返回 `206 Partial Content`；连接断开后，客户端可从下一段 range 继续请求，直至收齐整个文件。
+
+**其他消息类型在断网恢复后的行为**
+
+- 普通请求/响应（如聊天、好友、资料等）：客户端应使用 **request_id** 与响应中的 request_id 一一对应；断线重连后可根据业务需要**重发未确认的请求**，服务端保持幂等或去重即可。
+- 大消息或需要可靠送达的场景：建议采用**分片 + 序号**的机制，断线恢复后只补传缺失片段，与文件断点续传思路一致。
+
+### 8.4 关键实现
+
+#### InitUpload 与上传大小校验、会话过期
+
+在流式上传前必须先调用 `InitUpload`，服务端校验 `file_size <= config.max_file_size`（默认 1GB），通过则创建上传会话并返回 `upload_id` 和 `expire_at`（默认当前时间 + `upload_session_expire_seconds`，通常 24 小时）。可选传入 `msg_id` 以关联聊天文件消息，超时放弃时由 FileSvr 调 ChatSvr.MarkFileMessageFailed。后续 `UploadFile` 流的首条消息须携带该 `upload_id`（新传用 `UploadMeta`，续传用 `ResumeUploadMeta`）。定时任务需扫描过期未完成的会话：删除临时文件并若存在 `msg_id` 则调用 ChatSvr 更新消息状态为发送失败。
+
+#### gRPC 流式上传（含断点续传）
 
 ```cpp
+// 首条消息为 meta 或 resume_meta，之后为 chunk
 grpc::Status FileServiceImpl::UploadFile(
     grpc::ServerContext* context,
     grpc::ServerReader<swift::file::UploadChunk>* reader,
     swift::file::UploadResponse* response) {
     
     swift::file::UploadChunk chunk;
-    std::string file_id;
-    std::string file_name;
-    std::string content_type;
-    std::vector<char> data;
+    std::string upload_id;
+    int64_t write_offset = 0;  // 新传为 0，续传由 ResumeUploadMeta 指定
+    bool first = true;
     
     while (reader->Read(&chunk)) {
         if (chunk.has_meta()) {
-            // 第一个 chunk 包含元信息
-            file_name = chunk.meta().file_name();
-            content_type = chunk.meta().content_type();
-            file_id = service_->GenerateFileId();
+            // 新上传：校验 upload_id、file_size <= max_file_size，打开临时文件
+            upload_id = chunk.meta().upload_id();
+            write_offset = 0;
+            // ... 打开/创建 upload_id 对应临时文件，校验 file_size ...
+        } else if (chunk.has_resume_meta()) {
+            // 断点续传：校验 upload_id、offset 与已写入长度一致，seek 到 offset
+            upload_id = chunk.resume_meta().upload_id();
+            write_offset = chunk.resume_meta().offset();
+            // ... 根据 GetUploadState 已记录的 offset 校验并 seek ...
         } else {
-            // 后续 chunk 包含文件数据
+            // 数据块：从 write_offset 追加写入，并更新已写入长度（供 GetUploadState 查询）
             const auto& bytes = chunk.chunk();
-            data.insert(data.end(), bytes.begin(), bytes.end());
+            // ... 追加写入，write_offset += bytes.size() ...
         }
+        first = false;
     }
     
-    // 保存文件
-    auto result = service_->Upload(
-        context->peer(),  // uploader
-        file_name,
-        content_type,
-        data
-    );
-    
-    if (result.success) {
-        response->set_code(0);
-        response->set_file_id(result.file_id);
-        response->set_file_url(result.file_url);
-    } else {
-        response->set_code(1);
-        response->set_message(result.error);
-    }
-    
+    // 若总写入长度 == file_size，则落盘、生成 file_id、返回；否则保持未完成状态供续传
+    // ...
     return grpc::Status::OK;
 }
 ```
 
-#### HTTP 下载服务
+#### HTTP 下载服务（支持 Range 断点续传）
 
 ```cpp
-// 使用 Boost.Beast 实现简单 HTTP 服务器
+// 解析 URL: /files/{file_id}，支持 Range: bytes=start-end 断点续传
 void HttpServer::HandleRequest(
     http::request<http::string_body>& req,
     http::response<http::file_body>& res) {
     
-    // 解析 URL: /files/{file_id}
     std::string target = req.target();
     if (!target.starts_with("/files/")) {
         res.result(http::status::not_found);
@@ -1150,21 +1202,25 @@ void HttpServer::HandleRequest(
     }
     
     std::string file_id = target.substr(7);
-    
-    // 获取文件信息
     auto meta = file_store_->GetById(file_id);
     if (!meta) {
         res.result(http::status::not_found);
         return;
     }
     
-    // 设置响应头
     res.set(http::field::content_type, meta->content_type);
-    res.set(http::field::content_disposition, 
+    res.set(http::field::content_disposition,
             "attachment; filename=\"" + meta->file_name + "\"");
     
-    // 返回文件内容
-    res.body().open(meta->storage_path.c_str(), beast::file_mode::scan);
+    // 解析 Range 头，实现断点续传
+    int64_t range_start = 0, range_end = meta->file_size - 1;
+    if (auto range = req.find(http::field::range); range != req.end()) {
+        // 解析 "bytes=0-1023" 等形式，设置 range_start/range_end
+        // 若合法：res.result(http::status::partial_content); 并设置 Content-Range
+        // 从 range_start 起读取 (range_end - range_start + 1) 字节到 res.body()
+    } else {
+        res.body().open(meta->storage_path.c_str(), beast::file_mode::scan);
+    }
     res.prepare_payload();
 }
 ```
