@@ -15,6 +15,7 @@ add_subdirectory(proto)
 set(SOURCES
     src/utils.cpp
     src/config.cpp
+    src/config_loader.cpp
     src/jwt_helper.cpp
     src/async_write.cpp
 )

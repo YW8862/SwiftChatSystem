@@ -145,6 +145,19 @@ ls backend/*/
 | `grpc_cpp_plugin not found` | vcpkg 安装 grpc 后会自动安装，检查路径 |
 | `rocksdb link error` | 确认安装了 `libsnappy-dev libzstd-dev liblz4-dev` |
 
+### 2.5 服务配置文件
+
+各服务通过 **配置文件 + 环境变量** 加载配置，配置项不写死在代码里，便于部署与多环境切换。
+
+- **格式**：key=value，支持 `#` 注释、空行；键名不区分大小写。
+- **位置**：项目根目录下 `config/` 中提供各服务的示例文件（如 `config/authsvr.conf.example`），使用时复制为 `xxx.conf` 并按需修改；建议将 `*.conf` 加入 .gitignore，敏感项（如 `jwt_secret`）优先用环境变量注入。
+- **加载方式**：
+  - 命令行传参：`./authsvr /path/to/authsvr.conf`
+  - 或环境变量指定路径：`AUTHSVR_CONFIG=/path/to/authsvr.conf`（未传参时生效）
+  - 未指定时默认使用当前目录下 `authsvr.conf` 等。
+- **环境变量覆盖**：同名项可由环境变量覆盖，前缀与服务对应（如 `AUTHSVR_PORT`、`FILESVR_GRPC_PORT`）。详见 `config/README.md`。
+- **公共实现**：解析与 env 覆盖由公共库 `swift::KeyValueConfig`（`backend/common/include/swift/config_loader.h`）统一实现；各服务 `internal/config/config.cpp` 仅调用 `LoadKeyValueConfig(path, "PREFIX_")` 并将键值填到本服务的配置结构体。
+
 ---
 
 ## 3. 阶段一：AsyncLogger 异步日志库

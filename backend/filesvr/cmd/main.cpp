@@ -1,11 +1,15 @@
 /**
  * FileSvr - 文件服务
  * 提供文件上传（gRPC 流式）、下载（HTTP）、元信息管理等。
+ *
+ * 配置：命令行参数或环境 FILESVR_CONFIG 指定配置文件路径（key=value 格式）；
+ *       环境变量 FILESVR_* 可覆盖配置文件。
  */
 
 #include <atomic>
 #include <csignal>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -55,10 +59,28 @@ int main(int argc, char* argv[]) {
   LogInfo("========================================");
 
   swift::file::FileConfig config = swift::file::LoadConfig(config_file);
-  LogInfo("Config: host=" << config.host << " grpc_port=" << config.grpc_port
+
+  LogInfo("Config: host=" << config.host
+          << " grpc_port=" << config.grpc_port
           << " http_port=" << config.http_port
-          << " storage=" << config.storage_path
-          << " max_file_size=" << config.max_file_size);
+          << " storage_path=" << config.storage_path
+          << " max_file_size=" << config.max_file_size
+          << " upload_session_expire_seconds=" << config.upload_session_expire_seconds);
+
+  // 确保存储目录存在，启动时即失败避免运行时写盘报错
+  std::error_code ec;
+  std::filesystem::create_directories(config.storage_path, ec);
+  if (ec) {
+    LogError("Failed to create storage_path " << config.storage_path << ": " << ec.message());
+    swift::log::Shutdown();
+    return 1;
+  }
+  std::filesystem::create_directories(config.storage_path + "/.tmp", ec);
+  if (ec) {
+    LogError("Failed to create storage_path/.tmp: " << ec.message());
+    swift::log::Shutdown();
+    return 1;
+  }
 
   std::shared_ptr<swift::file::FileStore> store;
   if (config.store_type == "rocksdb") {

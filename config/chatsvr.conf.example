@@ -1,0 +1,20 @@
+# ChatSvr 配置示例
+# 复制为 chatsvr.conf 后按需修改；环境变量 CHATSVR_* 可覆盖
+
+host=0.0.0.0
+port=9098
+
+store_type=rocksdb
+rocksdb_path=/data/chat
+# mysql_dsn=user:pass@tcp(localhost:3306)/chat
+
+# 消息
+recall_timeout_seconds=120
+offline_max_count=1000
+history_page_size=50
+
+# 与 OnlineSvr 一致的 JWT 密钥（鉴权用）；生产环境建议用环境变量 CHATSVR_JWT_SECRET
+jwt_secret=swift_online_secret_2026
+
+log_dir=/data/logs
+log_level=INFO

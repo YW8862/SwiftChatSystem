@@ -1,107 +1,28 @@
 #include "config.h"
-#include <algorithm>
-#include <cctype>
-#include <cstdlib>
-#include <fstream>
-#include <sstream>
+#include "swift/config_loader.h"
 
 namespace swift::friend_ {
 
-namespace {
-
-void Trim(std::string& s) {
-    auto start = s.find_first_not_of(" \t\r\n");
-    if (start == std::string::npos) {
-        s.clear();
-        return;
-    }
-    auto end = s.find_last_not_of(" \t\r\n");
-    s = s.substr(start, end == std::string::npos ? std::string::npos : end - start + 1);
-}
-
-std::string ToLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-    return s;
-}
-
-int ParseInt(const std::string& value, int default_val) {
-    try {
-        return std::stoi(value);
-    } catch (...) {
-        return default_val;
-    }
-}
-
-void ApplyEnvOverrides(FriendConfig& config) {
-    const char* p;
-
-    if ((p = std::getenv("FRIENDSVR_HOST")) != nullptr && p[0] != '\0')
-        config.host = p;
-    if ((p = std::getenv("FRIENDSVR_PORT")) != nullptr && p[0] != '\0')
-        config.port = ParseInt(p, config.port);
-    if ((p = std::getenv("FRIENDSVR_STORE_TYPE")) != nullptr && p[0] != '\0')
-        config.store_type = p;
-    if ((p = std::getenv("FRIENDSVR_ROCKSDB_PATH")) != nullptr && p[0] != '\0')
-        config.rocksdb_path = p;
-    if ((p = std::getenv("FRIENDSVR_MYSQL_DSN")) != nullptr && p[0] != '\0')
-        config.mysql_dsn = p;
-    if ((p = std::getenv("FRIENDSVR_JWT_SECRET")) != nullptr && p[0] != '\0')
-        config.jwt_secret = p;
-    if ((p = std::getenv("FRIENDSVR_LOG_DIR")) != nullptr && p[0] != '\0')
-        config.log_dir = p;
-    if ((p = std::getenv("FRIENDSVR_LOG_LEVEL")) != nullptr && p[0] != '\0')
-        config.log_level = p;
-}
-
-void ParseLine(const std::string& line, FriendConfig& config) {
-    std::string key, value;
-    size_t eq = line.find('=');
-    if (eq == std::string::npos)
-        return;
-    key = line.substr(0, eq);
-    value = line.substr(eq + 1);
-    Trim(key);
-    Trim(value);
-    if (key.empty())
-        return;
-
-    std::string k = ToLower(key);
-    if (k == "host")
-        config.host = value;
-    else if (k == "port")
-        config.port = ParseInt(value, config.port);
-    else if (k == "store_type")
-        config.store_type = value;
-    else if (k == "rocksdb_path")
-        config.rocksdb_path = value;
-    else if (k == "mysql_dsn")
-        config.mysql_dsn = value;
-    else if (k == "jwt_secret")
-        config.jwt_secret = value;
-    else if (k == "log_dir")
-        config.log_dir = value;
-    else if (k == "log_level")
-        config.log_level = value;
-}
-
-}  // namespace
-
+/**
+ * 从配置文件 + 环境变量加载，填充 FriendConfig。
+ * 解析与 env 覆盖由公共库 KeyValueConfig 统一实现，此处仅做「键 → 结构体」映射。
+ */
 FriendConfig LoadConfig(const std::string& config_file) {
+    swift::KeyValueConfig kv = swift::LoadKeyValueConfig(config_file, "FRIENDSVR_");
+
     FriendConfig config;
+    config.host = kv.Get("host", "0.0.0.0");
+    config.port = kv.GetInt("port", 9096);
 
-    std::ifstream f(config_file);
-    if (f.is_open()) {
-        std::string line;
-        while (std::getline(f, line)) {
-            Trim(line);
-            if (line.empty() || line[0] == '#')
-                continue;
-            ParseLine(line, config);
-        }
-    }
+    config.store_type = kv.Get("store_type", "rocksdb");
+    config.rocksdb_path = kv.Get("rocksdb_path", "/data/friend");
+    config.mysql_dsn = kv.Get("mysql_dsn", "");
 
-    ApplyEnvOverrides(config);
+    config.jwt_secret = kv.Get("jwt_secret", "swift_online_secret_2026");
+
+    config.log_dir = kv.Get("log_dir", "/data/logs");
+    config.log_level = kv.Get("log_level", "INFO");
+
     return config;
 }
 

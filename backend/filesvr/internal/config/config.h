@@ -1,5 +1,9 @@
 #pragma once
 
+/**
+ * FileSvr 配置结构：字段由 LoadConfig 从配置文件 + 环境变量（FILESVR_*）填充。
+ * 解析逻辑在公共库 swift::KeyValueConfig，此处仅定义结构及缺省值。
+ */
 #include <string>
 
 namespace swift::file {

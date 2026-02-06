@@ -221,6 +221,13 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 | 日志方案         | 异步日志库（进程内）                      | 高性能、可复用、无网络开销 |
 | 服务合并         | ChatSvr 含离线消息 + 搜索                 | 减少跨服务调用和数据同步   |
 
+### 2.6 配置管理
+
+- **方式**：各服务通过 **配置文件（.conf）+ 环境变量覆盖** 加载配置，配置项不写死在代码中，便于多环境与容器部署。
+- **格式**：key=value，支持 `#` 注释；键名不区分大小写。示例与说明见项目根目录 `config/` 下的 `*.conf.example` 及 `config/README.md`。
+- **公共实现**：`backend/common` 提供 `swift::KeyValueConfig`（`config_loader.h`），统一实现「读 key=value 文件」与「按前缀应用环境变量覆盖」（如 `FILESVR_GRPC_PORT` → `grpc_port`）。各服务 `internal/config/config.cpp` 仅调用 `LoadKeyValueConfig(path, "PREFIX_")` 并将结果填到本服务的配置结构体。
+- **约定**：配置文件路径可由命令行参数或环境变量 `XXX_CONFIG` 指定；敏感项（如 `jwt_secret`）建议仅通过环境变量注入，不写入仓库内的 .conf。
+
 ---
 
 ## 3. 微服务列表与职责
@@ -685,6 +692,16 @@ SwiftChatSystem/
 ├── README.md
 ├── system.md                         # 本设计文档
 │
+├── config/                           # 服务配置示例（key=value .conf）
+│   ├── README.md                     # 配置说明与环境变量前缀
+│   ├── authsvr.conf.example
+│   ├── onlinesvr.conf.example
+│   ├── friendsvr.conf.example
+│   ├── chatsvr.conf.example
+│   ├── filesvr.conf.example
+│   ├── gatesvr.conf.example
+│   └── zonesvr.conf.example
+│
 ├── backend/                          # 后端服务
 │   ├── CMakeLists.txt
 │   ├── common/                       # 公共库
@@ -695,6 +712,7 @@ SwiftChatSystem/
 │   │   ├── include/swift/
 │   │   │   ├── common.h
 │   │   │   ├── config.h
+│   │   │   ├── config_loader.h       # KeyValueConfig，统一 .conf + env 加载
 │   │   │   ├── utils.h
 │   │   │   ├── jwt_helper.h          # 公共 JWT（HS256），供 OnlineSvr 等使用
 │   │   │   └── log_helper.h

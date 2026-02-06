@@ -73,7 +73,26 @@ cmake .. -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
 make -j$(nproc)
 ```
 
-### 3. 部署到 Minikube
+### 3. 配置文件
+
+各服务通过 **.conf 文件 + 环境变量** 加载配置（详见 `config/README.md`）。
+
+```bash
+# 从示例复制为实际配置（建议将 *.conf 加入 .gitignore，不提交敏感信息）
+cp config/authsvr.conf.example config/authsvr.conf
+cp config/onlinesvr.conf.example config/onlinesvr.conf
+# … 其他服务按需复制
+
+# 启动时指定配置路径（可选）
+./build/authsvr config/authsvr.conf
+# 或使用环境变量
+export AUTHSVR_CONFIG=config/authsvr.conf
+./build/authsvr
+```
+
+未指定路径时，服务默认使用当前工作目录下同名 .conf（如 `authsvr.conf`）。环境变量 `AUTHSVR_*`、`FILESVR_*` 等可覆盖配置文件中的同名项。
+
+### 4. 部署到 Minikube
 
 ```bash
 # 启动 Minikube
