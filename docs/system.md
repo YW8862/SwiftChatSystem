@@ -630,6 +630,18 @@ void Shutdown();
 }  // namespace asynclog
 ```
 
+### 8.4 双缓冲模式复用于异步写
+
+AsyncLogger 的 **RingBuffer（双缓冲）+ BackendThread** 实现（见 `component/asynclogger/src/ring_buffer.h`、`backend_thread.h`）是一套通用的「生产者入队、消费者批量处理」模型：
+
+- **生产者**：业务线程调用 `Push(entry)` 写入前台缓冲，满或达阈值时 `Notify()` 唤醒消费者。
+- **双缓冲交换**：消费者调用 `SwapAndGet(entries, timeout_ms)`，将前台与后台缓冲交换，一次性取走整批条目，减少锁竞争与拷贝。
+- **消费者**：后台线程循环 SwapAndGet，对取到的条目做实际 I/O（日志写 Sink；若复用于其他场景，则为写盘/写 DB）。
+
+**当前业务侧**：FileSvr、ChatSvr 等仍**直接同步写**（不经过异步写中间层），避免多余封装与拷贝。
+
+**预留的异步写中间层**：`backend/common` 中的 `swift::async::IWriteExecutor`（见 `swift/async_write.h`）已定义并实现 `SyncWriteExecutor`，但**暂无业务调用**。当未来引入 `AsyncDbWriteExecutor`（队列 + 写线程池）时，可将 FileSvr/ChatSvr 的写路径改为通过该接口提交任务：强一致写用 `SubmitAndWait`，非核心写用 `Submit` fire-and-forget。详细设计与适配要点见 **develop.md [8.5 异步写设计方案](develop.md#85-异步写设计方案)**。
+
 ---
 
 ## 10. 核心功能流程

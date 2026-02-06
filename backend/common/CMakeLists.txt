@@ -16,6 +16,7 @@ set(SOURCES
     src/utils.cpp
     src/config.cpp
     src/jwt_helper.cpp
+    src/async_write.cpp
 )
 
 # 公共库

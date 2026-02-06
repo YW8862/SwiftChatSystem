@@ -47,11 +47,13 @@ SwiftChatSystem/
 | 语言     | C++17                         |
 | RPC      | gRPC + Protobuf               |
 | 网络     | Boost.Beast (WebSocket)       |
-| 存储     | RocksDB                       |
-| 日志     | AsyncLogger（自研）           |
+| 存储     | RocksDB（后续可扩展 Redis/MySQL 集群） |
+| 日志     | AsyncLogger（自研，双缓冲异步写） |
 | 构建     | CMake + vcpkg                 |
 | 部署     | Minikube + Kubernetes         |
 | 客户端   | Qt 5.15                       |
+
+> **写入路径**：当前 ChatSvr、FileSvr 等**直接同步写**（不经过异步写中间层）。`swift::async::IWriteExecutor`（`swift/async_write.h`）已实现并预留，待引入真正异步写（如 Redis/MySQL 集群下的 `AsyncDbWriteExecutor`）时，再由业务注入并改用 `SubmitAndWait` / `Submit`。
 
 ## 快速开始
 

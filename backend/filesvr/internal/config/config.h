@@ -29,6 +29,9 @@ struct FileConfig {
     
     std::string log_dir = "/data/logs";
     std::string log_level = "INFO";
+
+    // 与 OnlineSvr 一致，用于从 gRPC metadata 校验 Token 得到当前 user_id；空则使用请求体中的 user_id
+    std::string jwt_secret;
 };
 
 FileConfig LoadConfig(const std::string& config_file);

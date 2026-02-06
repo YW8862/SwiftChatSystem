@@ -196,7 +196,9 @@ private:
 **关键点：**
 - 使用 `std::atomic` 保证线程安全
 - 环形缓冲区避免内存分配
-- 双缓冲交换策略
+- 双缓冲交换策略（前台缓冲接收写入，满或定时与后台缓冲交换，后台线程批量消费）
+
+**可复用性**：该双缓冲 + 后台线程模式与 **component/asynclogger** 中已实现的 `RingBuffer`（Push / SwapAndGet）+ `BackendThread` 一致，不仅适用于日志，也可复用于 **FileSvr 文件块异步写**、**ChatSvr 聊天记录异步写** 等「生产者入队、消费者批量写盘/写库」的场景，详见 [8.5 异步写设计方案](#85-异步写设计方案)。
 
 #### Step 2: 实现 Sink 接口
 
@@ -268,9 +270,11 @@ private:
 ```
 
 **关键点：**
-- 后台线程定期从 RingBuffer 读取并写入 Sink
+- 后台线程定期从 RingBuffer 读取并写入 Sink（对应实现中为 `SwapAndGet` 取整批条目后 `ProcessEntries`）
 - 使用条件变量避免忙等待
 - 优雅关闭：确保缓冲区数据全部刷盘
+
+该 **RingBuffer + BackendThread** 模式与双缓冲队列一致，可复用于其他异步写场景（见 [8.5 异步写设计方案](#85-异步写设计方案)）。
 
 #### Step 4: 实现对外接口
 
@@ -1224,6 +1228,107 @@ void HttpServer::HandleRequest(
     res.prepare_payload();
 }
 ```
+
+### 8.5 异步写设计方案
+
+当前 FileSvr 的 `AppendChunk` 与 ChatSvr 的「写聊天记录」（如 `MessageStore::Save`）均在 gRPC 工作线程内**同步写盘/写库**，高并发或慢盘时可能占满线程池。下面给出**未来可选的**统一异步写设计方案，实现时可参考本项目中 AsyncLogger 的双缓冲队列（见 [3. 阶段一：AsyncLogger](#3-阶段一asynclogger-异步日志库) 与 [system.md 异步日志系统设计](system.md#9-异步日志系统设计asynclogger)），将「日志条目」替换为「写任务」即可复用同一套生产者/消费者模型。
+
+**当前实现状态**：
+
+- FileSvr、ChatSvr 等**直接同步写**（在 gRPC 工作线程内调用 Store/写盘），**不经过** `IWriteExecutor`，避免多余封装与数据拷贝。
+- `backend/common` 中的「异步写中间层」接口 `swift::async::IWriteExecutor`（见 `swift/async_write.h`）及 `SyncWriteExecutor` 已实现但**暂无业务调用**，仅作预留：当引入真正的异步写实现（如 `AsyncDbWriteExecutor`）时，再由各 Svr 注入 executor 并改为通过 `SubmitAndWait` / `Submit` 提交写任务。
+
+**未来可选策略**（切到 Redis + MySQL 或写成为瓶颈时）：
+
+- 新增 `AsyncDbWriteExecutor`：内部**写队列 + 写线程池**，按 key 分片、批量写、有限重试、背压。
+- 强一致 RPC（发消息、文件块上传）使用 `SubmitAndWait`（入队 + 阻塞等结果）；非核心写（埋点、统计）使用 `Submit` fire-and-forget。
+
+#### 参考 AsyncLogger 双缓冲实现
+
+本仓库 **component/asynclogger** 已实现「双缓冲 + 后台线程」的异步写模式，可直接参考并复用到文件/消息异步写：
+
+| AsyncLogger 组件 | 作用 | 对应到 FileSvr / ChatSvr 异步写 |
+|------------------|------|----------------------------------|
+| **RingBuffer**（`ring_buffer.h/cpp`） | 前台缓冲区 `front_buffer_` 接收生产者 **Push**；消费者通过 **SwapAndGet** 与后台缓冲区交换，一次性取走整批条目；有界容量 + `condition_variable` 通知 | 将 `LogEntry` 换成「写任务」类型（如 `ChunkTask` / `SaveMessageTask`），Push 由 gRPC Handler 调用，SwapAndGet 由写线程调用，取到的一批任务按 key 分组后顺序写盘/写库 |
+| **BackendThread**（`backend_thread.h/cpp`） | 循环调用 `buffer_.SwapAndGet(entries, timeout_ms)`，取到后 **ProcessEntries**（格式化并写 Sink） | 写线程循环 SwapAndGet 取写任务，按 `upload_id` 或 `conversation_id` 保证顺序，执行写临时文件/MessageStore::Save，写完后对需要「返回前落盘」的任务执行 **promise.set_value** 通知 Handler |
+
+**适配要点**：
+
+- **任务类型**：AsyncLogger 推的是 `LogEntry`；FileSvr 推 `ChunkTask`（upload_id + data + optional promise），ChatSvr 推 `SaveMessageTask`（MessageData + 会话/离线更新 + optional promise）。
+- **完成通知**：若需「返回前已落盘/落库」，每个任务可带 `std::promise<Result>`，Worker 在 ProcessEntries 中处理完该任务后 `promise.set_value(...)`，Handler 侧 `future.get()` 再填 response。
+- **顺序保证**：日志是整批交换后任意顺序写；文件/消息需**按 key 串行**。做法可以是：(1) 单写线程，自然保序；(2) 多写线程时按 `upload_id` / `conversation_id` 做分片，同一 key 始终进同一队列/同一 worker。
+- **背压**：与 RingBuffer 一致，容量满时 Push 返回 false 或阻塞，Handler 可返回 `SERVICE_UNAVAILABLE` 或短暂等待。
+
+具体代码结构可对照 `component/asynclogger/src/ring_buffer.cpp`（双缓冲交换、Notify、Stop）与 `backend_thread.cpp`（Run 循环、SwapAndGet、ProcessEntries）。
+
+#### 目标与约束
+
+- **目标**：将「写盘 / 写 DB」从 gRPC 工作线程挪到**专用写线程**，避免 I/O 阻塞事件循环。
+- **约束**：
+  - 同一上传会话内 chunk 必须**严格顺序**落盘（FileSvr）。
+  - 消息写入顺序与请求顺序一致（ChatSvr），且返回客户端前需**已落库**（或明确「已提交」语义）。
+
+#### 通用模型：写队列 + 写线程
+
+```
+                    gRPC 线程池                    写线程（或线程池）
+  ┌─────────────────────────────────────┐     ┌─────────────────────────────┐
+  │  Handler 收到请求                     │     │  Worker 循环：               │
+  │    → 构造写任务（Chunk / Message）     │     │    从队列取任务               │
+  │    → 投递到「按 key 分片的队列」       │     │    执行写盘/写 DB             │
+  │    → 等待该任务的完成信号（可选）      │     │    更新进度/状态               │
+  │    → 返回响应                         │     │    通知等待者（若有）          │
+  └─────────────────────────────────────┘     └─────────────────────────────┘
+            │ 入队 + 可选阻塞等待                          │
+            └────────────────── 有界队列 ──────────────────┘
+```
+
+- **按 key 分片**：FileSvr 按 `upload_id` 分队列（或单队列内按 upload_id 严格顺序消费），保证同一上传内顺序；ChatSvr 可按 `conversation_id` 或全局单队列（消息本身带序号）。
+- **有界队列**：队列满时 Handler 可阻塞或返回「服务忙」，避免内存爆掉。
+- **完成信号**：若需「返回前已落盘/落库」，则任务带 `promise`/`future` 或回调，Worker 写完后 set_value/回调，Handler 在 `future.get()` 或回调里填 response 再返回。
+
+---
+
+#### FileSvr：文件块异步写
+
+- **队列**：按 `upload_id` 分片（例如 `map<upload_id, queue<ChunkTask>>`），或全局单队列 + 任务带 `upload_id`，由 Worker 保证同一 `upload_id` 串行写。
+- **ChunkTask**：`upload_id`、`data`（拷贝或 shared_ptr）、`expected_offset`（可选，用于校验顺序）。
+- **流程**：
+  1. Handler 在 `AppendChunk` 里：校验 session、构造 ChunkTask，投递到该 `upload_id` 对应队列。
+  2. Handler **阻塞等待**该 chunk 的「写完成」future（或带 request_id 的 completion 回调）。
+  3. Worker 从队列取该 upload_id 的下一个任务，追加写临时文件，flush，调用 `UpdateUploadSessionBytes(upload_id, new_offset)`，然后 notify 等待方。
+  4. Handler 被唤醒后，用 `new_offset` 填 `AppendChunkResult` 并返回。
+- **顺序**：同一 `upload_id` 单队列 + 单写线程，自然保证顺序；多写线程时需按 `upload_id` 路由到同一 worker。
+- **背压**：队列设 max_size，满时 Handler 可返回 `SERVICE_UNAVAILABLE` 或短暂阻塞。
+
+这样 **gRPC 线程只做入队 + 等待**，不执行 `write/flush`；写盘在 Worker 线程，与当前「同步写」语义一致（返回时该 chunk 已落盘且 session 已更新）。
+
+---
+
+#### ChatSvr：聊天记录异步写
+
+- **同理**：发送消息时不再在 gRPC 线程内直接调 `MessageStore::Save` / `ConversationStore::Upsert` 等，而是：
+  1. 生成 `msg_id`、构造 `MessageData`（及会话更新等）。
+  2. 将「写任务」（SaveMessageTask：msg、会话更新、离线队列等）投递到**写队列**。
+  3. Handler **阻塞等待**该任务的「写完成」信号（例如 `future.get()`）。
+  4. 写线程从队列取任务，依次执行 `MessageStore::Save`、ConversationStore、离线队列等，完成后 notify。
+  5. Handler 被唤醒后填 `SendMessageResponse`（msg_id、timestamp）并返回。
+- **顺序**：单写线程时自然按入队顺序落库；多写线程时可按 `conversation_id` 分片，保证同一会话内顺序。
+- **一致性**：返回给客户端时表示「已落库」，与当前同步写语义一致；若希望「先返回再异步写」，则需额外协议（如先返回 msg_id，写失败再推送发送失败），复杂度更高，一般不首选。
+
+---
+
+#### 实现要点小结
+
+| 项目       | FileSvr 异步写              | ChatSvr 异步写                 |
+|------------|-----------------------------|--------------------------------|
+| 队列 key   | `upload_id`                 | 可选 `conversation_id` 或全局  |
+| 任务内容   | chunk 数据 + 预期 offset    | MessageData + 会话/离线更新    |
+| 完成语义   | 该 chunk 已 flush + session 已更新 | 该条消息已 Save + 会话/离线已更新 |
+| Handler    | 入队 + 等 future 再返回     | 入队 + 等 future 再返回        |
+| 背压       | 有界队列，满则拒绝或等待     | 同上                            |
+
+两者都是**「入队 + 阻塞等写完成」**的异步写：I/O 在写线程，gRPC 线程不直接写盘/写库，但返回前数据已持久化，语义与当前同步实现一致，仅把「谁在执行写」从 gRPC 线程换成了写线程。
 
 ---
 
