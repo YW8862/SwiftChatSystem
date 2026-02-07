@@ -228,6 +228,24 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 - **公共实现**：`backend/common` 提供 `swift::KeyValueConfig`（`config_loader.h`），统一实现「读 key=value 文件」与「按前缀应用环境变量覆盖」（如 `FILESVR_GRPC_PORT` → `grpc_port`）。各服务 `internal/config/config.cpp` 仅调用 `LoadKeyValueConfig(path, "PREFIX_")` 并将结果填到本服务的配置结构体。
 - **约定**：配置文件路径可由命令行参数或环境变量 `XXX_CONFIG` 指定；敏感项（如 `jwt_secret`）建议仅通过环境变量注入，不写入仓库内的 .conf。
 
+### 2.7 ZoneSvr 接入认证（网络隔离 + 内网密钥）
+
+为保证 ZoneSvr **只处理来自 GateSvr（或其它可信内网调用方）的请求**，避免外部或伪造客户端直接调用 ZoneSvr gRPC，采用**网络隔离 + 内网密钥**的简单认证方式。
+
+| 层面 | 做法 |
+|------|------|
+| **网络隔离** | ZoneSvr 仅监听内网地址（如 `0.0.0.0` 或集群内 IP），不对外网暴露；K8s 中通过 Service/NetworkPolicy 仅允许 GateSvr 等指定服务访问 ZoneSvr。 |
+| **内网密钥** | ZoneSvr 与 GateSvr 共享一个密钥（如 `internal_secret`），仅通过**环境变量**注入，不写入 .conf 仓库。GateSvr 调用 ZoneSvr 的**每次 gRPC 请求**在 metadata 中携带该密钥；ZoneSvr 在**服务端拦截器**中校验，缺失或错误则返回 `UNAUTHENTICATED`，不执行业务。 |
+
+**约定：**
+
+- **Metadata 键名**：`x-internal-secret`（或 `x-gate-secret`），值为配置的 `internal_secret`。
+- **配置**：ZoneSvr 的 `ZoneConfig` 增加可选字段 `internal_secret`（空表示关闭校验，仅建议开发环境）；GateSvr 的配置中增加 `zonesvr_internal_secret`，与 ZoneSvr 一致。
+- **敏感项**：`internal_secret` 仅由环境变量注入（如 `ZONESVR_INTERNAL_SECRET`、`GATESVR_ZONESVR_INTERNAL_SECRET`），不提交到仓库。
+- **实现要点**：ZoneSvr 在创建 gRPC Server 时注册一个 **ServerInterceptor**，在业务 Handler 前从 `ServerContext::client_metadata()` 读取 `x-internal-secret`，与本地配置比较；GateSvr 在创建调用 ZoneSvr 的 gRPC 客户端后，通过 **ClientContext::AddMetadata("x-internal-secret", secret)** 或封装成 CallCredentials/Interceptor 在每次调用时注入。
+
+开发环境可将 `internal_secret` 置空以关闭校验；生产环境必须设置强随机密钥并配合网络隔离使用。
+
 ---
 
 ## 3. 微服务列表与职责

@@ -28,6 +28,9 @@ struct ZoneConfig {
 
     std::string log_dir = "/data/logs";
     std::string log_level = "INFO";
+
+    /// 内网密钥：非空时所有 gRPC 请求需在 metadata 中带 x-internal-secret；空表示不校验（仅建议开发环境）。仅环境变量 ZONESVR_INTERNAL_SECRET 注入。
+    std::string internal_secret;
 };
 
 ZoneConfig LoadConfig(const std::string& config_file);

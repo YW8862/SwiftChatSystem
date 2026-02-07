@@ -39,3 +39,13 @@
 - `zonesvr.conf.example` - 路由服务（API Gateway）
 
 配置加载由公共库 `swift::KeyValueConfig`（`backend/common`）统一实现，各服务 `config.cpp` 仅做「键 → 结构体」映射。
+
+## 敏感项（仅环境变量）
+
+以下项**仅通过环境变量注入**，不写入 .conf 并勿提交仓库：
+
+| 变量 | 说明 |
+|------|------|
+| `ZONESVR_INTERNAL_SECRET` | ZoneSvr 与 GateSvr 共享的内网密钥，用于 ZoneSvr 只接受可信调用方（见 system.md 2.7）。空则关闭校验（仅开发）。 |
+| `GATESVR_ZONESVR_INTERNAL_SECRET` | GateSvr 调用 ZoneSvr 时携带的密钥，须与 `ZONESVR_INTERNAL_SECRET` 一致。 |
+| 各服务 `JWT_SECRET` / `jwt_secret` | 按现有约定仅环境变量注入。 |

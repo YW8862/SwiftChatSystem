@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(SOURCES
     cmd/main.cpp
     internal/config/config.cpp
+    internal/interceptor/internal_secret_processor.cpp
     internal/store/session_store.cpp
     internal/rpc/rpc_client_base.cpp
     internal/rpc/auth_rpc_client.cpp
