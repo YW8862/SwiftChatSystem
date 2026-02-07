@@ -5,6 +5,7 @@
 
 #include "file_system.h"
 #include "../rpc/file_rpc_client.h"
+#include "../config/config.h"
 
 namespace swift {
 namespace zone {
@@ -13,7 +14,10 @@ FileSystem::FileSystem() = default;
 FileSystem::~FileSystem() = default;
 
 bool FileSystem::Init() {
-    // TODO: 创建 RPC Client，连接 FileSvr
+    if (!config_) return true;
+    rpc_client_ = std::make_unique<FileRpcClient>();
+    if (!rpc_client_->Connect(config_->file_svr_addr)) return false;
+    rpc_client_->InitStub();
     return true;
 }
 

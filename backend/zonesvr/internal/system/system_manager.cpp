@@ -1,6 +1,6 @@
 /**
  * @file system_manager.cpp
- * @brief SystemManager 实现
+ * @brief SystemManager 实现：创建 SessionStore、各 System，注入配置并初始化
  */
 
 #include "system_manager.h"
@@ -23,10 +23,11 @@ SystemManager::~SystemManager() {
 
 bool SystemManager::Init(const ZoneConfig& config) {
     // 1. 创建 SessionStore（所有 System 共享）
-    session_store_ = std::make_shared<SessionStore>();
-    // if (!session_store_->Init(config)) {
-    //     return false;
-    // }
+    if (config.session_store_type == "redis") {
+        session_store_ = std::make_shared<RedisSessionStore>(config.redis_url);
+    } else {
+        session_store_ = std::make_shared<MemorySessionStore>();
+    }
 
     // 2. 创建所有 System
     auth_system_ = std::make_unique<AuthSystem>();
@@ -35,36 +36,23 @@ bool SystemManager::Init(const ZoneConfig& config) {
     group_system_ = std::make_unique<GroupSystem>();
     file_system_ = std::make_unique<FileSystem>();
 
-    // 3. 注入 SessionStore
-    auth_system_->SetSessionStore(session_store_);
-    chat_system_->SetSessionStore(session_store_);
-    friend_system_->SetSessionStore(session_store_);
-    group_system_->SetSessionStore(session_store_);
-    file_system_->SetSessionStore(session_store_);
+    // 3. 注入 SessionStore 与配置
+    for (BaseSystem* sys : {static_cast<BaseSystem*>(auth_system_.get()),
+                            static_cast<BaseSystem*>(chat_system_.get()),
+                            static_cast<BaseSystem*>(friend_system_.get()),
+                            static_cast<BaseSystem*>(group_system_.get()),
+                            static_cast<BaseSystem*>(file_system_.get())}) {
+        sys->SetSessionStore(session_store_);
+        sys->SetConfig(&config);
+    }
 
     // 4. 初始化所有 System（建立 RPC 连接）
-    if (!auth_system_->Init()) {
-        // LOG_ERROR("Failed to init AuthSystem");
-        return false;
-    }
-    if (!chat_system_->Init()) {
-        // LOG_ERROR("Failed to init ChatSystem");
-        return false;
-    }
-    if (!friend_system_->Init()) {
-        // LOG_ERROR("Failed to init FriendSystem");
-        return false;
-    }
-    if (!group_system_->Init()) {
-        // LOG_ERROR("Failed to init GroupSystem");
-        return false;
-    }
-    if (!file_system_->Init()) {
-        // LOG_ERROR("Failed to init FileSystem");
-        return false;
-    }
+    if (!auth_system_->Init()) return false;
+    if (!chat_system_->Init()) return false;
+    if (!friend_system_->Init()) return false;
+    if (!group_system_->Init()) return false;
+    if (!file_system_->Init()) return false;
 
-    // LOG_INFO("All systems initialized");
     return true;
 }
 

@@ -5,6 +5,7 @@
 
 #include "group_system.h"
 #include "../rpc/group_rpc_client.h"
+#include "../config/config.h"
 
 namespace swift {
 namespace zone {
@@ -13,7 +14,10 @@ GroupSystem::GroupSystem() = default;
 GroupSystem::~GroupSystem() = default;
 
 bool GroupSystem::Init() {
-    // TODO: 创建 RPC Client，连接 ChatSvr (GroupService)
+    if (!config_) return true;
+    rpc_client_ = std::make_unique<GroupRpcClient>();
+    if (!rpc_client_->Connect(config_->chat_svr_addr)) return false;
+    rpc_client_->InitStub();
     return true;
 }
 

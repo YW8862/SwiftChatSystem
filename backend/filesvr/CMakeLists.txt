@@ -36,3 +36,46 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     swift_proto
     ${ROCKSDB_LIBS}
 )
+
+# ============================================================================
+# 单元测试
+# ============================================================================
+option(BUILD_FILESVR_TESTS "Build filesvr tests" ON)
+
+if(BUILD_FILESVR_TESTS)
+    enable_testing()
+
+    # FileStore 测试
+    add_executable(file_store_test
+        internal/store/file_store.cpp
+        internal/store/file_store_test.cpp
+    )
+    target_include_directories(file_store_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/internal
+        ${CMAKE_SOURCE_DIR}/backend/common/include
+    )
+    target_link_libraries(file_store_test PRIVATE
+        gtest
+        gtest_main
+        ${ROCKSDB_LIBS}
+    )
+    add_test(NAME file_store_test COMMAND file_store_test)
+
+    # FileServiceCore 测试
+    add_executable(file_service_test
+        internal/store/file_store.cpp
+        internal/service/file_service.cpp
+        internal/service/file_service_test.cpp
+    )
+    target_include_directories(file_service_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/internal
+        ${CMAKE_SOURCE_DIR}/backend/common/include
+    )
+    target_link_libraries(file_service_test PRIVATE
+        gtest
+        gtest_main
+        swift_common
+        ${ROCKSDB_LIBS}
+    )
+    add_test(NAME file_service_test COMMAND file_service_test)
+endif()

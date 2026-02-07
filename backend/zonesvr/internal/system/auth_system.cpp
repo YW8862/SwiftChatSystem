@@ -6,6 +6,7 @@
 #include "auth_system.h"
 #include "../rpc/auth_rpc_client.h"
 #include "../rpc/online_rpc_client.h"
+#include "../config/config.h"
 
 namespace swift {
 namespace zone {
@@ -14,10 +15,16 @@ AuthSystem::AuthSystem() = default;
 AuthSystem::~AuthSystem() = default;
 
 bool AuthSystem::Init() {
-    // TODO: auth_rpc_client_ = std::make_unique<AuthRpcClient>();
-    //       auth_rpc_client_->Connect(config.auth_svr_addr);
-    //       online_rpc_client_ = std::make_unique<OnlineRpcClient>();
-    //       online_rpc_client_->Connect(config.online_svr_addr);
+    if (!config_) return true;  // 无配置时跳过 RPC 连接（测试等）
+
+    auth_rpc_client_ = std::make_unique<AuthRpcClient>();
+    if (!auth_rpc_client_->Connect(config_->auth_svr_addr)) return false;
+    auth_rpc_client_->InitStub();
+
+    online_rpc_client_ = std::make_unique<OnlineRpcClient>();
+    if (!online_rpc_client_->Connect(config_->online_svr_addr)) return false;
+    online_rpc_client_->InitStub();
+
     return true;
 }
 

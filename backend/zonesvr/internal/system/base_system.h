@@ -26,6 +26,7 @@ namespace zone {
 
 // 前向声明
 class SessionStore;
+struct ZoneConfig;
 
 /**
  * @class BaseSystem
@@ -35,6 +36,8 @@ class SessionStore;
  * - Name(): 返回系统名称
  * - Init(): 初始化（建立 RPC 连接等）
  * - Shutdown(): 关闭（清理资源）
+ *
+ * SystemManager 在调用 Init() 前会注入 SessionStore 和 ZoneConfig。
  */
 class BaseSystem {
 public:
@@ -51,12 +54,17 @@ public:
 
   /// 设置 SessionStore（由 SystemManager 注入）
   void SetSessionStore(std::shared_ptr<SessionStore> store) {
-    session_store_ = store;
+    session_store_ = std::move(store);
   }
+
+  /// 设置配置（由 SystemManager 在 Init 前注入，用于 RPC 地址等）
+  void SetConfig(const ZoneConfig* config) { config_ = config; }
 
 protected:
   /// 共享的会话存储，用于消息路由
   std::shared_ptr<SessionStore> session_store_;
+  /// 配置（由 SystemManager 注入，Init 时使用）
+  const ZoneConfig* config_ = nullptr;
 };
 
 } // namespace zone

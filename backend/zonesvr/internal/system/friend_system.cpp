@@ -5,6 +5,7 @@
 
 #include "friend_system.h"
 #include "../rpc/friend_rpc_client.h"
+#include "../config/config.h"
 
 namespace swift {
 namespace zone {
@@ -13,7 +14,10 @@ FriendSystem::FriendSystem() = default;
 FriendSystem::~FriendSystem() = default;
 
 bool FriendSystem::Init() {
-    // TODO: 创建 RPC Client，连接 FriendSvr
+    if (!config_) return true;
+    rpc_client_ = std::make_unique<FriendRpcClient>();
+    if (!rpc_client_->Connect(config_->friend_svr_addr)) return false;
+    rpc_client_->InitStub();
     return true;
 }
 

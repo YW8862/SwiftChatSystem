@@ -7,6 +7,7 @@
 #include "../rpc/chat_rpc_client.h"
 #include "../rpc/gate_rpc_client.h"
 #include "../store/session_store.h"
+#include "../config/config.h"
 
 namespace swift {
 namespace zone {
@@ -15,9 +16,10 @@ ChatSystem::ChatSystem() = default;
 ChatSystem::~ChatSystem() = default;
 
 bool ChatSystem::Init() {
-    // TODO: 创建 RPC Client，连接 ChatSvr
-    // rpc_client_ = std::make_unique<ChatRpcClient>();
-    // return rpc_client_->Connect(config.chat_svr_addr);
+    if (!config_) return true;
+    rpc_client_ = std::make_unique<ChatRpcClient>();
+    if (!rpc_client_->Connect(config_->chat_svr_addr)) return false;
+    rpc_client_->InitStub();
     return true;
 }
 
