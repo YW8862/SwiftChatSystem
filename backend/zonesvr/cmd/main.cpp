@@ -28,6 +28,7 @@ int main(int argc, char* argv[]) {
 
     std::string addr = config.host + ":" + std::to_string(config.port);
     auto creds = grpc::InsecureServerCredentials();
+    // 注册接入认证。所有 ZoneService 的 RPC 均先经此校验，再进入业务。
     if (!config.internal_secret.empty()) {
         creds->SetAuthMetadataProcessor(
             std::make_shared<swift::zone::InternalSecretProcessor>(config.internal_secret));

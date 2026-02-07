@@ -11,7 +11,8 @@
     "openssl",
     "jwt-cpp",
     "nlohmann-json",
-    "spdlog"
+    "spdlog",
+    "hiredis"
   ],
   "features": {
     "client": {
@@ -20,9 +21,7 @@
     },
     "tests": {
       "description": "Build tests",
-      "dependencies": [
-        "gtest"
-      ]
+      "dependencies": ["gtest"]
     }
   }
 }
