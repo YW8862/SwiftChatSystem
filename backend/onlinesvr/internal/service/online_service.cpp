@@ -13,14 +13,14 @@ constexpr int64_t kTokenExpireDays = 7;
 constexpr int64_t kMsPerDay = 24 * 3600 * 1000;
 constexpr const char* kDefaultDeviceId = "default";
 
-OnlineService::OnlineService(std::shared_ptr<SessionStore> store,
-                             const std::string& jwt_secret)
+OnlineServiceCore::OnlineServiceCore(std::shared_ptr<SessionStore> store,
+                                     const std::string& jwt_secret)
     : store_(std::move(store))
     , jwt_secret_(jwt_secret.empty() ? "swift_online_secret_2026" : jwt_secret) {}
 
-OnlineService::~OnlineService() = default;
+OnlineServiceCore::~OnlineServiceCore() = default;
 
-OnlineService::LoginResult OnlineService::Login(
+OnlineServiceCore::LoginResult OnlineServiceCore::Login(
     const std::string& user_id,
     const std::string& device_id,
     const std::string& device_type) {
@@ -42,7 +42,7 @@ OnlineService::LoginResult OnlineService::Login(
     auto existing_session = store_->GetSession(user_id);
     int64_t now_ms = swift::utils::GetTimestampMs();
 
-    if (existing_session) {
+    if (existing_session.has_value()) {
         if (existing_session->device_id != normalized_device) {
             result.success = false;
             result.error = "User already logged in on another device";
@@ -77,7 +77,7 @@ OnlineService::LoginResult OnlineService::Login(
     return result;
 }
 
-OnlineService::LogoutResult OnlineService::Logout(const std::string& user_id,
+OnlineServiceCore::LogoutResult OnlineServiceCore::Logout(const std::string& user_id,
                                                    const std::string& token) {
     (void)token;
     LogoutResult result;
@@ -93,7 +93,7 @@ OnlineService::LogoutResult OnlineService::Logout(const std::string& user_id,
     return result;
 }
 
-OnlineService::TokenResult OnlineService::ValidateToken(const std::string& token) {
+OnlineServiceCore::TokenResult OnlineServiceCore::ValidateToken(const std::string& token) {
     TokenResult result;
     if (token.empty()) return result;
 
@@ -116,7 +116,7 @@ OnlineService::TokenResult OnlineService::ValidateToken(const std::string& token
     return result;
 }
 
-std::pair<std::string, int64_t> OnlineService::GenerateToken(const std::string& user_id) {
+std::pair<std::string, int64_t> OnlineServiceCore::GenerateToken(const std::string& user_id) {
     int64_t now_ms = swift::utils::GetTimestampMs();
     int expire_hours = static_cast<int>(kTokenExpireDays * 24);
     std::string token = swift::JwtCreate(user_id, jwt_secret_, expire_hours);
@@ -124,7 +124,7 @@ std::pair<std::string, int64_t> OnlineService::GenerateToken(const std::string& 
     return {token, expire_at};
 }
 
-std::string OnlineService::NormalizeDeviceId(const std::string& device_id) const {
+std::string OnlineServiceCore::NormalizeDeviceId(const std::string& device_id) const {
     return device_id.empty() ? kDefaultDeviceId : device_id;
 }
 

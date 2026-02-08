@@ -40,27 +40,28 @@ public:
 
     // ============ 业务接口 ============
 
-    /// 发送好友请求
-    bool AddFriend(const std::string& user_id, 
-                   const std::string& friend_id, 
-                   const std::string& remark);
+    /// 发送好友请求；token 用于调 FriendSvr 时注入 metadata
+    bool AddFriend(const std::string& user_id, const std::string& friend_id,
+                   const std::string& remark, const std::string& token = "");
 
     /// 处理好友请求
-    bool HandleFriendRequest(const std::string& user_id, 
-                             const std::string& request_id, 
-                             bool accept);
+    bool HandleFriendRequest(const std::string& user_id, const std::string& request_id,
+                             bool accept, const std::string& token = "");
 
     /// 删除好友
-    bool RemoveFriend(const std::string& user_id, const std::string& friend_id);
+    bool RemoveFriend(const std::string& user_id, const std::string& friend_id,
+                     const std::string& token = "");
 
     /// 获取好友列表（带在线状态）
     // std::vector<FriendInfo> GetFriends(const std::string& user_id);
 
     /// 拉黑用户
-    bool BlockUser(const std::string& user_id, const std::string& target_id);
+    bool BlockUser(const std::string& user_id, const std::string& target_id,
+                   const std::string& token = "");
 
     /// 取消拉黑
-    bool UnblockUser(const std::string& user_id, const std::string& target_id);
+    bool UnblockUser(const std::string& user_id, const std::string& target_id,
+                     const std::string& token = "");
 
     /// 检查是否是好友
     bool IsFriend(const std::string& user_id, const std::string& friend_id);

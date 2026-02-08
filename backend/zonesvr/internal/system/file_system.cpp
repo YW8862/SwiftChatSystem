@@ -16,7 +16,7 @@ FileSystem::~FileSystem() = default;
 bool FileSystem::Init() {
     if (!config_) return true;
     rpc_client_ = std::make_unique<FileRpcClient>();
-    if (!rpc_client_->Connect(config_->file_svr_addr)) return false;
+    if (!rpc_client_->Connect(config_->file_svr_addr, !config_->standalone)) return false;
     rpc_client_->InitStub();
     return true;
 }

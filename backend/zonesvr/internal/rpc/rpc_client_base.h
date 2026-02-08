@@ -26,8 +26,8 @@ class RpcClientBase {
 public:
     virtual ~RpcClientBase() = default;
 
-    /// 连接到服务
-    bool Connect(const std::string& address);
+    /// 连接到服务；wait_ready=false 时仅创建 channel 不等待就绪（用于 standalone 测试）
+    bool Connect(const std::string& address, bool wait_ready = true);
 
     /// 断开连接
     void Disconnect();
@@ -42,8 +42,9 @@ protected:
     /// 获取 Channel（供子类创建 Stub）
     std::shared_ptr<grpc::Channel> GetChannel() { return channel_; }
 
-    /// 创建带超时的 Context
-    std::unique_ptr<grpc::ClientContext> CreateContext(int timeout_ms = 5000);
+    /// 创建带超时的 Context；token 非空时注入 authorization: Bearer <token> 供业务服务鉴权
+    std::unique_ptr<grpc::ClientContext> CreateContext(int timeout_ms = 5000,
+                                                        const std::string& token = "");
 
 private:
     std::string address_;

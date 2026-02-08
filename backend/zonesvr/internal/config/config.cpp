@@ -21,6 +21,7 @@ ZoneConfig LoadConfig(const std::string& config_file) {
     c.log_dir = kv.Get("log_dir", c.log_dir);
     c.log_level = kv.Get("log_level", c.log_level);
     c.internal_secret = kv.Get("internal_secret", c.internal_secret);
+    c.standalone = kv.GetBool("standalone", c.standalone);
     return c;
 }
 

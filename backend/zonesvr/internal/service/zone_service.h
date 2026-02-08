@@ -80,26 +80,32 @@ public:
                                                   const std::string& user_id,
                                                   const std::string& cmd,
                                                   const std::string& payload,
-                                                  const std::string& request_id);
+                                                  const std::string& request_id,
+                                                  const std::string& token);
 
 private:
-    // 按域分发：各域内再按 cmd 细分，通过 gRPC 调对应 System/后端
+    // 按域分发：各域内再按 cmd 细分，通过 gRPC 调对应 System/后端；token 供调业务服务时注入 metadata
     HandleClientRequestResult HandleAuth(const std::string& user_id, const std::string& cmd,
-                                         const std::string& payload, const std::string& request_id);
+                                         const std::string& payload, const std::string& request_id,
+                                         const std::string& token);
     HandleClientRequestResult HandleChat(const std::string& user_id, const std::string& cmd,
-                                         const std::string& payload, const std::string& request_id);
+                                         const std::string& payload, const std::string& request_id,
+                                         const std::string& token);
     HandleClientRequestResult HandleFriend(const std::string& user_id, const std::string& cmd,
-                                          const std::string& payload, const std::string& request_id);
+                                          const std::string& payload, const std::string& request_id,
+                                          const std::string& token);
     HandleClientRequestResult HandleGroup(const std::string& user_id, const std::string& cmd,
-                                         const std::string& payload, const std::string& request_id);
+                                         const std::string& payload, const std::string& request_id,
+                                         const std::string& token);
     HandleClientRequestResult HandleFile(const std::string& user_id, const std::string& cmd,
-                                        const std::string& payload, const std::string& request_id);
+                                        const std::string& payload, const std::string& request_id,
+                                        const std::string& token);
 
     static HandleClientRequestResult NotImplemented(const std::string& cmd,
                                                     const std::string& request_id);
 
     using CmdHandlerFn = HandleClientRequestResult (ZoneServiceImpl::*)(
-        const std::string&, const std::string&, const std::string&, const std::string&);
+        const std::string&, const std::string&, const std::string&, const std::string&, const std::string&);
     static const std::unordered_map<std::string, CmdHandlerFn>& GetPrefixHandlers();
 
     bool PushToGate(const std::string& gate_addr, const std::string& user_id,

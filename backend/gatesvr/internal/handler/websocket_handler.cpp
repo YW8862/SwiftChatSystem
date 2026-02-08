@@ -1,4 +1,6 @@
 #include "websocket_handler.h"
+#include "service/gate_service.h"
+#include "gate.pb.h"
 
 namespace swift::gate {
 
@@ -8,19 +10,26 @@ WebSocketHandler::WebSocketHandler(std::shared_ptr<GateService> service)
 WebSocketHandler::~WebSocketHandler() = default;
 
 void WebSocketHandler::OnConnect(const std::string& conn_id) {
-    // TODO
+    (void)conn_id;
 }
 
 void WebSocketHandler::OnMessage(const std::string& conn_id, const std::string& data) {
-    // TODO: 解析 ClientMessage，转发到 ZoneSvr
+    swift::gate::ClientMessage msg;
+    if (!msg.ParseFromString(data)) {
+        return;  // 解析失败，忽略
+    }
+    std::string cmd = msg.cmd();
+    std::string payload = msg.payload();
+    std::string request_id = msg.request_id();
+    service_->HandleClientMessage(conn_id, cmd, payload, request_id);
 }
 
 void WebSocketHandler::OnDisconnect(const std::string& conn_id) {
-    // TODO
+    (void)conn_id;
 }
 
 bool WebSocketHandler::SendToClient(const std::string& conn_id, const std::string& data) {
-    return false;
+    return service_->SendToConn(conn_id, data);
 }
 
 GateInternalHandler::GateInternalHandler(std::shared_ptr<GateService> service)

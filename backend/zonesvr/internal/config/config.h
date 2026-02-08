@@ -31,6 +31,9 @@ struct ZoneConfig {
 
     /// 内网密钥：非空时所有 gRPC 请求需在 metadata 中带 x-internal-secret；空表示不校验（仅建议开发环境）。仅环境变量 ZONESVR_INTERNAL_SECRET 注入。
     std::string internal_secret;
+
+    /// 独立模式：为 true 时不等待后端（Auth/Online/Chat/Friend/Group/File）连接就绪即启动，用于单测或仅测 Gate 路由
+    bool standalone = false;
 };
 
 ZoneConfig LoadConfig(const std::string& config_file);

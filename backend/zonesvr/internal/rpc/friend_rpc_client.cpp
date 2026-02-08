@@ -14,7 +14,7 @@ void FriendRpcClient::InitStub() {
 
 bool FriendRpcClient::AddFriend(const std::string& user_id, const std::string& friend_id,
                                const std::string& remark, const std::string& group_id,
-                               std::string* out_error) {
+                               std::string* out_error, const std::string& token) {
     if (!stub_) return false;
     swift::relation::AddFriendRequest req;
     req.set_user_id(user_id);
@@ -22,7 +22,7 @@ bool FriendRpcClient::AddFriend(const std::string& user_id, const std::string& f
     if (!remark.empty()) req.set_remark(remark);
     if (!group_id.empty()) req.set_group_id(group_id);
     swift::common::CommonResponse resp;
-    auto ctx = CreateContext(5000);
+    auto ctx = CreateContext(5000, token);
     grpc::Status status = stub_->AddFriend(ctx.get(), req, &resp);
     if (!status.ok()) {
         if (out_error) *out_error = status.error_message();
@@ -35,7 +35,7 @@ bool FriendRpcClient::AddFriend(const std::string& user_id, const std::string& f
 
 bool FriendRpcClient::HandleFriendRequest(const std::string& user_id, const std::string& request_id,
                                           bool accept, const std::string& group_id,
-                                          std::string* out_error) {
+                                          std::string* out_error, const std::string& token) {
     if (!stub_) return false;
     swift::relation::HandleFriendReq req;
     req.set_user_id(user_id);
@@ -43,7 +43,7 @@ bool FriendRpcClient::HandleFriendRequest(const std::string& user_id, const std:
     req.set_accept(accept);
     if (!group_id.empty()) req.set_group_id(group_id);
     swift::common::CommonResponse resp;
-    auto ctx = CreateContext(5000);
+    auto ctx = CreateContext(5000, token);
     grpc::Status status = stub_->HandleFriendRequest(ctx.get(), req, &resp);
     if (!status.ok()) {
         if (out_error) *out_error = status.error_message();
@@ -55,13 +55,13 @@ bool FriendRpcClient::HandleFriendRequest(const std::string& user_id, const std:
 }
 
 bool FriendRpcClient::RemoveFriend(const std::string& user_id, const std::string& friend_id,
-                                  std::string* out_error) {
+                                  std::string* out_error, const std::string& token) {
     if (!stub_) return false;
     swift::relation::RemoveFriendRequest req;
     req.set_user_id(user_id);
     req.set_friend_id(friend_id);
     swift::common::CommonResponse resp;
-    auto ctx = CreateContext(5000);
+    auto ctx = CreateContext(5000, token);
     grpc::Status status = stub_->RemoveFriend(ctx.get(), req, &resp);
     if (!status.ok()) {
         if (out_error) *out_error = status.error_message();
@@ -73,13 +73,14 @@ bool FriendRpcClient::RemoveFriend(const std::string& user_id, const std::string
 }
 
 bool FriendRpcClient::GetFriends(const std::string& user_id, const std::string& group_id,
-                                 std::vector<FriendInfoResult>* out_friends, std::string* out_error) {
+                                 std::vector<FriendInfoResult>* out_friends, std::string* out_error,
+                                 const std::string& token) {
     if (!stub_) return false;
     swift::relation::GetFriendsRequest req;
     req.set_user_id(user_id);
     if (!group_id.empty()) req.set_group_id(group_id);
     swift::relation::FriendListResponse resp;
-    auto ctx = CreateContext(5000);
+    auto ctx = CreateContext(5000, token);
     grpc::Status status = stub_->GetFriends(ctx.get(), req, &resp);
     if (!status.ok()) {
         if (out_error) *out_error = status.error_message();
@@ -107,13 +108,13 @@ bool FriendRpcClient::GetFriends(const std::string& user_id, const std::string& 
 }
 
 bool FriendRpcClient::BlockUser(const std::string& user_id, const std::string& target_id,
-                                std::string* out_error) {
+                                std::string* out_error, const std::string& token) {
     if (!stub_) return false;
     swift::relation::BlockUserRequest req;
     req.set_user_id(user_id);
     req.set_target_id(target_id);
     swift::common::CommonResponse resp;
-    auto ctx = CreateContext(5000);
+    auto ctx = CreateContext(5000, token);
     grpc::Status status = stub_->BlockUser(ctx.get(), req, &resp);
     if (!status.ok()) {
         if (out_error) *out_error = status.error_message();
@@ -125,13 +126,13 @@ bool FriendRpcClient::BlockUser(const std::string& user_id, const std::string& t
 }
 
 bool FriendRpcClient::UnblockUser(const std::string& user_id, const std::string& target_id,
-                                  std::string* out_error) {
+                                  std::string* out_error, const std::string& token) {
     if (!stub_) return false;
     swift::relation::UnblockUserRequest req;
     req.set_user_id(user_id);
     req.set_target_id(target_id);
     swift::common::CommonResponse resp;
-    auto ctx = CreateContext(5000);
+    auto ctx = CreateContext(5000, token);
     grpc::Status status = stub_->UnblockUser(ctx.get(), req, &resp);
     if (!status.ok()) {
         if (out_error) *out_error = status.error_message();

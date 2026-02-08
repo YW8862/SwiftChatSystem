@@ -8,11 +8,12 @@
 
 namespace swift::online {
 
-class OnlineService {
+/** 登录会话业务逻辑，与 proto 生成的 OnlineService 区分 */
+class OnlineServiceCore {
 public:
-    explicit OnlineService(std::shared_ptr<SessionStore> store,
+    explicit OnlineServiceCore(std::shared_ptr<SessionStore> store,
                            const std::string& jwt_secret = "swift_online_secret_2026");
-    ~OnlineService();
+    ~OnlineServiceCore();
 
     struct LoginResult {
         bool success = false;

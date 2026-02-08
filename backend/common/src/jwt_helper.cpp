@@ -134,17 +134,20 @@ JwtPayload JwtVerify(const std::string& token, const std::string& secret) {
     size_t dot1 = token.find('.');
     size_t dot2 = token.find('.', dot1 + 1);
     if (dot1 == std::string::npos || dot2 == std::string::npos) return result;
-
+    
+    // 解析 payload 和 signature
     std::string payload_b64 = token.substr(dot1 + 1, dot2 - dot1 - 1);
     std::string sig_b64 = token.substr(dot2 + 1);
+    // 计算 signature.  msg -> sig_hex(十六进制字符串) -> sig_bin(二进制字符串) -> sig_b64(base64编码)
     std::string msg = token.substr(0, dot2);
     std::string sig_hex = HmacSha256(secret, msg);
     std::string sig_bin = HexDecode(sig_hex);
     std::string expected_sig_b64 = Base64UrlEncode(
         reinterpret_cast<const unsigned char*>(sig_bin.data()), sig_bin.size());
-
+    // 验证 signature
     if (sig_b64 != expected_sig_b64) return result;
-
+    
+    // 解析 payload
     try {
         std::string payload_json = Base64UrlDecode(payload_b64);
         json p = json::parse(payload_json);

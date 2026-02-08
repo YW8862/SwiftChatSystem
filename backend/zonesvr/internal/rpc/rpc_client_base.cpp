@@ -9,21 +9,20 @@
 namespace swift {
 namespace zone {
 
-bool RpcClientBase::Connect(const std::string& address) {
+bool RpcClientBase::Connect(const std::string& address, bool wait_ready) {
     address_ = address;
-    
-    // 创建 Channel
+
     grpc::ChannelArguments args;
     args.SetMaxReceiveMessageSize(64 * 1024 * 1024);  // 64MB
     args.SetMaxSendMessageSize(64 * 1024 * 1024);
-    
+
     channel_ = grpc::CreateCustomChannel(
         address,
         grpc::InsecureChannelCredentials(),
         args
     );
-    
-    // 等待连接就绪
+
+    if (!wait_ready) return true;
     auto deadline = std::chrono::system_clock::now() + std::chrono::seconds(5);
     return channel_->WaitForConnected(deadline);
 }
@@ -39,11 +38,14 @@ bool RpcClientBase::IsConnected() const {
     return state == GRPC_CHANNEL_READY || state == GRPC_CHANNEL_IDLE;
 }
 
-std::unique_ptr<grpc::ClientContext> RpcClientBase::CreateContext(int timeout_ms) {
+std::unique_ptr<grpc::ClientContext> RpcClientBase::CreateContext(int timeout_ms,
+                                                                   const std::string& token) {
     auto context = std::make_unique<grpc::ClientContext>();
-    auto deadline = std::chrono::system_clock::now() + 
+    auto deadline = std::chrono::system_clock::now() +
                     std::chrono::milliseconds(timeout_ms);
     context->set_deadline(deadline);
+    if (!token.empty())
+        context->AddMetadata("authorization", "Bearer " + token);
     return context;
 }
 

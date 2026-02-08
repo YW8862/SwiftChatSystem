@@ -95,6 +95,7 @@ message HandleClientRequestRequest {
     string cmd = 3;                // 如 auth.login、chat.send_message、friend.add
     bytes payload = 4;             // 业务请求体（由 cmd 决定解析方式）
     string request_id = 5;         // 客户端请求 ID，原样回填便于对账
+    string token = 6;              // 已登录时 Gate 携带的 JWT，供 Zone 调业务服务时注入 metadata
 }
 
 message HandleClientRequestResponse {

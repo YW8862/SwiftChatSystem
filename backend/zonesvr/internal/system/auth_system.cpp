@@ -17,12 +17,13 @@ AuthSystem::~AuthSystem() = default;
 bool AuthSystem::Init() {
     if (!config_) return true;  // 无配置时跳过 RPC 连接（测试等）
 
+    bool wait = !config_->standalone;
     auth_rpc_client_ = std::make_unique<AuthRpcClient>();
-    if (!auth_rpc_client_->Connect(config_->auth_svr_addr)) return false;
+    if (!auth_rpc_client_->Connect(config_->auth_svr_addr, wait)) return false;
     auth_rpc_client_->InitStub();
 
     online_rpc_client_ = std::make_unique<OnlineRpcClient>();
-    if (!online_rpc_client_->Connect(config_->online_svr_addr)) return false;
+    if (!online_rpc_client_->Connect(config_->online_svr_addr, wait)) return false;
     online_rpc_client_->InitStub();
 
     return true;

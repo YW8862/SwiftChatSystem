@@ -163,7 +163,8 @@ ZoneHandler::~ZoneHandler() = default;
         request->user_id(),
         request->cmd(),
         payload,
-        request->request_id());
+        request->request_id(),
+        request->token());
     response->set_code(result.code);
     if (!result.message.empty()) response->set_message(result.message);
     if (!result.payload.empty()) response->set_payload(result.payload);

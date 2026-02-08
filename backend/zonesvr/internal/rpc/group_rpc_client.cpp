@@ -101,7 +101,7 @@ bool GroupRpcClient::GetGroupMembers(const std::string& group_id, int32_t page, 
     if (resp.code() != 0 && out_error)
         *out_error = resp.message().empty() ? "get members failed" : resp.message();
     if (resp.code() != 0) return false;
-    if (out_members) {
+    if (nullptr != out_members) {
         out_members->clear();
         for (const auto& m : resp.members()) {
             GroupMemberResult r;

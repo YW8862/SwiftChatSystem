@@ -36,14 +36,20 @@ public:
     void InitStub();
 
     bool AddFriend(const std::string& user_id, const std::string& friend_id,
-                   const std::string& remark, const std::string& group_id, std::string* out_error);
+                   const std::string& remark, const std::string& group_id, std::string* out_error,
+                   const std::string& token = "");
     bool HandleFriendRequest(const std::string& user_id, const std::string& request_id,
-                             bool accept, const std::string& group_id, std::string* out_error);
-    bool RemoveFriend(const std::string& user_id, const std::string& friend_id, std::string* out_error);
+                             bool accept, const std::string& group_id, std::string* out_error,
+                             const std::string& token = "");
+    bool RemoveFriend(const std::string& user_id, const std::string& friend_id, std::string* out_error,
+                      const std::string& token = "");
     bool GetFriends(const std::string& user_id, const std::string& group_id,
-                    std::vector<FriendInfoResult>* out_friends, std::string* out_error);
-    bool BlockUser(const std::string& user_id, const std::string& target_id, std::string* out_error);
-    bool UnblockUser(const std::string& user_id, const std::string& target_id, std::string* out_error);
+                    std::vector<FriendInfoResult>* out_friends, std::string* out_error,
+                    const std::string& token = "");
+    bool BlockUser(const std::string& user_id, const std::string& target_id, std::string* out_error,
+                   const std::string& token = "");
+    bool UnblockUser(const std::string& user_id, const std::string& target_id, std::string* out_error,
+                     const std::string& token = "");
 
 private:
     std::unique_ptr<swift::relation::FriendService::Stub> stub_;

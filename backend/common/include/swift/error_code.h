@@ -142,7 +142,8 @@ enum class ErrorCode {
     TOO_MANY_CONNECTIONS = 607,    // 连接数过多
     KICK_BY_SERVER = 608,          // 被服务器踢出
     DUPLICATE_LOGIN = 609,         // 重复登录
-    
+    UPSTREAM_UNAVAILABLE = 610,    // 上游服务未配置或不可用（如 ZoneSvr）
+
     // ========== 路由错误 700-799 ==========
     ROUTE_NOT_FOUND = 700,         // 路由不存在
     USER_OFFLINE = 701,            // 用户不在线
@@ -292,6 +293,7 @@ inline const char* ErrorCodeToString(ErrorCode code) {
         {ErrorCode::TOO_MANY_CONNECTIONS, "too many connections"},
         {ErrorCode::KICK_BY_SERVER, "kick by server"},
         {ErrorCode::DUPLICATE_LOGIN, "duplicate login"},
+        {ErrorCode::UPSTREAM_UNAVAILABLE, "upstream service not configured"},
         
         // ========== 路由错误 700-799 ==========
         {ErrorCode::ROUTE_NOT_FOUND, "route not found"},

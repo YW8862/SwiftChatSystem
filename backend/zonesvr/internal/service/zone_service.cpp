@@ -158,7 +158,8 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleClientRequest(
     const std::string& user_id,
     const std::string& cmd,
     const std::string& payload,
-    const std::string& request_id) {
+    const std::string& request_id,
+    const std::string& token) {
     (void)conn_id;
     HandleClientRequestResult result;
     result.request_id = request_id;
@@ -174,15 +175,17 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleClientRequest(
     const auto& handlers = GetPrefixHandlers();
     auto it = handlers.find(prefix);
     if (it != handlers.end())
-        return (this->*it->second)(user_id, cmd, payload, request_id);
+        return (this->*it->second)(user_id, cmd, payload, request_id, token);
     return NotImplemented(cmd, request_id);
 }
 
 // ---------- auth.* ----------
 ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleAuth(
     const std::string& user_id, const std::string& cmd,
-    const std::string& payload, const std::string& request_id) {
+    const std::string& payload, const std::string& request_id,
+    const std::string& token) {
     (void)user_id;
+    (void)token;
     HandleClientRequestResult result;
     result.request_id = request_id;
     auto* auth = manager_->GetAuthSystem();
@@ -249,7 +252,9 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleAuth(
 // ---------- chat.* ----------
 ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleChat(
     const std::string& user_id, const std::string& cmd,
-    const std::string& payload, const std::string& request_id) {
+    const std::string& payload, const std::string& request_id,
+    const std::string& token) {
+    (void)token;
     HandleClientRequestResult result;
     result.request_id = request_id;
     auto* chat = manager_->GetChatSystem();
@@ -336,7 +341,8 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleChat(
 // ---------- friend.* ----------
 ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleFriend(
     const std::string& user_id, const std::string& cmd,
-    const std::string& payload, const std::string& request_id) {
+    const std::string& payload, const std::string& request_id,
+    const std::string& token) {
     HandleClientRequestResult result;
     result.request_id = request_id;
     auto* fr = manager_->GetFriendSystem();
@@ -350,7 +356,7 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleFriend(
             SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
             return result;
         }
-        bool ok = fr->AddFriend(req.user_id(), req.friend_id(), req.remark());
+        bool ok = fr->AddFriend(req.user_id(), req.friend_id(), req.remark(), token);
         result.code = ok ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
                         : swift::ErrorCodeToInt(swift::ErrorCode::UNKNOWN);
         return result;
@@ -361,7 +367,7 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleFriend(
             SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
             return result;
         }
-        bool ok = fr->HandleFriendRequest(req.user_id(), req.request_id(), req.accept());
+        bool ok = fr->HandleFriendRequest(req.user_id(), req.request_id(), req.accept(), token);
         result.code = ok ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
                         : swift::ErrorCodeToInt(swift::ErrorCode::UNKNOWN);
         return result;
@@ -372,7 +378,7 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleFriend(
             SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
             return result;
         }
-        bool ok = fr->RemoveFriend(req.user_id(), req.friend_id());
+        bool ok = fr->RemoveFriend(req.user_id(), req.friend_id(), token);
         result.code = ok ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
                         : swift::ErrorCodeToInt(swift::ErrorCode::UNKNOWN);
         return result;
@@ -383,7 +389,7 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleFriend(
             SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
             return result;
         }
-        bool ok = fr->BlockUser(req.user_id(), req.target_id());
+        bool ok = fr->BlockUser(req.user_id(), req.target_id(), token);
         result.code = ok ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
                         : swift::ErrorCodeToInt(swift::ErrorCode::UNKNOWN);
         return result;
@@ -394,7 +400,7 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleFriend(
             SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
             return result;
         }
-        bool ok = fr->UnblockUser(req.user_id(), req.target_id());
+        bool ok = fr->UnblockUser(req.user_id(), req.target_id(), token);
         result.code = ok ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
                         : swift::ErrorCodeToInt(swift::ErrorCode::UNKNOWN);
         return result;
@@ -405,8 +411,10 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleFriend(
 // ---------- group.* ----------
 ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleGroup(
     const std::string& user_id, const std::string& cmd,
-    const std::string& payload, const std::string& request_id) {
+    const std::string& payload, const std::string& request_id,
+    const std::string& token) {
     (void)user_id;
+    (void)token;
     HandleClientRequestResult result;
     result.request_id = request_id;
     auto* grp = manager_->GetGroupSystem();
@@ -487,7 +495,9 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleGroup(
 // ---------- file.* ----------
 ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleFile(
     const std::string& user_id, const std::string& cmd,
-    const std::string& payload, const std::string& request_id) {
+    const std::string& payload, const std::string& request_id,
+    const std::string& token) {
+    (void)token;
     HandleClientRequestResult result;
     result.request_id = request_id;
     auto* file = manager_->GetFileSystem();

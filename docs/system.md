@@ -254,6 +254,81 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 
 开发环境可将 `internal_secret` 置空以关闭校验；生产环境必须设置强随机密钥并配合网络隔离使用。
 
+### 2.8 JWT 签发与验证流程
+
+本系统使用 **JWT（HS256）** 作为登录态凭证：由 **OnlineSvr** 在登录时签发，客户端在 WebSocket 连接后通过 **auth.login** 带 token 完成「连接与用户绑定」，业务请求时由 Gate/Zone 将 token 注入到调用 FriendSvr、ChatSvr 等时的 gRPC metadata，业务服务用公共库 **JwtVerify** 做本地校验。以下为签发与验证的完整过程说明。
+
+#### 2.8.1 Token 从哪里来（签发过程）
+
+| 步骤 | 角色 | 动作 | 代码/位置 |
+|------|------|------|-----------|
+| 1 | 客户端 | 使用账号密码登录：先调 **AuthSvr.VerifyCredentials(username, password)**，得到 `user_id`（及 profile）。 | 客户端逻辑 / 登录页 |
+| 2 | 客户端 | 再调 **OnlineSvr.Login(user_id, device_id, device_type)**，请求建立登录会话。 | gRPC 调用 |
+| 3 | OnlineSvr | 执行单设备策略：若该 `user_id` 已有会话且设备一致，则复用已有 token 并返回；若设备不一致则返回「已在其他设备登录」。 | `OnlineService::Login` |
+| 4 | OnlineSvr | 新会话时调用 **GenerateToken(user_id)**：内部使用公共库 **JwtCreate(user_id, jwt_secret, expire_hours)** 生成 JWT 字符串。 | `online_service.cpp` → `jwt_helper.cpp` |
+| 5 | 公共库 | **JwtCreate** 构造 JWT：Header=`{"alg":"HS256","typ":"JWT"}`，Payload=`{"iss":"swift-online","sub":user_id,"iat":now,"exp":now+过期小时}`，对 `Base64Url(Header).Base64Url(Payload)` 用 **HMAC-SHA256(secret, msg)** 得到签名，再 Base64Url 编码，返回 `Header.Payload.Signature`。 | `backend/common` `jwt_helper.cpp` |
+| 6 | OnlineSvr | 将生成的 **token** 与 **expire_at** 写入 **SessionStore**（如 RocksDB），key 为 `user_id`，value 为会话（含 token、device_id、expire_at）。 | `SessionStore::SetSession` |
+| 7 | OnlineSvr | 将 **token** 和 **expire_at** 通过 **LoginResult** 返回给客户端。 | `Login` 返回值 |
+| 8 | 客户端 | 保存 token（内存或本地），后续连 Gate 的 WebSocket 时，在 **auth.login** 的 payload 中携带该 **token** 以及 device_id、device_type。 | 客户端 |
+
+**小结**：Token 的**唯一签发方**是 **OnlineSvr**，在 **Login** 时通过公共库 **JwtCreate** 生成，并写入 OnlineSvr 的 **SessionStore**；客户端通过「认证 + OnlineSvr.Login」拿到 token，再在 WebSocket 登录与业务请求中携带。
+
+#### 2.8.2 Token 的两种验证场景
+
+系统里对 token 的校验发生在**两个不同位置**，行为不同：
+
+**场景 A：WebSocket 连接时的“登录校验”（会查 OnlineSvr）**
+
+| 步骤 | 角色 | 动作 | 说明 |
+|------|------|------|------|
+| 1 | 客户端 | 连接 Gate 的 WebSocket 后，发送 **auth.login**，payload 中带 **token**、device_id、device_type。 | 建立“此连接是谁” |
+| 2 | Gate | 不自行验 token，将请求通过 **Zone.HandleClientRequest(cmd=auth.validate_token, payload=token)** 转发给 Zone。 | `gate_service.cpp` HandleLogin |
+| 3 | Zone | HandleAuth 解析出 **auth.validate_token**，调用 **AuthSystem->ValidateToken(token)**。 | `zone_service.cpp` |
+| 4 | AuthSystem | 通过 **OnlineRpcClient** 调用 **OnlineSvr.ValidateToken(token)**。 | RPC 到 OnlineSvr |
+| 5 | **OnlineSvr** | **ValidateToken** 内部：① 先用 **JwtVerify(token, jwt_secret)** 做本地签名与 exp/iss/sub 校验；② 再查 **SessionStore**：GetSession(payload.user_id)，要求会话存在、session.token 与当前 token 一致、session.expire_at > now；否则返回无效（登出后会话被删，此处会失败）。 | `online_service.cpp` ValidateToken |
+| 6 | Gate | 若返回有效，则 **BindUser(conn_id, user_id, token, ...)** 并 **UserOnline**；无效则返回 401/TOKEN_INVALID。 | 连接与用户绑定 |
+
+**场景 B：业务接口鉴权（仅本地 JwtVerify，不查 OnlineSvr）**
+
+| 步骤 | 角色 | 动作 | 说明 |
+|------|------|------|------|
+| 1 | 客户端 | 在已登录连接上发业务请求（如 friend.add、chat.send_message）。Gate 从该连接的 Connection 中取出 **user_id** 和 **token**，随 HandleClientRequest 一并发给 Zone。 | `ForwardToZone` |
+| 2 | Zone | 按 cmd 分发到对应 System（如 FriendSystem）；System 调 FriendSvr 等时，在 gRPC **ClientContext** 上 **AddMetadata("authorization", "Bearer " + token)**。 | `RpcClientBase::CreateContext(..., token)` |
+| 3 | FriendSvr / ChatSvr / AuthSvr 等 | Handler 内调用 **GetAuthenticatedUserId(context, jwt_secret)**：从 metadata 取出 token，然后**仅调用 JwtVerify(token, jwt_secret)**，不发起任何 RPC。 | `backend/common` `grpc_auth.cpp` |
+| 4 | 公共库 | **JwtVerify**：解析 JWT 三段；用同一 secret 对前两段重算 HMAC-SHA256 签名并比对；解码 payload，校验 exp 未过期、iss 为 swift-online/swift-auth、sub 非空；通过则返回 user_id。 | `jwt_helper.cpp` |
+
+因此：**只有“WebSocket 登录”这一处会查 OnlineSvr（会话是否仍存在、token 是否仍为该会话的 token）；业务接口只做“本地密码学校验”，不查 OnlineSvr。**
+
+#### 2.8.3 JwtVerify 与 OnlineSvr.ValidateToken 的区别
+
+| 项目 | JwtVerify（公共库） | OnlineSvr.ValidateToken |
+|------|---------------------|--------------------------|
+| **作用** | 校验 JWT 签名是否合法、是否过期、iss/sub 是否符合约定。 | 在 JwtVerify 通过后，再查 SessionStore 判断「该 token 是否仍是当前有效会话」。 |
+| **是否查库** | 不查库，纯本地计算。 | 查 SessionStore（GetSession）。 |
+| **登出后** | 在 exp 之前，签名仍有效，JwtVerify 仍返回 valid。 | 登出时 RemoveSession，ValidateToken 查不到会话或 token 不一致，返回 invalid。 |
+| **使用位置** | 业务服务（FriendSvr、ChatSvr 等）的 GetAuthenticatedUserId；OnlineSvr 内部校验已有 token。 | 仅 Gate 在 auth.login 时经 Zone 调用的那一次「连接身份校验」。 |
+
+#### 2.8.4 当前设计下的登出语义
+
+- **auth.logout** 会调 **OnlineSvr.Logout**，服务端 **RemoveSession(user_id)**，该用户的登录会话被删除。
+- **下一次**同一 token 再用于 **auth.login**（例如重连 WebSocket 再次登录）时，会走 **ValidateToken**，因会话已不存在而失败，表现正常。
+- 但在 **登出之后、token 过期（exp）之前**，若客户端仍用该 token 调用 **业务接口**（如 friend.add），业务侧只做 **JwtVerify**，**不会查 OnlineSvr**，因此该 token 在业务接口上仍会被接受，直到 exp 到期。
+
+若需「登出即处处失效」，可在业务校验路径上增加对 OnlineSvr.ValidateToken 的调用（或维护 token 黑名单等），会带来额外 RPC 与存储开销；当前实现采用「仅登录时查会话、业务侧仅本地验签」的折中。
+
+#### 2.8.5 实现位置速查
+
+| 能力 | 实现位置 |
+|------|----------|
+| JWT 签发（JwtCreate） | `backend/common` `jwt_helper.cpp` |
+| JWT 本地校验（JwtVerify） | `backend/common` `jwt_helper.cpp` |
+| 从 gRPC metadata 取 token 并验签得到 user_id | `backend/common` `grpc_auth.cpp`（GetAuthenticatedUserId） |
+| 登录时签发 token、写 Session、单设备策略 | `backend/onlinesvr` `OnlineService::Login` |
+| 登出删会话 | `backend/onlinesvr` `OnlineService::Logout` |
+| 登录时“会话是否仍有效”校验 | `backend/onlinesvr` `OnlineService::ValidateToken` |
+| WebSocket 登录带 token、Gate 转发 auth.validate_token | `backend/gatesvr` HandleLogin；Zone HandleAuth → AuthSystem → OnlineSvr.ValidateToken |
+| 业务请求带 token、Zone 注入到后端 RPC metadata | Gate 存 Connection.token；Zone `RpcClientBase::CreateContext(..., token)` |
+
 ---
 
 ## 3. 微服务列表与职责

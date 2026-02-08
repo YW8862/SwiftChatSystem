@@ -18,7 +18,7 @@ ChatSystem::~ChatSystem() = default;
 bool ChatSystem::Init() {
     if (!config_) return true;
     rpc_client_ = std::make_unique<ChatRpcClient>();
-    if (!rpc_client_->Connect(config_->chat_svr_addr)) return false;
+    if (!rpc_client_->Connect(config_->chat_svr_addr, !config_->standalone)) return false;
     rpc_client_->InitStub();
     return true;
 }
