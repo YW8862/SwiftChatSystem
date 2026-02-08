@@ -25,20 +25,38 @@ bool ChatSystem::Init() {
 
 void ChatSystem::Shutdown() {
     if (rpc_client_) {
+        rpc_client_->Disconnect();
         rpc_client_.reset();
     }
 }
 
-// RPC 转发接口的实现示例：
-//
-// SendMessageResponse ChatSystem::SendMessage(const SendMessageRequest& request) {
-//     // 直接转发到 ChatSvr，业务逻辑在 ChatSvr 实现
-//     return rpc_client_->SendMessage(request);
-// }
-//
-// CommonResponse ChatSystem::RecallMessage(const RecallMessageRequest& request) {
-//     return rpc_client_->RecallMessage(request);
-// }
+ChatSystem::SendMessageResult ChatSystem::SendMessage(const std::string& from_user_id,
+                                                      const std::string& to_id,
+                                                      int32_t chat_type,
+                                                      const std::string& content,
+                                                      const std::string& media_url,
+                                                      const std::string& media_type,
+                                                      const std::string& client_msg_id,
+                                                      int64_t file_size) {
+    SendMessageResult result;
+    if (!rpc_client_) return result;
+    auto r = rpc_client_->SendMessage(from_user_id, to_id, chat_type, content,
+                                      media_url, media_type, client_msg_id, file_size);
+    result.success = r.success;
+    result.msg_id = r.msg_id;
+    result.timestamp = r.timestamp;
+    result.error = r.error;
+    return result;
+}
+
+bool ChatSystem::RecallMessage(const std::string& msg_id, const std::string& user_id,
+                               std::string* out_error) {
+    if (!rpc_client_) {
+        if (out_error) *out_error = "ChatSystem not available";
+        return false;
+    }
+    return rpc_client_->RecallMessage(msg_id, user_id, out_error);
+}
 
 bool ChatSystem::PushToUser(const std::string& user_id, 
                             const std::string& cmd, 

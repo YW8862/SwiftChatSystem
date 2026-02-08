@@ -87,6 +87,185 @@ message GateHeartbeatRequest {
     int32 current_connections = 2;
 }
 
+// ============== 客户端业务请求统一入口（Gate → Zone → 按 cmd 分发到各 System） ==============
+
+message HandleClientRequestRequest {
+    string conn_id = 1;            // Gate 侧连接 ID
+    string user_id = 2;            // 已登录则有，用于鉴权与业务
+    string cmd = 3;                // 如 auth.login、chat.send_message、friend.add
+    bytes payload = 4;             // 业务请求体（由 cmd 决定解析方式）
+    string request_id = 5;         // 客户端请求 ID，原样回填便于对账
+}
+
+message HandleClientRequestResponse {
+    int32 code = 1;
+    string message = 2;
+    bytes payload = 3;             // 业务返回体（序列化后的 proto 或约定格式）
+    string request_id = 4;         // 回填 request_id
+}
+
+// auth.login 请求体（cmd=auth.login 时 payload 为此消息序列化）
+message AuthLoginPayload {
+    string username = 1;
+    string password = 2;
+    string device_id = 3;
+    string device_type = 4;
+}
+
+// auth.login 返回体（放入 HandleClientRequestResponse.payload）
+message AuthLoginResponsePayload {
+    bool success = 1;
+    string user_id = 2;
+    string token = 3;
+    int64 expire_at = 4;
+    string error = 5;
+}
+
+// auth.logout 请求体
+message AuthLogoutPayload {
+    string user_id = 1;
+    string token = 2;
+}
+
+// auth.validate_token 请求体（仅 token）
+message AuthValidateTokenPayload {
+    string token = 1;
+}
+
+// auth.validate_token 返回体（payload 中仅 user_id，空表示无效）
+message AuthValidateTokenResponsePayload {
+    string user_id = 1;
+}
+
+// ---------- chat.* ----------
+message ChatSendMessagePayload {
+    string from_user_id = 1;
+    string to_id = 2;
+    int32 chat_type = 3;           // 1=私聊, 2=群聊
+    string content = 4;
+    string media_url = 5;
+    string media_type = 6;
+    string client_msg_id = 7;
+    int64 file_size = 8;
+}
+
+message ChatSendMessageResponsePayload {
+    bool success = 1;
+    string msg_id = 2;
+    int64 timestamp = 3;
+    string error = 4;
+}
+
+// 推送给在线用户的新消息体（cmd=chat.message 时 Gate 下发给客户端）
+message ChatMessagePushPayload {
+    string msg_id = 1;
+    string from_user_id = 2;
+    string to_id = 3;
+    int32 chat_type = 4;           // 1=私聊, 2=群聊
+    string content = 5;
+    string media_url = 6;
+    string media_type = 7;
+    int64 timestamp = 8;
+}
+
+message ChatRecallMessagePayload {
+    string msg_id = 1;
+    string user_id = 2;
+}
+
+// ---------- friend.* ----------
+message FriendAddPayload {
+    string user_id = 1;
+    string friend_id = 2;
+    string remark = 3;
+}
+
+message FriendHandleRequestPayload {
+    string user_id = 1;
+    string request_id = 2;
+    bool accept = 3;
+}
+
+message FriendRemovePayload {
+    string user_id = 1;
+    string friend_id = 2;
+}
+
+message FriendBlockPayload {
+    string user_id = 1;
+    string target_id = 2;
+}
+
+// ---------- group.* ----------
+message GroupCreatePayload {
+    string creator_id = 1;
+    string group_name = 2;
+    repeated string member_ids = 3;
+}
+
+message GroupCreateResponsePayload {
+    bool success = 1;
+    string group_id = 2;
+    string error = 3;
+}
+
+message GroupDismissPayload {
+    string group_id = 1;
+    string operator_id = 2;
+}
+
+message GroupInviteMembersPayload {
+    string group_id = 1;
+    string inviter_id = 2;
+    repeated string member_ids = 3;
+}
+
+message GroupRemoveMemberPayload {
+    string group_id = 1;
+    string operator_id = 2;
+    string member_id = 3;
+}
+
+message GroupLeavePayload {
+    string group_id = 1;
+    string user_id = 2;
+}
+
+// ---------- file.* ----------
+message FileGetUploadTokenPayload {
+    string user_id = 1;
+    string file_name = 2;
+    int64 file_size = 3;
+}
+
+message FileGetUploadTokenResponsePayload {
+    bool success = 1;
+    string upload_token = 2;
+    string upload_url = 3;
+    int64 expire_at = 4;
+    string error = 5;
+}
+
+message FileGetFileUrlPayload {
+    string file_id = 1;
+    string user_id = 2;
+}
+
+message FileGetFileUrlResponsePayload {
+    bool success = 1;
+    string file_url = 2;
+    string file_name = 3;
+    int64 file_size = 4;
+    string content_type = 5;
+    int64 expire_at = 6;
+    string error = 7;
+}
+
+message FileDeletePayload {
+    string file_id = 1;
+    string user_id = 2;
+}
+
 // ============== 服务定义 ==============
 
 service ZoneService {
@@ -116,4 +295,7 @@ service ZoneService {
     
     // Gate 心跳
     rpc GateHeartbeat(GateHeartbeatRequest) returns (swift.common.CommonResponse);
+
+    // 客户端业务请求统一入口：Gate 转发 cmd+payload，Zone 按 cmd 分发到对应 System，各 System 通过 gRPC 调后端
+    rpc HandleClientRequest(HandleClientRequestRequest) returns (HandleClientRequestResponse);
 }

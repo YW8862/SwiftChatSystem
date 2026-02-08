@@ -14,7 +14,9 @@ endif()
 set(SOURCES
     cmd/main.cpp
     internal/config/config.cpp
+    internal/handler/zone_handler.cpp
     internal/interceptor/internal_secret_processor.cpp
+    internal/service/zone_service.cpp
     internal/store/session_store.cpp
     internal/rpc/rpc_client_base.cpp
     internal/rpc/auth_rpc_client.cpp

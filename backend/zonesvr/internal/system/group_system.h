@@ -14,6 +14,7 @@
 #pragma once
 
 #include "base_system.h"
+#include "../rpc/group_rpc_client.h"
 #include <memory>
 #include <string>
 #include <vector>
@@ -21,7 +22,6 @@
 namespace swift {
 namespace zone {
 
-// 前向声明
 class GroupRpcClient;
 
 /**
@@ -66,8 +66,10 @@ public:
                        const std::string& old_owner_id,
                        const std::string& new_owner_id);
 
-    /// 获取群成员列表
-    // std::vector<GroupMember> GetGroupMembers(const std::string& group_id);
+    /// 获取群成员列表（用于消息推送给在线成员）
+    bool GetGroupMembers(const std::string& group_id, int32_t page, int32_t page_size,
+                         std::vector<GroupMemberResult>* out_members, int32_t* total,
+                         std::string* out_error);
 
     /// 获取群信息
     // GroupInfo GetGroupInfo(const std::string& group_id);

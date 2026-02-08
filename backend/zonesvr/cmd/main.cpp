@@ -15,7 +15,10 @@
 #include <grpcpp/server_builder.h>
 
 #include "config/config.h"
+#include "handler/zone_handler.h"
 #include "interceptor/internal_secret_processor.h"
+#include "service/zone_service.h"
+#include "system/system_manager.h"
 
 int main(int argc, char* argv[]) {
     std::string config_file = (argc > 1) ? argv[1] : "";
@@ -26,9 +29,19 @@ int main(int argc, char* argv[]) {
 
     swift::zone::ZoneConfig config = swift::zone::LoadConfig(config_file);
 
+    // Step 13：先 SystemManager Init，再组装 ZoneService / Handler，最后 ServerBuilder 先认证再 RegisterService
+    swift::zone::SystemManager manager;
+    if (!manager.Init(config)) {
+        std::cerr << "ZoneSvr SystemManager Init failed" << std::endl;
+        return 1;
+    }
+
+    auto zone_svc = std::make_shared<swift::zone::ZoneServiceImpl>(
+        manager.GetSessionStore(), &manager);
+    auto handler = std::make_shared<swift::zone::ZoneHandler>(zone_svc);
+
     std::string addr = config.host + ":" + std::to_string(config.port);
     auto creds = grpc::InsecureServerCredentials();
-    // 注册接入认证。所有 ZoneService 的 RPC 均先经此校验，再进入业务。
     if (!config.internal_secret.empty()) {
         creds->SetAuthMetadataProcessor(
             std::make_shared<swift::zone::InternalSecretProcessor>(config.internal_secret));
@@ -36,7 +49,8 @@ int main(int argc, char* argv[]) {
 
     grpc::ServerBuilder builder;
     builder.AddListeningPort(addr, creds);
-    // RegisterService(ZoneHandler) 将在实现 ZoneHandler 与 ZoneService 后添加
+    // 先认证（已通过 SetAuthMetadataProcessor 注入），再注册服务
+    builder.RegisterService(handler.get());
     auto server = builder.BuildAndStart();
     if (!server) {
         std::cerr << "ZoneSvr failed to start on " << addr << std::endl;
@@ -46,5 +60,6 @@ int main(int argc, char* argv[]) {
               << (config.internal_secret.empty() ? " (no internal auth)" : " (internal secret required)")
               << std::endl;
     server->Wait();
+    manager.Shutdown();
     return 0;
 }

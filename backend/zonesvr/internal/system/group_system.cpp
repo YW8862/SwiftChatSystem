@@ -23,58 +23,63 @@ bool GroupSystem::Init() {
 
 void GroupSystem::Shutdown() {
     if (rpc_client_) {
+        rpc_client_->Disconnect();
         rpc_client_.reset();
     }
 }
 
 std::string GroupSystem::CreateGroup(const std::string& creator_id,
-                                     const std::string& group_name,
-                                     const std::vector<std::string>& member_ids) {
-    // TODO:
-    // 1. 调用 GroupService.CreateGroup
-    // 2. 通知所有初始成员
-    return "";
+                                    const std::string& group_name,
+                                    const std::vector<std::string>& member_ids) {
+    if (!rpc_client_) return "";
+    auto r = rpc_client_->CreateGroup(creator_id, group_name, "", member_ids);
+    return r.success ? r.group_id : "";
 }
 
 bool GroupSystem::DismissGroup(const std::string& group_id, const std::string& operator_id) {
-    // TODO:
-    // 1. 调用 GroupService.DismissGroup
-    // 2. 通知所有成员群已解散
-    return false;
+    if (!rpc_client_) return false;
+    std::string err;
+    return rpc_client_->DismissGroup(group_id, operator_id, &err);
 }
 
 bool GroupSystem::InviteMembers(const std::string& group_id,
-                                 const std::string& inviter_id,
-                                 const std::vector<std::string>& member_ids) {
-    // TODO:
-    // 1. 调用 GroupService.InviteMembers
-    // 2. 通知被邀请的成员
-    return false;
+                                const std::string& inviter_id,
+                                const std::vector<std::string>& member_ids) {
+    if (!rpc_client_) return false;
+    std::string err;
+    return rpc_client_->InviteMembers(group_id, inviter_id, member_ids, &err);
 }
 
 bool GroupSystem::RemoveMember(const std::string& group_id,
-                                const std::string& operator_id,
-                                const std::string& member_id) {
-    // TODO:
-    // 1. 调用 GroupService.RemoveMember
-    // 2. 通知被移除的成员和群内其他成员
-    return false;
+                               const std::string& operator_id,
+                               const std::string& member_id) {
+    if (!rpc_client_) return false;
+    std::string err;
+    return rpc_client_->RemoveMember(group_id, operator_id, member_id, &err);
 }
 
 bool GroupSystem::LeaveGroup(const std::string& group_id, const std::string& user_id) {
-    // TODO:
-    // 1. 调用 GroupService.LeaveGroup
-    // 2. 通知群内其他成员
-    return false;
+    if (!rpc_client_) return false;
+    std::string err;
+    return rpc_client_->LeaveGroup(group_id, user_id, &err);
 }
 
 bool GroupSystem::TransferOwner(const std::string& group_id,
-                                 const std::string& old_owner_id,
-                                 const std::string& new_owner_id) {
-    // TODO:
-    // 1. 调用 GroupService.TransferOwner
-    // 2. 通知群内所有成员
-    return false;
+                                const std::string& old_owner_id,
+                                const std::string& new_owner_id) {
+    if (!rpc_client_) return false;
+    std::string err;
+    return rpc_client_->TransferOwner(group_id, old_owner_id, new_owner_id, &err);
+}
+
+bool GroupSystem::GetGroupMembers(const std::string& group_id, int32_t page, int32_t page_size,
+                                   std::vector<GroupMemberResult>* out_members, int32_t* total,
+                                   std::string* out_error) {
+    if (!rpc_client_) {
+        if (out_error) *out_error = "GroupSystem not available";
+        return false;
+    }
+    return rpc_client_->GetGroupMembers(group_id, page, page_size, out_members, total, out_error);
 }
 
 void GroupSystem::BroadcastToGroupMembers(const std::string& group_id, const std::string& payload) {

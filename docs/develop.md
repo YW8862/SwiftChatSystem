@@ -1407,14 +1407,17 @@ backend/zonesvr/
 
 ### 9.3 功能清单与 proto 接口（zone.proto）
 
-- [ ] 配置：ZoneConfig（后端地址、session_store_type、redis_url 等），main 启动 gRPC 服务（端口 9092）
-- [ ] SessionStore：Memory 版 + Redis 版（Key 与 system.md 5.2、6.3 一致）
-- [ ] SystemManager：按配置创建 SessionStore、各 System，SetConfig/SetSessionStore 后 Init
-- [ ] 各 System Init：连接对应后端（auth_svr_addr、online_svr_addr、chat_svr_addr 等），实现 RPC 转发
-- [ ] Gate 注册与心跳：GateRegister、GateHeartbeat（SessionStore 写 gate:*、gate:list）
-- [ ] 用户上线/下线：UserOnline、UserOffline（SessionStore 写 session:{user_id}）
-- [ ] 消息路由：RouteMessage、PushToUser（查 SessionStore → GateRpcClient.PushMessage）
-- [ ] 广播、在线状态：Broadcast、GetUserStatus；KickUser（可选）
+- [x] 配置：ZoneConfig（后端地址、session_store_type、redis_url 等），main 启动 gRPC 服务（端口 9092）
+- [x] SessionStore：Memory 版 + Redis 版（Key 与 system.md 5.2、6.3 一致）
+- [x] SystemManager：按配置创建 SessionStore、各 System，SetConfig/SetSessionStore 后 Init
+- [x] 各 System Init：连接对应后端（auth_svr_addr、online_svr_addr、chat_svr_addr 等），实现 RPC 转发；Shutdown 时 Disconnect 并 reset
+- [x] Gate 注册与心跳：GateRegister、GateHeartbeat（SessionStore 写 gate:*、gate:list）
+- [x] 用户上线/下线：UserOnline、UserOffline（SessionStore 写 session:{user_id}）
+- [x] ZoneHandler：实现 proto 的 ZoneService::Service，9 个 RPC 委托给 ZoneServiceImpl；main 组装 SystemManager → ZoneServiceImpl(store, &manager) → ZoneHandler → RegisterService
+- [x] 接入认证：internal_secret 通过 SetAuthMetadataProcessor（InternalSecretProcessor）校验 x-internal-secret
+- [ ] 消息路由：RouteMessage、PushToUser 在 ZoneServiceImpl 中查 SessionStore 已实现，推送到 Gate（PushToGate）需按 gate_addr 调 GateRpcClient，待与 Step 16/17 对接
+- [ ] 广播、在线状态：Broadcast、GetUserStatus、KickUser 已接 Handler，Broadcast 暂返 online_count/delivered_count=0
+- [x] **客户端业务请求按 cmd 分发**：已实现 `HandleClientRequest` RPC（zone.proto）；Gate 转发 cmd+payload，ZoneHandler 调用 ZoneServiceImpl.HandleClientRequest，按 cmd 分发到各 System（auth.login/auth.logout/auth.validate_token → AuthSystem → gRPC 调 AuthSvr/OnlineSvr）；其他 cmd（chat.*、friend.* 等）可在此分支扩展（见 9.6）
 
 **ZoneService（zone.proto）与 system.md 6.2 对应：** UserOnline、UserOffline、RouteMessage、Broadcast、GetUserStatus、PushToUser、KickUser、GateRegister、GateHeartbeat。
 
@@ -1434,8 +1437,8 @@ backend/zonesvr/
 
 | 步骤 | 细化工作 | 对应 system.md |
 |------|----------|----------------|
-| **Step 4** | **服务端拦截器**：实现 `InternalSecretInterceptor`（继承 `grpc::ServerInterceptor` 或使用 `ServerBuilder::AddInterceptor` 传入 lambda/仿函数）；在拦截逻辑中从 `ServerContext::client_metadata()` 读取 `x-internal-secret`；若 `config.internal_secret` 非空且 metadata 缺失或值不等，则 `Finish(Status(UNAUTHENTICATED, "missing or invalid x-internal-secret"))` 并终止，否则放行 | §2.7 |
-| **Step 5** | **注册拦截器**：在 main 中 `ServerBuilder::AddInterceptor(std::make_shared<InternalSecretInterceptor>(config.internal_secret))`（在 `RegisterService` 之前）；确保所有 ZoneService 的 RPC 均经过该校验 | §2.7 |
+| **Step 4** | **服务端拦截器**：实现 `InternalSecretInterceptor`（继承 `grpc::ServerInterceptor` 或使用 `ServerBuilder::AddInterceptor` 传入 lambda/仿函数）；在拦截逻辑中从 `ServerContext::client_metadata()` 读取 `x-internal-secret`；若 `config.internal_secret` 非空且 metadata 缺失或值不等，则 `Finish(Status(UNAUTHENTICATED, "missing or invalid x-internal-secret"))` 并终止，否则放行。**当前实现**：使用 `SetAuthMetadataProcessor(InternalSecretProcessor)` 在连接建立时校验，等价于“先认证再进业务”。 | §2.7 |
+| **Step 5** | **注册拦截器**：在 main 中 `ServerBuilder::AddInterceptor(...)`（在 `RegisterService` 之前）；或通过 `creds->SetAuthMetadataProcessor(...)` 在 AddListeningPort 前注入。当前采用后者。 | §2.7 |
 
 #### 三、SessionStore 接口与内存实现
 
@@ -1450,22 +1453,22 @@ backend/zonesvr/
 |------|----------|----------------|
 | **Step 8** | **BaseSystem**（system/base_system.h）：纯虚 `Name()`/`Init()`/`Shutdown()`；`SetSessionStore(shared_ptr)`、`SetConfig(const ZoneConfig*)`；protected 成员 `session_store_`、`config_`；前向声明 SessionStore、ZoneConfig | §2.2 |
 | **Step 9** | **SystemManager**（system/system_manager.h/cpp）：成员 `session_store_`、`auth_system_`/`chat_system_`/`friend_system_`/`group_system_`/`file_system_`；`Init(ZoneConfig)` 内按 `session_store_type` 创建 `MemorySessionStore` 或 `RedisSessionStore(redis_url)`，创建各 System，对每个 System 调用 `SetSessionStore`、`SetConfig(&config)`，再依次 `system->Init()`；`GetAuthSystem()` 等 getter；`Shutdown()` 逆序关闭并清空 session_store_ | §2.2 |
-| **Step 10** | **各 System Init 连接后端**（auth_system.cpp 等）：在 `Init()` 中若 `config_` 非空则创建对应 RPC Client（如 AuthRpcClient、OnlineRpcClient），`Connect(config_->auth_svr_addr)` 等，成功后 `InitStub()`；Shutdown 时 Disconnect 并 reset；ChatSystem 需持有 GateRpcClient 或由 ZoneService 统一推送，按当前设计可先在 System 内只连 ChatSvr | §2.2 |
+| **Step 10** | **各 System Init 连接后端**（auth_system.cpp 等）：在 `Init()` 中若 `config_` 非空则创建对应 RPC Client（如 AuthRpcClient、OnlineRpcClient），`Connect(config_->auth_svr_addr)` 等，成功后 `InitStub()`；Shutdown 时 Disconnect 并 reset；ChatSystem 仅连 ChatSvr。**已实现**：Auth/Online/Chat/Friend/Group/File 各 RPC Client 的 stub 与关键方法已实现；AuthSystem 的 Login/Logout/ValidateToken 已调 RPC，Friend/Group/File 业务方法已接对应 Client。 | §2.2 |
 
 #### 五、ZoneService 与 ZoneHandler（gRPC 入口）
 
 | 步骤 | 细化工作 | 对应 system.md |
 |------|----------|----------------|
-| **Step 11** | **ZoneService 类**（service/zone_service.h/cpp）：构造函数接收 `shared_ptr<SystemManager>`、`shared_ptr<SessionStore>`（或从 SystemManager 取 store）；实现 `UserOnline`/`UserOffline`（直接调 `session_store_->SetOnline`/`SetOffline`）；实现 `GateRegister`/`GateHeartbeat`（调 `session_store_->RegisterGate`/`UpdateGateHeartbeat`，Redis 版需写 gate:list）；暂不实现 RouteMessage/PushToUser，仅预留接口或返回未实现 | §2.2、§6.3 |
-| **Step 12** | **ZoneHandler**（handler/zone_handler.h/cpp）：实现 proto 生成的 `ZoneService::Service` 子类；每个 RPC 方法内从 request 解析参数、调用 `ZoneService` 对应方法、将结果写入 response、返回 Status::OK；将 ZoneService 注入 Handler（构造或 SetService） | §2.2 |
-| **Step 13** | **main 组装**：在 main 中先 `SystemManager manager; manager.Init(config)`；再 `auto zone_svc = std::make_shared<ZoneService>(manager.GetSessionStore(), &manager)`（或 ZoneService 只持 SystemManager 内部取 store）；`auto handler = std::make_shared<ZoneHandler>(zone_svc)`；ServerBuilder 先 AddInterceptor，再 RegisterService(handler)，BuildAndStart | §2.2 |
+| **Step 11** | **ZoneServiceImpl 类**（service/zone_service.h/cpp）：业务类命名为 ZoneServiceImpl（与 proto 生成的 ZoneService 区分）。构造函数接收 `shared_ptr<SessionStore>`、`SystemManager*`（可选）；实现 `UserOnline`/`UserOffline`/`GateRegister`/`GateHeartbeat`/`GetUserSession`/`GetUserStatuses`/`RouteToUser`/`Broadcast`/`KickUser`；RouteToUser/Broadcast 中 PushToGate 待与 GateRpcClient 对接。**已实现**。 | §2.2、§6.3 |
+| **Step 12** | **ZoneHandler**（handler/zone_handler.h/cpp）：继承 proto 生成的 `ZoneService::Service`；9 个 RPC 从 request 解析参数、调用 `ZoneServiceImpl` 对应方法、写 response、返回 Status::OK；构造注入 `shared_ptr<ZoneServiceImpl>`。**已实现**。 | §2.2 |
+| **Step 13** | **main 组装**：先 `SystemManager manager; manager.Init(config)`；再 `zone_svc = make_shared<ZoneServiceImpl>(manager.GetSessionStore(), &manager)`；`handler = make_shared<ZoneHandler>(zone_svc)`；creds 设置 SetAuthMetadataProcessor 后 AddListeningPort；RegisterService(handler.get())；BuildAndStart；退出前 manager.Shutdown()。**已实现**。 | §2.2 |
 
 #### 六、Gate 注册与心跳（与 Store 对接）
 
 | 步骤 | 细化工作 | 对应 system.md |
 |------|----------|----------------|
-| **Step 14** | **GateRegister 完整逻辑**：从 `GateRegisterRequest` 取 gate_id、address、current_connections；构造 `GateNode`，调用 `session_store_->RegisterGate(node)`；Memory 版已在 Step 7 实现；Redis 版在 Step 17 中实现 SADD gate:list | §6.3 |
-| **Step 15** | **GateHeartbeat 完整逻辑**：从 `GateHeartbeatRequest` 取 gate_id、current_connections；调用 `session_store_->UpdateGateHeartbeat(gate_id, connections)`；Redis 版中对该 key 做 EXPIRE 续期（如 60s） | §6.3 |
+| **Step 14** | **GateRegister 完整逻辑**：从 `GateRegisterRequest` 取 gate_id、address、current_connections；构造 `GateNode`，调用 `session_store_->RegisterGate(node)`。**已实现**（ZoneServiceImpl::RegisterGate）；Redis 版在 RedisSessionStore 中实现。 | §6.3 |
+| **Step 15** | **GateHeartbeat 完整逻辑**：从 `GateHeartbeatRequest` 取 gate_id、current_connections；调用 `session_store_->UpdateGateHeartbeat(gate_id, connections)`。**已实现**（ZoneHandler → ZoneServiceImpl::GateHeartbeat）。 | §6.3 |
 
 #### 七、消息路由（RouteMessage / PushToUser）
 
@@ -1530,20 +1533,60 @@ manager.Shutdown();
 
 ### 9.6 请求处理流程
 
-```
-1. Client → GateSvr (WebSocket)
-2. GateSvr → ZoneSvr.HandleRequest(cmd, payload)
-3. ZoneSvr Handler 根据 cmd 选择对应 System：
-   - "auth.*"   → AuthSystem → AuthSvr (RPC)
-   - "chat.*"   → ChatSystem → ChatSvr (RPC)
-   - "friend.*" → FriendSystem → FriendSvr (RPC)
-   - "group.*"  → GroupSystem → ChatSvr/GroupService (RPC)
-   - "file.*"   → FileSystem → FileSvr (RPC)
-4. 后端服务处理业务逻辑，返回结果
-5. ZoneSvr 返回给 GateSvr → Client
+**设计原则：请求从 GateSvr 转到 ZoneSvr，再按 cmd 分发到各 System，各 System 通过 gRPC 调用后端业务逻辑。**
 
-注意：实际业务逻辑在后端服务实现，System 只做 RPC 转发
+#### 业务请求链路（Gate → Zone → System → 后端 gRPC）
+
 ```
+Client (WebSocket)
+    │  cmd + payload（如 auth.login、chat.send_message）
+    ▼
+GateSvr  收到客户端消息
+    │  gRPC 调用 ZoneSvr 统一入口（如 HandleClientRequest）
+    ▼
+ZoneSvr (ZoneHandler)
+    │  根据 cmd 选择对应 System
+    ├── "auth.*"   → AuthSystem  ──gRPC──→ AuthSvr / OnlineSvr（业务逻辑）
+    ├── "chat.*"   → ChatSystem  ──gRPC──→ ChatSvr（业务逻辑）
+    ├── "friend.*" → FriendSystem ──gRPC──→ FriendSvr（业务逻辑）
+    ├── "group.*"  → GroupSystem  ──gRPC──→ ChatSvr/GroupService（业务逻辑）
+    └── "file.*"   → FileSystem   ──gRPC──→ FileSvr（业务逻辑）
+    │
+    ▼  聚合结果
+ZoneSvr 返回给 GateSvr → Client
+```
+
+- **ZoneSvr**：统一入口，只做会话/路由与 **按 cmd 分发到 System**，不实现业务逻辑。
+- **各 System**：持有对应后端 RPC Client，将请求 **通过 gRPC 转发到 AuthSvr、ChatSvr、FriendSvr、FileSvr 等**，由后端完成业务与存储。
+- **后端 Svr**：实际业务逻辑与数据落库。
+
+**已实现**：zone.proto 中已增加 `HandleClientRequest(HandleClientRequestRequest) returns (HandleClientRequestResponse)`；ZoneHandler 将请求交给 ZoneServiceImpl.HandleClientRequest，ZoneServiceImpl 通过 `manager_` 按 cmd 调用 `GetAuthSystem()` 等，由各 System 再通过 gRPC 调后端。当前已支持 `auth.login`、`auth.logout`、`auth.validate_token`（payload 为对应 proto 序列化）；其他 cmd 在 ZoneServiceImpl::HandleClientRequest 中扩展分支即可。
+
+**HandleClientRequest 约定（auth.*）：**
+
+| cmd | 请求 payload（proto） | 响应 payload（proto） |
+|-----|------------------------|------------------------|
+| auth.login | AuthLoginPayload (username, password, device_id, device_type) | AuthLoginResponsePayload (success, user_id, token, expire_at, error) |
+| auth.logout | AuthLogoutPayload (user_id, token) | 无（code/message 在 response 上） |
+| auth.validate_token | AuthValidateTokenPayload (token) | AuthValidateTokenResponsePayload (user_id，空表示无效) |
+
+#### 当前已实现的路径（会话/路由/Gate 管理）
+
+GateSvr 调用 ZoneSvr 的 9 个 RPC（UserOnline、UserOffline、RouteMessage、Broadcast、GetUserStatus、PushToUser、KickUser、GateRegister、GateHeartbeat）→ ZoneHandler → ZoneServiceImpl → SessionStore（及 PushToGate 时用 manager）。这类请求**不经过**各业务 System，仅维护会话与路由状态。各 System 及其 gRPC 转发已实现，可供上述业务入口复用。
+
+**ZoneHandler 各 RPC 作用简述：**
+
+| RPC | 作用 | 当前走向 |
+|-----|------|----------|
+| UserOnline | Gate 上报用户上线 | ZoneServiceImpl → SessionStore.SetOnline |
+| UserOffline | Gate 上报用户下线 | ZoneServiceImpl → SessionStore.SetOffline |
+| RouteMessage | 路由单条消息到用户 | ZoneServiceImpl.RouteToUser（查 session；PushToGate 待接 GateRpcClient） |
+| Broadcast | 广播到多用户 | ZoneServiceImpl.Broadcast（返 online_count/delivered_count） |
+| GetUserStatus | 批量查在线状态 | ZoneServiceImpl.GetUserSession 逐用户 |
+| PushToUser | 主动推送给指定用户 | ZoneServiceImpl.RouteToUser |
+| KickUser | 踢用户下线 | ZoneServiceImpl.KickUser → SetOffline |
+| GateRegister | Gate 注册 | ZoneServiceImpl → SessionStore.RegisterGate |
+| GateHeartbeat | Gate 心跳 | ZoneServiceImpl → SessionStore.UpdateGateHeartbeat |
 
 ### 9.7 消息路由与 Gate 注册心跳（对应 system.md 6.2、6.3）
 

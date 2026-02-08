@@ -38,13 +38,21 @@ public:
     void Shutdown() override;
 
     // ============ RPC 转发接口 ============
-    // 这些接口将请求转发到 ChatSvr，实际逻辑在 ChatSvr 实现
 
     /// 发送消息 → ChatSvr.SendMessage
-    // SendMessageResponse SendMessage(const SendMessageRequest& request);
+    struct SendMessageResult {
+        bool success = false;
+        std::string msg_id;
+        int64_t timestamp = 0;
+        std::string error;
+    };
+    SendMessageResult SendMessage(const std::string& from_user_id, const std::string& to_id,
+                                  int32_t chat_type, const std::string& content,
+                                  const std::string& media_url = "", const std::string& media_type = "",
+                                  const std::string& client_msg_id = "", int64_t file_size = 0);
 
     /// 撤回消息 → ChatSvr.RecallMessage
-    // CommonResponse RecallMessage(const RecallMessageRequest& request);
+    bool RecallMessage(const std::string& msg_id, const std::string& user_id, std::string* out_error);
 
     /// 拉取离线消息 → ChatSvr.PullOffline
     // PullOfflineResponse PullOffline(const PullOfflineRequest& request);

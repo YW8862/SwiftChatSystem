@@ -23,41 +23,43 @@ bool FriendSystem::Init() {
 
 void FriendSystem::Shutdown() {
     if (rpc_client_) {
+        rpc_client_->Disconnect();
         rpc_client_.reset();
     }
 }
 
-bool FriendSystem::AddFriend(const std::string& user_id, 
-                              const std::string& friend_id, 
-                              const std::string& remark) {
-    // TODO: 
-    // 1. 调用 FriendSvr.AddFriend
-    // 2. 如果目标用户在线，推送好友请求通知
-    return false;
+bool FriendSystem::AddFriend(const std::string& user_id,
+                             const std::string& friend_id,
+                             const std::string& remark) {
+    if (!rpc_client_) return false;
+    std::string err;
+    return rpc_client_->AddFriend(user_id, friend_id, remark, "", &err);
 }
 
-bool FriendSystem::HandleFriendRequest(const std::string& user_id, 
-                                        const std::string& request_id, 
-                                        bool accept) {
-    // TODO:
-    // 1. 调用 FriendSvr.HandleFriendRequest
-    // 2. 如果接受，通知双方
-    return false;
+bool FriendSystem::HandleFriendRequest(const std::string& user_id,
+                                       const std::string& request_id,
+                                       bool accept) {
+    if (!rpc_client_) return false;
+    std::string err;
+    return rpc_client_->HandleFriendRequest(user_id, request_id, accept, "", &err);
 }
 
 bool FriendSystem::RemoveFriend(const std::string& user_id, const std::string& friend_id) {
-    // TODO: 调用 FriendSvr.RemoveFriend
-    return false;
+    if (!rpc_client_) return false;
+    std::string err;
+    return rpc_client_->RemoveFriend(user_id, friend_id, &err);
 }
 
 bool FriendSystem::BlockUser(const std::string& user_id, const std::string& target_id) {
-    // TODO: 调用 FriendSvr.BlockUser
-    return false;
+    if (!rpc_client_) return false;
+    std::string err;
+    return rpc_client_->BlockUser(user_id, target_id, &err);
 }
 
 bool FriendSystem::UnblockUser(const std::string& user_id, const std::string& target_id) {
-    // TODO: 调用 FriendSvr.UnblockUser
-    return false;
+    if (!rpc_client_) return false;
+    std::string err;
+    return rpc_client_->UnblockUser(user_id, target_id, &err);
 }
 
 bool FriendSystem::IsFriend(const std::string& user_id, const std::string& friend_id) {

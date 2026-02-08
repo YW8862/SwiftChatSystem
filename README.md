@@ -15,6 +15,8 @@
 - Windows 客户端（Qt5）
 - Minikube 本地 Kubernetes 部署
 
+**请求链路（Gate → Zone → System → 后端 gRPC）：** 客户端通过 WebSocket 连接 **GateSvr**；业务请求由 GateSvr 经 gRPC 转发到 **ZoneSvr**，ZoneSvr 根据 cmd 分发到对应 **System**（AuthSystem、ChatSystem、FriendSystem、GroupSystem、FileSystem），各 System **通过 gRPC 调用后端业务服务**（AuthSvr、ChatSvr、FriendSvr、FileSvr 等）执行业务逻辑，结果经 Zone → Gate 返回客户端。详见 `docs/develop.md` 9.6、`docs/system.md` 2.2。
+
 认证与登录：**AuthSvr** 负责注册、校验用户名密码（VerifyCredentials）、用户资料；**OnlineSvr** 负责登录会话、Token 签发与校验（Login/Logout/ValidateToken）。  
 **API 鉴权**：涉及「当前用户」的接口（AuthSvr 的 GetProfile/UpdateProfile、FriendSvr、ChatSvr 全部接口）须在 gRPC metadata 中携带 JWT（`authorization: Bearer <token>` 或 `x-token: <token>`），服务端以 Token 解析出的 user_id 为准，不信任请求体中的 user_id，防止越权。详见 `develop.md` 第 16 节、`system.md` 2.3。
 

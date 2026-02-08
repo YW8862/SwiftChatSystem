@@ -44,35 +44,42 @@ AuthLoginResult AuthSystem::Login(const std::string& username,
                                    const std::string& device_id,
                                    const std::string& device_type) {
     AuthLoginResult result;
-    // 1. AuthSvr.VerifyCredentials(username, password) → user_id, profile
-    // TODO: auto verify = auth_rpc_client_->VerifyCredentials(username, password);
-    // if (!verify.success) { result.error = verify.error; return result; }
-    // 2. OnlineSvr.Login(user_id, device_id, device_type) → token
-    // TODO: auto login = online_rpc_client_->Login(verify.user_id, device_id, device_type);
-    // if (!login.success) { result.error = login.error; return result; }
-    // result.success = true; result.user_id = verify.user_id; result.token = login.token;
-    // result.expire_at = login.expire_at;
-    (void)username;
-    (void)password;
-    (void)device_id;
-    (void)device_type;
+    if (!auth_rpc_client_ || !online_rpc_client_) {
+        result.error = "auth not configured";
+        return result;
+    }
+    std::string user_id;
+    if (!auth_rpc_client_->VerifyCredentials(username, password, &user_id, &result.error))
+        return result;
+    auto login = online_rpc_client_->Login(user_id, device_id, device_type);
+    if (!login.success) {
+        result.error = login.error;
+        return result;
+    }
+    result.success = true;
+    result.user_id = user_id;
+    result.token = login.token;
+    result.expire_at = login.expire_at;
     return result;
 }
 
 AuthLogoutResult AuthSystem::Logout(const std::string& user_id, const std::string& token) {
     AuthLogoutResult result;
-    // TODO: auto r = online_rpc_client_->Logout(user_id, token);
-    // result.success = r.success; result.error = r.error;
-    (void)user_id;
-    (void)token;
+    if (!online_rpc_client_) {
+        result.success = false;
+        result.error = "auth not configured";
+        return result;
+    }
+    auto r = online_rpc_client_->Logout(user_id, token);
+    result.success = r.success;
+    result.error = r.error;
     return result;
 }
 
 std::string AuthSystem::ValidateToken(const std::string& token) {
-    // TODO: auto r = online_rpc_client_->ValidateToken(token);
-    // if (r.valid) return r.user_id;
-    (void)token;
-    return "";
+    if (!online_rpc_client_) return "";
+    auto r = online_rpc_client_->ValidateToken(token);
+    return r.valid ? r.user_id : "";
 }
 
 }  // namespace zone

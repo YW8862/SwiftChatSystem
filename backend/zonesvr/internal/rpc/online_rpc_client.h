@@ -8,6 +8,8 @@
 #pragma once
 
 #include "rpc_client_base.h"
+#include "online.grpc.pb.h"
+#include <memory>
 #include <string>
 #include <cstdint>
 
@@ -50,7 +52,7 @@ public:
     OnlineTokenResult ValidateToken(const std::string& token);
 
 private:
-    // std::unique_ptr<swift::online::OnlineService::Stub> stub_;
+    std::unique_ptr<swift::online::OnlineService::Stub> stub_;
 };
 
 }  // namespace zone

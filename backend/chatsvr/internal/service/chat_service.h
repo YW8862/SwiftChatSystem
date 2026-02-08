@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include "../store/message_store.h"
+#include "swift/chat_type.h"
 #include "swift/error_code.h"
 
 namespace swift::group_ {
@@ -12,10 +13,7 @@ class GroupStore;
 
 namespace swift::chat {
 
-enum class ChatType {
-    PRIVATE = 1,
-    GROUP = 2,
-};
+using ChatType = swift::ChatType;
 
 /**
  * 消息服务业务逻辑（类名带 Core 以区分 proto 生成的 ChatService）。

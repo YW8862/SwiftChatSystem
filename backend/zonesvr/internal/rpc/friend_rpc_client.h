@@ -6,10 +6,23 @@
 #pragma once
 
 #include "rpc_client_base.h"
-// #include "friend.grpc.pb.h"
+#include "friend.grpc.pb.h"
+#include <memory>
+#include <string>
+#include <vector>
+#include <cstdint>
 
 namespace swift {
 namespace zone {
+
+struct FriendInfoResult {
+    std::string friend_id;
+    std::string remark;
+    std::string group_id;
+    std::string nickname;
+    std::string avatar_url;
+    int64_t added_at = 0;
+};
 
 /**
  * @class FriendRpcClient
@@ -22,22 +35,18 @@ public:
 
     void InitStub();
 
-    // ============ RPC 方法 ============
-
-    /// 添加好友
-    // swift::common::CommonResponse AddFriend(const swift::relation::AddFriendRequest& request);
-
-    /// 处理好友请求
-    // swift::common::CommonResponse HandleFriendRequest(const swift::relation::HandleFriendReq& request);
-
-    /// 获取好友列表
-    // swift::relation::FriendListResponse GetFriends(const std::string& user_id);
-
-    /// 拉黑用户
-    // swift::common::CommonResponse BlockUser(const std::string& user_id, const std::string& target_id);
+    bool AddFriend(const std::string& user_id, const std::string& friend_id,
+                   const std::string& remark, const std::string& group_id, std::string* out_error);
+    bool HandleFriendRequest(const std::string& user_id, const std::string& request_id,
+                             bool accept, const std::string& group_id, std::string* out_error);
+    bool RemoveFriend(const std::string& user_id, const std::string& friend_id, std::string* out_error);
+    bool GetFriends(const std::string& user_id, const std::string& group_id,
+                    std::vector<FriendInfoResult>* out_friends, std::string* out_error);
+    bool BlockUser(const std::string& user_id, const std::string& target_id, std::string* out_error);
+    bool UnblockUser(const std::string& user_id, const std::string& target_id, std::string* out_error);
 
 private:
-    // std::unique_ptr<swift::relation::FriendService::Stub> stub_;
+    std::unique_ptr<swift::relation::FriendService::Stub> stub_;
 };
 
 }  // namespace zone

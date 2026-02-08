@@ -108,8 +108,9 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 | **FileSystem** | RPC 转发层，调用 FileSvr |
 | **SessionStore** | ZoneSvr 内在线会话（消息路由）；登录会话在 OnlineSvr |
 
+**请求从 GateSvr 转到 ZoneSvr 后的处理方式：** 业务请求由 Zone 按 cmd 分发到各 System，各 System **通过 gRPC 调用后端业务逻辑**（AuthSvr、ChatSvr、FriendSvr、FileSvr 等），后端完成实际业务与存储；会话/路由类请求（UserOnline、GateRegister 等）走 ZoneServiceImpl → SessionStore。**实现状态**：9 个会话/路由 RPC 已接 ZoneHandler → ZoneServiceImpl；各 System 已连接后端并实现 gRPC 转发。业务请求统一入口（如 HandleClientRequest）待在 zone.proto 中新增并在 Handler 内按 cmd 分发到各 System。
+
 **架构模式：API Gateway + 微服务**
-  find . -name '.*' -prune -o -type f -print | wc -l
 ```
 ┌────────────────────────────────────────────────────────────────────┐
 │                      ZoneSvr (API Gateway)                         │
@@ -141,19 +142,19 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 | 组件 | 职责 |
 |------|------|
 | **ZoneSvr** | 统一入口、持有所有 RPC Client、请求转发、消息路由 |
-| **各 System** | 封装对应服务的 RPC 调用接口 |
+| **各 System** | 接收 Zone 分发的请求，通过 gRPC 调用对应后端服务（AuthSvr、ChatSvr 等），仅做 RPC 转发，业务逻辑在后端 |
 | **SessionStore** | 用户会话状态，用于消息路由到正确的 Gate |
 | **后端 Svr** | 实际业务逻辑、数据存储 |
 | **服务间调用** | 后端服务自己持有其他服务的 Client（如 ChatSvr → FileSvr） |
 
-**请求流程：**
+**请求流程（Gate → Zone → System → 后端 gRPC）：**
 
 ```
-1. Client → GateSvr (WebSocket)
-2. GateSvr → ZoneSvr (gRPC)
-3. ZoneSvr 根据 cmd 选择对应的 System/Client
-4. System 通过 RPC Client 转发请求到后端 Svr
-5. 后端 Svr 处理业务逻辑，返回结果
+1. Client → GateSvr (WebSocket，cmd + payload)
+2. GateSvr → ZoneSvr (gRPC，统一入口或具体 RPC)
+3. ZoneSvr 根据 cmd 将业务请求分发到对应 System（AuthSystem / ChatSystem / FriendSystem / GroupSystem / FileSystem）
+4. 各 System 通过 gRPC 调用后端业务服务（AuthSvr、ChatSvr、FriendSvr、FileSvr 等），由后端处理业务逻辑与存储
+5. 后端返回结果 → System → ZoneSvr 聚合
 6. ZoneSvr 返回给 GateSvr → Client
 ```
 
@@ -164,6 +165,13 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 - **会话共享**：SessionStore 用于消息路由，无需每次查 Redis
 - **职责清晰**：ZoneSvr 只转发，业务逻辑在后端服务
 - **服务解耦**：后端服务间调用自己管理，互不影响
+
+**ZoneSvr 压力与水平扩展：**
+
+- **ZoneSvr 本身是轻量级**：只做「解析请求 → 按 cmd 选 System → 调一次 gRPC → 回包」，无重业务、无直接落库（SessionStore 可用 Redis，读写可异步/批量）。CPU 和内存占用主要来自 gRPC 序列化与连接管理，单机可支撑较高 QPS。
+- **水平扩展**：多实例部署 ZoneSvr，前面挂负载均衡（如 K8s Service）；SessionStore 使用 **Redis**，多台 ZoneSvr 共享会话，GateSvr 请求可随机或按 user_id 哈希到不同 Zone 实例，避免单点。
+- **瓶颈在后端**：真正吃资源的是 AuthSvr、ChatSvr、FileSvr 等（DB、磁盘、业务计算）。ZoneSvr 只做路由，压力可随 Zone 实例数线性扩展；后端各服务也可独立扩容。
+- **可选优化**：若部分读多写少、且不依赖会话的接口需要进一步减负，可后续考虑「读路径直连后端」或「Gate 缓存部分结果」，与当前「业务一律经 Zone → System → gRPC」的设计可并存，按需引入。
 
 ### 2.3 后端服务分层（无独立 API 层）
 
