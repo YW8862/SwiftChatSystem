@@ -1,10 +1,10 @@
 # SwiftChatSystem 后端服务统一镜像构建
 # 从仓库根目录构建: docker build -f deploy/docker/Dockerfile --build-arg BUILD_TARGET=authsvr -t swift/authsvr:latest .
 # 支持: authsvr, onlinesvr, friendsvr, chatsvr, filesvr, zonesvr, gatesvr
-# 若无法访问 Docker Hub，可指定基础镜像: --build-arg BASE_IMAGE=registry.cn-hangzhou.aliyuncs.com/library/ubuntu:22.04
+# 默认使用国内镜像源；海外环境可 --build-arg BASE_IMAGE=ubuntu:22.04
 
 ARG BUILD_TARGET=authsvr
-ARG BASE_IMAGE=ubuntu:22.04
+ARG BASE_IMAGE=registry.cn-hangzhou.aliyuncs.com/library/ubuntu:22.04
 
 # ========== 构建阶段 ==========
 FROM ${BASE_IMAGE} AS builder
@@ -40,7 +40,7 @@ RUN cd /app && /vcpkg/vcpkg install --triplet x64-linux \
     && cp /app/build/backend/${BUILD_TARGET}/${BUILD_TARGET} /app/outbin
 
 # ========== 运行阶段 ==========
-ARG BASE_IMAGE=ubuntu:22.04
+ARG BASE_IMAGE=registry.cn-hangzhou.aliyuncs.com/library/ubuntu:22.04
 FROM ${BASE_IMAGE}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
