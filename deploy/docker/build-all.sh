@@ -6,7 +6,7 @@ cd "$(dirname "$0")/../.."
 
 REGISTRY="${REGISTRY:-swift}"
 TAG="${TAG:-latest}"
-BASE_IMAGE="${BASE_IMAGE:-registry.cn-hangzhou.aliyuncs.com/library/ubuntu:22.04}"
+BASE_IMAGE="${BASE_IMAGE:-docker.1ms.run/library/ubuntu:22.04}"
 
 for target in authsvr onlinesvr friendsvr chatsvr filesvr zonesvr gatesvr; do
   echo "Building $REGISTRY/$target:$TAG ..."
