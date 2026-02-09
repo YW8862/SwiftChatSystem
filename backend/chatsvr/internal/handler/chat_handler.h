@@ -29,10 +29,6 @@ public:
                                const ::swift::chat::PullOfflineRequest* request,
                                ::swift::chat::PullOfflineResponse* response) override;
 
-    ::grpc::Status SearchMessages(::grpc::ServerContext* context,
-                                  const ::swift::chat::SearchMessagesRequest* request,
-                                  ::swift::chat::SearchMessagesResponse* response) override;
-
     ::grpc::Status MarkRead(::grpc::ServerContext* context,
                             const ::swift::chat::MarkReadRequest* request,
                             ::swift::chat::MarkReadResponse* response) override;

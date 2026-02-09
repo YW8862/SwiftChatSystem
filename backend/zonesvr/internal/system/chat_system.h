@@ -58,10 +58,24 @@ public:
     bool RecallMessage(const std::string& msg_id, const std::string& user_id, std::string* out_error);
 
     /// 拉取离线消息 → ChatSvr.PullOffline
-    // PullOfflineResponse PullOffline(const PullOfflineRequest& request);
-
-    /// 获取历史消息 → ChatSvr.GetHistory
-    // GetHistoryResponse GetHistory(const GetHistoryRequest& request);
+    struct OfflineMessage {
+        std::string msg_id;
+        std::string from_user_id;
+        std::string to_id;
+        int32_t chat_type = 0;
+        std::string content;
+        std::string media_url;
+        std::string media_type;
+        int64_t timestamp = 0;
+    };
+    struct OfflineResult {
+        bool success = false;
+        std::vector<OfflineMessage> messages;
+        std::string next_cursor;
+        bool has_more = false;
+        std::string error;
+    };
+    OfflineResult PullOffline(const std::string& user_id, int32_t limit, const std::string& cursor);
 
     /// 标记已读 → ChatSvr.MarkRead
     bool MarkRead(const std::string& user_id, const std::string& chat_id, int32_t chat_type,

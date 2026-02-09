@@ -48,23 +48,6 @@ message PullOfflineResponse {
     bool has_more = 5;
 }
 
-message SearchMessagesRequest {
-    string user_id = 1;
-    string keyword = 2;
-    string chat_id = 3;            // 可选，限定会话
-    int32 chat_type = 4;           // 可选，1=私聊, 2=群聊
-    int64 start_time = 5;          // 可选，时间范围
-    int64 end_time = 6;
-    int32 limit = 7;               // 默认 20
-}
-
-message SearchMessagesResponse {
-    int32 code = 1;
-    string message = 2;
-    repeated ChatMessage messages = 3;
-    int32 total = 4;
-}
-
 message MarkReadRequest {
     string user_id = 1;
     string chat_id = 2;            // 会话 ID
@@ -191,9 +174,6 @@ service ChatService {
     
     // 拉取离线消息
     rpc PullOffline(PullOfflineRequest) returns (PullOfflineResponse);
-    
-    // 搜索消息
-    rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
     
     // 标记已读
     rpc MarkRead(MarkReadRequest) returns (MarkReadResponse);

@@ -184,43 +184,6 @@ ChatServiceCore::OfflineResult ChatServiceCore::PullOffline(const std::string& u
     return result;
 }
 
-std::vector<MessageData> ChatServiceCore::SearchMessages(const std::string& user_id,
-                                                      const std::string& keyword,
-                                                      const std::string& chat_id,
-                                                      ChatType chat_type,
-                                                      int limit) {
-    std::vector<MessageData> out;
-    if (keyword.empty() || limit <= 0) return out;
-
-    auto searchInConversation = [this, &keyword, &out, limit](const std::string& conversation_id,
-                                                               int ctype) {
-        std::vector<MessageData> history = msg_store_->GetHistory(
-            conversation_id, ctype, "", SEARCH_HISTORY_LIMIT);
-        for (auto& m : history) {
-            if (out.size() >= static_cast<size_t>(limit)) break;
-            if (m.content.find(keyword) != std::string::npos)
-                out.push_back(std::move(m));
-        }
-    };
-
-    if (!chat_id.empty()) {
-        std::string conversation_id = ResolveConversationId(user_id, chat_id, chat_type);
-        if (!conversation_id.empty())
-            searchInConversation(conversation_id, static_cast<int>(chat_type));
-        return out;
-    }
-
-    // 未限定会话：从用户会话列表中取各会话搜索
-    std::vector<ConversationData> convs = conv_store_->GetList(user_id);
-    for (const auto& c : convs) {
-        if (out.size() >= static_cast<size_t>(limit)) break;
-        searchInConversation(c.conversation_id, c.chat_type);
-    }
-    if (out.size() > static_cast<size_t>(limit))
-        out.resize(limit);
-    return out;
-}
-
 std::vector<MessageData> ChatServiceCore::GetHistory(const std::string& user_id,
                                                   const std::string& chat_id,
                                                   ChatType chat_type,

@@ -56,12 +56,6 @@ public:
     };
     OfflineResult PullOffline(const std::string& user_id, const std::string& cursor, int limit);
 
-    // 搜索消息（keyword 匹配 content；chat_id 为空则搜当前用户各会话，有值则限定该会话）
-    std::vector<MessageData> SearchMessages(const std::string& user_id,
-                                            const std::string& keyword,
-                                            const std::string& chat_id, ChatType chat_type,
-                                            int limit = 20);
-
     // 获取历史消息（chat_id 对私聊为对方 user_id，对群聊为 group_id；内部解析为 conversation_id）
     std::vector<MessageData> GetHistory(const std::string& user_id,
                                         const std::string& chat_id, ChatType chat_type,
@@ -95,7 +89,6 @@ private:
     std::shared_ptr<swift::group_::GroupStore> group_store_;
 
     static constexpr int RECALL_TIMEOUT_SECONDS = 120;  // 2 分钟
-    static constexpr int SEARCH_HISTORY_LIMIT = 500;
 };
 
 }  // namespace swift::chat

@@ -52,6 +52,41 @@ ChatSystem::SendMessageResult ChatSystem::SendMessage(const std::string& from_us
     return result;
 }
 
+ChatSystem::OfflineResult ChatSystem::PullOffline(const std::string& user_id,
+                                                  int32_t limit,
+                                                  const std::string& cursor) {
+    OfflineResult result;
+    if (!rpc_client_) {
+        result.error = "ChatSystem not available";
+        return result;
+    }
+    std::vector<ChatMessageResult> tmp;
+    std::string next;
+    bool has_more = false;
+    std::string err;
+    if (!rpc_client_->PullOffline(user_id, limit, cursor, &tmp, &next, &has_more, &err)) {
+        result.error = err;
+        return result;
+    }
+    result.success = true;
+    result.next_cursor = next;
+    result.has_more = has_more;
+    result.messages.reserve(tmp.size());
+    for (const auto& m : tmp) {
+        OfflineMessage om;
+        om.msg_id = m.msg_id;
+        om.from_user_id = m.from_user_id;
+        om.to_id = m.to_id;
+        om.chat_type = m.chat_type;
+        om.content = m.content;
+        om.media_url = m.media_url;
+        om.media_type = m.media_type;
+        om.timestamp = m.timestamp;
+        result.messages.push_back(std::move(om));
+    }
+    return result;
+}
+
 bool ChatSystem::RecallMessage(const std::string& msg_id, const std::string& user_id,
                                std::string* out_error) {
     if (!rpc_client_) {

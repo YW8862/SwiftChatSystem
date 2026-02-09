@@ -1570,6 +1570,14 @@ ZoneSvr 返回给 GateSvr → Client
 | auth.logout | AuthLogoutPayload (user_id, token) | 无（code/message 在 response 上） |
 | auth.validate_token | AuthValidateTokenPayload (token) | AuthValidateTokenResponsePayload (user_id，空表示无效) |
 
+**HandleClientRequest 约定（chat.*，已实现部分）：**
+
+| cmd | 请求 payload（proto，均定义于 zone.proto） | 响应 payload（proto 或空） |
+|-----|--------------------------------------------|----------------------------|
+| chat.send_message | ChatSendMessagePayload (from_user_id, to_id, chat_type, content, media_url, media_type, client_msg_id, file_size, **mentions**, **reply_to_msg_id**) | ChatSendMessageResponsePayload (success, msg_id, timestamp, error) |
+| chat.mark_read | ChatMarkReadPayload (chat_id, chat_type, last_msg_id)；user_id 由连接绑定与 token 决定 | 无单独 payload（code/message 在 HandleClientRequestResponse 上）；成功后由 ZoneSvr 向会话内其他人推送 `cmd="chat.read_receipt"`，payload 为 `ReadReceiptNotify`（见 gate.proto） |
+| chat.pull_offline | ChatPullOfflinePayload (limit, cursor)；user_id 来自连接绑定 | ChatPullOfflineResponsePayload：`repeated ChatMessagePushPayload messages`（与实时 `chat.message` 推送格式一致）+ next_cursor + has_more |
+
 #### 当前已实现的路径（会话/路由/Gate 管理）
 
 GateSvr 调用 ZoneSvr 的 9 个 RPC（UserOnline、UserOffline、RouteMessage、Broadcast、GetUserStatus、PushToUser、KickUser、GateRegister、GateHeartbeat）→ ZoneHandler → ZoneServiceImpl → SessionStore（及 PushToGate 时用 manager）。这类请求**不经过**各业务 System，仅维护会话与路由状态。各 System 及其 gRPC 转发已实现，可供上述业务入口复用。

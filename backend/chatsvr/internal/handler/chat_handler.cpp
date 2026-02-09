@@ -2,7 +2,7 @@
  * @file chat_handler.cpp
  * @brief 消息 gRPC API：将请求转调 ChatServiceCore，结果写入 proto 响应。
  * - 请求校验：必填参数为空时返回 INVALID_PARAM
- * - limit 上限：PullOffline 200、SearchMessages 100、GetHistory 100
+ * - limit 上限：PullOffline 200、GetHistory 100
  * - SyncConversations 填充 last_message（通过 GetMessageById）
  */
 
@@ -18,7 +18,6 @@ namespace swift::chat {
 
 namespace {
 constexpr int kMaxPullOfflineLimit = 200;
-constexpr int kMaxSearchLimit = 100;
 constexpr int kMaxHistoryLimit = 100;
 }  // namespace
 
@@ -164,28 +163,6 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
     response->set_next_cursor(result.next_cursor);
     response->set_has_more(result.has_more);
     for (const auto& m : result.messages) {
-        FillChatMessage(response->add_messages(), m);
-    }
-    return ::grpc::Status::OK;
-}
-
-::grpc::Status ChatHandler::SearchMessages(::grpc::ServerContext* context,
-                                             const ::swift::chat::SearchMessagesRequest* request,
-                                             ::swift::chat::SearchMessagesResponse* response) {
-    std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
-    if (uid.empty()) {
-        response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
-        response->set_message("token invalid or missing");
-        return ::grpc::Status::OK;
-    }
-    int limit = request->limit() > 0 ? std::min(request->limit(), kMaxSearchLimit) : 20;
-    ChatType ctype = request->chat_type() == 2 ? ChatType::GROUP : ChatType::PRIVATE;
-    auto messages = service_->SearchMessages(
-        uid, request->keyword(), request->chat_id(), ctype, limit);
-    response->set_code(static_cast<int>(swift::ErrorCode::OK));
-    response->set_message(swift::ErrorCodeToString(swift::ErrorCode::OK));
-    response->set_total(static_cast<int32_t>(messages.size()));
-    for (const auto& m : messages) {
         FillChatMessage(response->add_messages(), m);
     }
     return ::grpc::Status::OK;

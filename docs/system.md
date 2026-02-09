@@ -329,6 +329,35 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 | WebSocket 登录带 token、Gate 转发 auth.validate_token | `backend/gatesvr` HandleLogin；Zone HandleAuth → AuthSystem → OnlineSvr.ValidateToken |
 | 业务请求带 token、Zone 注入到后端 RPC metadata | Gate 存 Connection.token；Zone `RpcClientBase::CreateContext(..., token)` |
 
+### 2.9 聊天相关高级能力（@提醒 / 已读回执 / 离线消息）
+
+本系统在 **ChatSvr + ZoneSvr + GateSvr** 上共同实现了以下聊天高级能力：
+
+- **@提醒（mentions）**
+  - ChatSvr 的 `SendMessageRequest` / `ChatMessage` 中有 `repeated string mentions` 字段，落库在消息体中。
+  - ZoneSvr 的 `ChatSendMessagePayload` 增加 `mentions`、`reply_to_msg_id` 字段；`HandleChat("chat.send_message")` 会将 mentions 与 reply 信息通过 `ChatSystem → ChatRpcClient` 传递给 ChatSvr。
+  - 发送成功后，ZoneSvr 构造 `ChatMessagePushPayload` 并通过 `RouteToUser(..., "chat.message", payload)` 推送给在线接收方，push payload 中同样包含 `mentions` 与 `reply_to_msg_id`，客户端可据此高亮 @ 的用户并展示“回复某条消息”的 UI。
+
+- **已读回执（read receipt）**
+  - ChatSvr 暴露 `MarkRead` RPC：根据 `user_id + chat_id + chat_type` 计算会话，清除对应会话未读数，并根据 `last_msg_id` 清理该用户从这条消息之前的离线队列。
+  - ZoneSvr 在 `HandleChat("chat.mark_read")` 中解析 `ChatMarkReadPayload(chat_id, chat_type, last_msg_id)`，结合当前连接绑定的 `user_id` 调用 `ChatSystem.MarkRead`，成功后：
+    - 使用 `swift::gate::ReadReceiptNotify` 组包（`chat_id`、`user_id`、`last_read_msg_id`），
+    - 私聊：向对方用户推送 `cmd="chat.read_receipt"`；
+    - 群聊：向群内除自己外的所有成员推送 `cmd="chat.read_receipt"`。
+  - 客户端据此可以在会话中展示“某某已读到 X 条”的状态，并驱动 UI 更新。
+
+- **离线消息拉取（offline pull）**
+  - ChatSvr 在收消息时会对“未在线接收者”调用 `AddToOffline(user_id, msg_id)` 建立离线队列，并提供 `PullOffline` / `ClearOffline` 能力（配合 `offline_max_count` 限流）。
+  - ZoneSvr 定义：
+    - `ChatPullOfflinePayload(limit, cursor)`：由客户端经 Gate → Zone 发送 `cmd="chat.pull_offline"` 时使用；
+    - `ChatPullOfflineResponsePayload{ repeated ChatMessagePushPayload messages, next_cursor, has_more }`：响应体中直接复用在线推送所用的 `ChatMessagePushPayload` 结构。
+  - `HandleChat("chat.pull_offline")` 根据当前用户 `user_id` 调用 `ChatSystem.PullOffline(user_id, limit, cursor)`，并将结果映射到 `ChatPullOfflineResponsePayload` 返回客户端。客户端通常在「登录后」「网络恢复」「手动下拉」等时机调用：
+    - 首次 `cursor` 为空，仅指定 `limit`；
+    - 若 `has_more=true`，则使用返回的 `next_cursor` 继续拉取，直到无更多数据。
+  - 与 `MarkRead` 配合后，可保证**已读到的消息从离线队列中清理**，避免重复推送。
+
+- **消息搜索**：由客户端在本地对已拉取的历史/会话消息进行检索，服务端不提供搜索 RPC。
+
 ---
 
 ## 3. 微服务列表与职责

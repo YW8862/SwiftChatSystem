@@ -288,42 +288,41 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleChat(
         if (!r.error.empty()) result.message = r.error;
         else if (!r.success) result.message = swift::ErrorCodeToString(swift::ErrorCode::MSG_SEND_FAILED);
 
-        // SendMessage 成功后，推送给在线接收者
-        if (r.success && r.msg_id.size() > 0) {
-            ChatMessagePushPayload push_pb;
-            push_pb.set_msg_id(r.msg_id);
-            push_pb.set_from_user_id(req.from_user_id());
-            push_pb.set_to_id(req.to_id());
-            push_pb.set_chat_type(req.chat_type());
-            push_pb.set_content(req.content());
-            push_pb.set_media_url(req.media_url());
-            push_pb.set_media_type(req.media_type());
-            push_pb.set_timestamp(r.timestamp);
-            for (const auto& u : req.mentions()) push_pb.add_mentions(u);
-            if (!req.reply_to_msg_id().empty()) push_pb.set_reply_to_msg_id(req.reply_to_msg_id());
-            std::string push_payload;
-            if (push_pb.SerializeToString(&push_payload)) {
-                if (req.chat_type() == static_cast<int32_t>(swift::ChatType::PRIVATE)) {
-                    // 私聊：推送给 to_id（接收方）
-                    RouteToUser(req.to_id(), "chat.message", push_payload);
-                } else if (req.chat_type() == static_cast<int32_t>(swift::ChatType::GROUP)) {
-                    // 群聊：获取群成员，推送给除发送者外的所有在线成员
-                    auto* grp = manager_->GetGroupSystem();
-                    if (grp) {
-                        std::vector<GroupMemberResult> members;
-                        int total = 0;
-                        std::string err;
-                        if (grp->GetGroupMembers(req.to_id(), 0, 10000, &members, &total, &err)) {
-                            for (const auto& m : members) {
-                                if (m.user_id != req.from_user_id())
-                                    RouteToUser(m.user_id, "chat.message", push_payload);
-                            }
-                        }
-                    }
-                }
-            }
+        // 推送给在线接收者（卫语句：不满足条件则直接 return，避免深层嵌套）
+        if (!r.success || r.msg_id.empty())
+            return result;
+        ChatMessagePushPayload push_pb;
+        push_pb.set_msg_id(r.msg_id);
+        push_pb.set_from_user_id(req.from_user_id());
+        push_pb.set_to_id(req.to_id());
+        push_pb.set_chat_type(req.chat_type());
+        push_pb.set_content(req.content());
+        push_pb.set_media_url(req.media_url());
+        push_pb.set_media_type(req.media_type());
+        push_pb.set_timestamp(r.timestamp);
+        for (const auto& u : req.mentions()) push_pb.add_mentions(u);
+        if (!req.reply_to_msg_id().empty()) push_pb.set_reply_to_msg_id(req.reply_to_msg_id());
+        std::string push_payload;
+        if (!push_pb.SerializeToString(&push_payload))
+            return result;
+        if (req.chat_type() == static_cast<int32_t>(swift::ChatType::PRIVATE)) {
+            RouteToUser(req.to_id(), "chat.message", push_payload);
+            return result;
         }
-
+        if (req.chat_type() != static_cast<int32_t>(swift::ChatType::GROUP))
+            return result;
+        auto* grp = manager_->GetGroupSystem();
+        if (!grp)
+            return result;
+        std::vector<GroupMemberResult> members;
+        int total = 0;
+        std::string err;
+        if (!grp->GetGroupMembers(req.to_id(), 0, 10000, &members, &total, &err))
+            return result;
+        for (const auto& m : members) {
+            if (m.user_id != req.from_user_id())
+                RouteToUser(m.user_id, "chat.message", push_payload);
+        }
         return result;
     }
     if (cmd == "chat.mark_read") {
@@ -340,32 +339,76 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleChat(
         if (!err.empty()) result.message = err;
         else if (!ok) result.message = "mark read failed";
 
-        // 已读回执：推送给会话内其他人（私聊推给对方，群聊推给除自己外的成员）
-        if (ok && !req.last_msg_id().empty()) {
-            swift::gate::ReadReceiptNotify receipt;
-            receipt.set_chat_id(req.chat_id());
-            receipt.set_user_id(user_id);
-            receipt.set_last_read_msg_id(req.last_msg_id());
-            std::string receipt_payload;
-            if (receipt.SerializeToString(&receipt_payload)) {
-                if (req.chat_type() == static_cast<int32_t>(swift::ChatType::PRIVATE)) {
-                    RouteToUser(req.chat_id(), "chat.read_receipt", receipt_payload);
-                } else if (req.chat_type() == static_cast<int32_t>(swift::ChatType::GROUP)) {
-                    auto* grp = manager_->GetGroupSystem();
-                    if (grp) {
-                        std::vector<GroupMemberResult> members;
-                        int total = 0;
-                        std::string grp_err;
-                        if (grp->GetGroupMembers(req.chat_id(), 0, 10000, &members, &total, &grp_err)) {
-                            for (const auto& m : members) {
-                                if (m.user_id != user_id)
-                                    RouteToUser(m.user_id, "chat.read_receipt", receipt_payload);
-                            }
-                        }
-                    }
-                }
-            }
+        // 已读回执：推送给会话内其他人（卫语句减少嵌套）
+        if (!ok || req.last_msg_id().empty())
+            return result;
+        swift::gate::ReadReceiptNotify receipt;
+        receipt.set_chat_id(req.chat_id());
+        receipt.set_user_id(user_id);
+        receipt.set_last_read_msg_id(req.last_msg_id());
+        std::string receipt_payload;
+        if (!receipt.SerializeToString(&receipt_payload))
+            return result;
+        if (req.chat_type() == static_cast<int32_t>(swift::ChatType::PRIVATE)) {
+            RouteToUser(req.chat_id(), "chat.read_receipt", receipt_payload);
+            return result;
         }
+        if (req.chat_type() != static_cast<int32_t>(swift::ChatType::GROUP))
+            return result;
+        auto* grp = manager_->GetGroupSystem();
+        if (!grp)
+            return result;
+        std::vector<GroupMemberResult> members;
+        int total = 0;
+        std::string grp_err;
+        if (!grp->GetGroupMembers(req.chat_id(), 0, 10000, &members, &total, &grp_err))
+            return result;
+        for (const auto& m : members) {
+            if (m.user_id != user_id)
+                RouteToUser(m.user_id, "chat.read_receipt", receipt_payload);
+        }
+        return result;
+    }
+    if (cmd == "chat.pull_offline") {
+        ChatPullOfflinePayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        if (user_id.empty()) {
+            SetResultError(result, swift::ErrorCode::SESSION_INVALID, request_id);
+            return result;
+        }
+        int32_t limit = 100;
+        if (req.limit() > 0 && req.limit() < 200)
+            limit = req.limit();
+        else if (req.limit() >= 200)
+            limit = 200;
+        auto r = chat->PullOffline(user_id, limit, req.cursor());
+        if (!r.success) {
+            result.code = swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
+            result.message = r.error.empty() ? "pull offline failed" : r.error;
+            return result;
+        }
+        ChatPullOfflineResponsePayload resp_pb;
+        for (const auto& m : r.messages) {
+            auto* out = resp_pb.add_messages();
+            out->set_msg_id(m.msg_id);
+            out->set_from_user_id(m.from_user_id);
+            out->set_to_id(m.to_id);
+            out->set_chat_type(m.chat_type);
+            out->set_content(m.content);
+            out->set_media_url(m.media_url);
+            out->set_media_type(m.media_type);
+            out->set_timestamp(m.timestamp);
+        }
+        resp_pb.set_next_cursor(r.next_cursor);
+        resp_pb.set_has_more(r.has_more);
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        result.code = swift::ErrorCodeToInt(swift::ErrorCode::OK);
         return result;
     }
     if (cmd == "chat.recall_message") {

@@ -185,6 +185,19 @@ message ChatMarkReadPayload {
     string last_msg_id = 3;        // 已读到的最后一条消息 ID
 }
 
+// 拉取离线消息请求（user_id 由 Zone 从 token 解析）
+message ChatPullOfflinePayload {
+    int32 limit = 1;               // 单次拉取上限，默认 100，最大 200
+    string cursor = 2;             // 分页游标
+}
+
+// 拉取离线消息返回体（payload）
+message ChatPullOfflineResponsePayload {
+    repeated ChatMessagePushPayload messages = 1;  // 离线消息列表（同在线推送格式）
+    string next_cursor = 2;
+    bool has_more = 3;
+}
+
 // ---------- friend.* ----------
 message FriendAddPayload {
     string user_id = 1;
