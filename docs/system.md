@@ -11,7 +11,7 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 构建一个功能完整、高性能、可演示的类 QQ 实时社交系统，支持：
 
 - 私聊 / 群聊 / 好友关系 / 富媒体消息
-- 消息撤回 / @提醒 / 已读回执 / 离线推送 / 消息搜索
+- 消息撤回 / @提醒 / 已读回执 / 离线推送 / 消息搜索（客户端本地）
 - Windows 客户端（.exe 安装包）
 - 独立可复用的异步日志系统（AsyncLogger）
 - Minikube 本地 Kubernetes 部署
@@ -369,7 +369,7 @@ C++ 微服务架构 · gRPC + Protobuf · Minikube 部署 · Windows 客户端
 | AuthSvr       | gRPC                    | RocksDB             | 注册、VerifyCredentials、GetProfile、UpdateProfile（身份与资料） |
 | **OnlineSvr** | gRPC                    | RocksDB             | **登录会话、Login/Logout/ValidateToken、JWT 签发、单设备策略** |
 | FriendSvr     | gRPC                    | RocksDB/MySQL       | 好友/分组/黑名单                   |
-| ChatSvr       | gRPC                    | RocksDB/MySQL       | 消息收发/撤回/@/离线队列/搜索      |
+| ChatSvr       | gRPC                    | RocksDB/MySQL       | 消息收发/撤回/@/离线队列（搜索仅客户端本地） |
 | FileSvr       | gRPC + HTTP             | RocksDB + 本地/MinIO | 文件上传/下载                      |
 
 **服务数量：7 个**（含 OnlineSvr）

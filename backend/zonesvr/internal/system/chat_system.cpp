@@ -106,23 +106,52 @@ bool ChatSystem::MarkRead(const std::string& user_id, const std::string& chat_id
     return rpc_client_->MarkRead(user_id, chat_id, chat_type, last_msg_id, out_error);
 }
 
-bool ChatSystem::PushToUser(const std::string& user_id, 
-                            const std::string& cmd, 
-                            const std::string& payload) {
-    // 1. 从 SessionStore 获取用户会话信息
-    if (!session_store_) {
+ChatSystem::GetHistoryResult ChatSystem::GetHistory(const std::string& user_id,
+                                                     const std::string& chat_id,
+                                                     int32_t chat_type,
+                                                     const std::string& before_msg_id,
+                                                     int32_t limit) {
+    GetHistoryResult result;
+    if (!rpc_client_) {
+        result.error = "ChatSystem not available";
+        return result;
+    }
+    std::string err;
+    bool ok = rpc_client_->GetHistory(user_id, chat_id, chat_type, before_msg_id, limit,
+                                      &result.messages, &result.has_more, &err);
+    result.success = ok;
+    if (!ok) result.error = err;
+    return result;
+}
+
+ChatSystem::SyncConversationsResult ChatSystem::SyncConversations(const std::string& user_id,
+                                                                   int64_t last_sync_time) {
+    SyncConversationsResult result;
+    if (!rpc_client_) {
+        result.error = "ChatSystem not available";
+        return result;
+    }
+    std::string err;
+    bool ok = rpc_client_->SyncConversations(user_id, last_sync_time, &result.conversations, &err);
+    result.success = ok;
+    if (!ok) result.error = err;
+    return result;
+}
+
+bool ChatSystem::DeleteConversation(const std::string& user_id, const std::string& chat_id,
+                                    int32_t chat_type, std::string* out_error) {
+    if (!rpc_client_) {
+        if (out_error) *out_error = "ChatSystem not available";
         return false;
     }
-    
-    // auto session = session_store_->GetSession(user_id);
-    // if (!session) {
-    //     return false;  // 用户不在线
-    // }
-    
-    // 2. 调用对应 Gate 的 PushMessage 接口
-    // auto gate_client = GetGateClient(session->gate_addr);
-    // return gate_client->PushMessage(user_id, cmd, payload);
-    
+    return rpc_client_->DeleteConversation(user_id, chat_id, chat_type, out_error);
+}
+
+bool ChatSystem::PushToUser(const std::string& user_id,
+                            const std::string& cmd,
+                            const std::string& payload) {
+    if (push_to_user_callback_)
+        return push_to_user_callback_(user_id, cmd, payload);
     return false;
 }
 

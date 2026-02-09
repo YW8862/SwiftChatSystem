@@ -15,6 +15,7 @@
 #pragma once
 
 #include "base_system.h"
+#include "../rpc/friend_rpc_client.h"
 #include <memory>
 #include <string>
 #include <vector>
@@ -52,8 +53,15 @@ public:
     bool RemoveFriend(const std::string& user_id, const std::string& friend_id,
                      const std::string& token = "");
 
-    /// 获取好友列表（带在线状态）
-    // std::vector<FriendInfo> GetFriends(const std::string& user_id);
+    /// 获取好友列表（group_id 为空表示全部）
+    bool GetFriends(const std::string& user_id, const std::string& group_id,
+                    std::vector<FriendInfoResult>* out_friends, std::string* out_error,
+                    const std::string& token = "");
+
+    /// 获取好友申请列表（type: 0=全部, 1=收到的, 2=发出的）
+    bool GetFriendRequests(const std::string& user_id, int32_t type,
+                           std::vector<FriendRequestInfoResult>* out_requests, std::string* out_error,
+                           const std::string& token = "");
 
     /// 拉黑用户
     bool BlockUser(const std::string& user_id, const std::string& target_id,

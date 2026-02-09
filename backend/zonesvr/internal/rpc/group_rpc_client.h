@@ -56,6 +56,7 @@ public:
     bool GetGroupInfo(const std::string& group_id, GroupInfoResult* out_info, std::string* out_error);
     bool GetGroupMembers(const std::string& group_id, int32_t page, int32_t page_size,
                          std::vector<GroupMemberResult>* out_members, int32_t* total, std::string* out_error);
+    bool GetUserGroups(const std::string& user_id, std::vector<GroupInfoResult>* out_groups, std::string* out_error);
     bool InviteMembers(const std::string& group_id, const std::string& inviter_id,
                        const std::vector<std::string>& member_ids, std::string* out_error);
     bool RemoveMember(const std::string& group_id, const std::string& operator_id,

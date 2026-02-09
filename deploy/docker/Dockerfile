@@ -1,34 +1,57 @@
-# SwiftChatSystem Service Dockerfile
-# 用法: docker build --build-arg SERVICE=authsvr -t swift/authsvr .
+# SwiftChatSystem 后端服务统一镜像构建
+# 从仓库根目录构建: docker build -f deploy/docker/Dockerfile --build-arg BUILD_TARGET=authsvr -t swift/authsvr:latest .
+# 支持: authsvr, onlinesvr, friendsvr, chatsvr, filesvr, zonesvr, gatesvr
 
-ARG SERVICE=authsvr
+ARG BUILD_TARGET=authsvr
 
-FROM ubuntu:22.04
+# ========== 构建阶段 ==========
+FROM ubuntu:22.04 AS builder
 
-ARG SERVICE
+ARG BUILD_TARGET
 
-# 安装运行时依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
+    build-essential \
+    cmake \
+    git \
+    curl \
+    unzip \
+    tar \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# 创建工作目录
+# 安装 vcpkg（manifest 模式依赖）
+ENV VCPKG_ROOT=/vcpkg
+RUN git clone --depth 1 https://github.com/microsoft/vcpkg.git /vcpkg \
+    && /vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+# 复制仓库（构建上下文需为仓库根目录）
 WORKDIR /app
+COPY . .
 
-# 复制可执行文件
-COPY bin/${SERVICE} /app/${SERVICE}
+# 安装依赖并编译（vcpkg manifest 使用项目根 vcpkg.json）
+RUN cd /app && /vcpkg/vcpkg install --triplet x64-linux \
+    && mkdir -p build && cd build \
+    && cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_TOOLCHAIN_FILE=/vcpkg/scripts/buildsystems/vcpkg.cmake \
+    && make ${BUILD_TARGET} -j$(nproc) \
+    && cp /app/build/backend/${BUILD_TARGET}/${BUILD_TARGET} /app/outbin
 
-# 创建日志目录
-RUN mkdir -p /app/logs
+# ========== 运行阶段 ==========
+FROM ubuntu:22.04
 
-# 设置权限
-RUN chmod +x /app/${SERVICE}
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libstdc++6 \
+    && rm -rf /var/lib/apt/lists/*
 
-# 暴露端口（根据服务不同）
-# authsvr: 9094, chatsvr: 9098, friendsvr: 9096
-# filesvr: 9100+8080, gatesvr: 9090+9091, zonesvr: 9092
-EXPOSE 9090-9100 8080
+WORKDIR /app
+COPY --from=builder /app/outbin ./app
 
-# 启动服务
-ENV SERVICE=${SERVICE}
-CMD ["/bin/sh", "-c", "/app/${SERVICE}"]
+# 日志与数据目录
+RUN mkdir -p /data/logs /data/files && chmod +x /app/app
+
+# 端口由各服务定义，此处仅示意
+EXPOSE 9090 9091 9092 9094 9095 9096 9098 9100 8080
+
+CMD ["./app"]

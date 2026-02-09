@@ -83,6 +83,9 @@ public:
                                                   const std::string& request_id,
                                                   const std::string& token);
 
+    /// 绑定 ChatSystem::PushToUser 到本服务的 RouteToUser，需在构造后调用一次
+    void BindChatPushToUser();
+
 private:
     // 按域分发：各域内再按 cmd 细分，通过 gRPC 调对应 System/后端；token 供调业务服务时注入 metadata
     HandleClientRequestResult HandleAuth(const std::string& user_id, const std::string& cmd,

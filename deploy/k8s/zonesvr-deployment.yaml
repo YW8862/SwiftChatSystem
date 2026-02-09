@@ -21,6 +21,9 @@ spec:
         envFrom:
         - configMapRef:
             name: swift-config
+        volumeMounts:
+        - name: logs
+          mountPath: /data/logs
         resources:
           limits:
             memory: "256Mi"
@@ -28,6 +31,9 @@ spec:
           requests:
             memory: "128Mi"
             cpu: "100m"
+      volumes:
+      - name: logs
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

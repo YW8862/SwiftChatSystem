@@ -189,3 +189,4 @@ secrets.yaml
 # 设计/开发文档不提交（仅本地或单独管理）
 docs/system.md
 docs/develop.md
+docs/deploy-to-server.md

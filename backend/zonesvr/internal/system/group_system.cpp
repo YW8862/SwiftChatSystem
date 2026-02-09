@@ -82,11 +82,31 @@ bool GroupSystem::GetGroupMembers(const std::string& group_id, int32_t page, int
     return rpc_client_->GetGroupMembers(group_id, page, page_size, out_members, total, out_error);
 }
 
+bool GroupSystem::GetGroupInfo(const std::string& group_id, GroupInfoResult* out_info,
+                                std::string* out_error) {
+    if (!rpc_client_) {
+        if (out_error) *out_error = "GroupSystem not available";
+        return false;
+    }
+    return rpc_client_->GetGroupInfo(group_id, out_info, out_error);
+}
+
+bool GroupSystem::GetUserGroups(const std::string& user_id,
+                                std::vector<GroupInfoResult>* out_groups,
+                                std::string* out_error) {
+    if (!rpc_client_) {
+        if (out_error) *out_error = "GroupSystem not available";
+        return false;
+    }
+    return rpc_client_->GetUserGroups(user_id, out_groups, out_error);
+}
+
 void GroupSystem::BroadcastToGroupMembers(const std::string& group_id, const std::string& payload) {
-    // TODO:
-    // 1. 获取群成员列表
-    // 2. 从 SessionStore 获取在线成员
-    // 3. 路由消息到各自的 Gate
+    // 群内广播由 Zone 层在发送群消息/已读回执时完成：调用 GetGroupMembers 后对每个成员
+    // RouteToUser(user_id, cmd, payload)，不经过本方法。若后续需在 GroupSystem 内直接
+    // 发起广播，可在此处注入 SessionStore + PushToUser 回调并实现。
+    (void)group_id;
+    (void)payload;
 }
 
 }  // namespace zone

@@ -913,7 +913,7 @@ ChatSvr 是核心服务，负责消息的存储、查询、撤回以及群组管
 - [x] 消息撤回（2分钟内）
 - [x] 获取历史消息
 - [x] 离线消息队列
-- [x] 消息搜索
+- [x] 消息搜索（客户端本地；服务端无搜索 RPC）
 - [x] 已读回执
 - [x] 会话管理
 - [x] **群组**：创建群（至少 3 人，不允许 1 人或 2 人建群）、邀请成员（仅对当前不在群内的用户生效）、解散/退群/踢人/转让群主/设置管理员等
@@ -1415,9 +1415,9 @@ backend/zonesvr/
 - [x] 用户上线/下线：UserOnline、UserOffline（SessionStore 写 session:{user_id}）
 - [x] ZoneHandler：实现 proto 的 ZoneService::Service，9 个 RPC 委托给 ZoneServiceImpl；main 组装 SystemManager → ZoneServiceImpl(store, &manager) → ZoneHandler → RegisterService
 - [x] 接入认证：internal_secret 通过 SetAuthMetadataProcessor（InternalSecretProcessor）校验 x-internal-secret
-- [ ] 消息路由：RouteMessage、PushToUser 在 ZoneServiceImpl 中查 SessionStore 已实现，推送到 Gate（PushToGate）需按 gate_addr 调 GateRpcClient，待与 Step 16/17 对接
-- [ ] 广播、在线状态：Broadcast、GetUserStatus、KickUser 已接 Handler，Broadcast 暂返 online_count/delivered_count=0
-- [x] **客户端业务请求按 cmd 分发**：已实现 `HandleClientRequest` RPC（zone.proto）；Gate 转发 cmd+payload，ZoneHandler 调用 ZoneServiceImpl.HandleClientRequest，按 cmd 分发到各 System（auth.login/auth.logout/auth.validate_token → AuthSystem → gRPC 调 AuthSvr/OnlineSvr）；其他 cmd（chat.*、friend.* 等）可在此分支扩展（见 9.6）
+- [x] 消息路由：RouteMessage/PushToUser 在 ZoneServiceImpl 中查 SessionStore，并通过 PushToGate 使用 GateRpcClient::PushMessage 将消息推送到对应 Gate
+- [x] 广播、在线状态：Broadcast、GetUserStatus、KickUser 已实现；Broadcast 通过 SessionStore 获取在线用户并逐个 PushToGate，统计 online_count/delivered_count
+- [x] **客户端业务请求按 cmd 分发**：已实现 `HandleClientRequest` RPC（zone.proto）；Gate 转发 cmd+payload，ZoneHandler 调用 ZoneServiceImpl.HandleClientRequest，按 cmd 分发到各 System；auth.* / chat.* / friend.* / group.* / file.* 等 cmd 已全部实现（见 9.6）
 
 **ZoneService（zone.proto）与 system.md 6.2 对应：** UserOnline、UserOffline、RouteMessage、Broadcast、GetUserStatus、PushToUser、KickUser、GateRegister、GateHeartbeat。
 
@@ -1459,7 +1459,7 @@ backend/zonesvr/
 
 | 步骤 | 细化工作 | 对应 system.md |
 |------|----------|----------------|
-| **Step 11** | **ZoneServiceImpl 类**（service/zone_service.h/cpp）：业务类命名为 ZoneServiceImpl（与 proto 生成的 ZoneService 区分）。构造函数接收 `shared_ptr<SessionStore>`、`SystemManager*`（可选）；实现 `UserOnline`/`UserOffline`/`GateRegister`/`GateHeartbeat`/`GetUserSession`/`GetUserStatuses`/`RouteToUser`/`Broadcast`/`KickUser`；RouteToUser/Broadcast 中 PushToGate 待与 GateRpcClient 对接。**已实现**。 | §2.2、§6.3 |
+| **Step 11** | **ZoneServiceImpl 类**（service/zone_service.h/cpp）：业务类命名为 ZoneServiceImpl（与 proto 生成的 ZoneService 区分）。构造函数接收 `shared_ptr<SessionStore>`、`SystemManager*`（可选）；实现 `UserOnline`/`UserOffline`/`GateRegister`/`GateHeartbeat`/`GetUserSession`/`GetUserStatuses`/`RouteToUser`/`Broadcast`/`KickUser`；RouteToUser/Broadcast 中已通过 PushToGate 调用 GateRpcClient::PushMessage 推送到对应 Gate。**已实现**。 | §2.2、§6.3 |
 | **Step 12** | **ZoneHandler**（handler/zone_handler.h/cpp）：继承 proto 生成的 `ZoneService::Service`；9 个 RPC 从 request 解析参数、调用 `ZoneServiceImpl` 对应方法、写 response、返回 Status::OK；构造注入 `shared_ptr<ZoneServiceImpl>`。**已实现**。 | §2.2 |
 | **Step 13** | **main 组装**：先 `SystemManager manager; manager.Init(config)`；再 `zone_svc = make_shared<ZoneServiceImpl>(manager.GetSessionStore(), &manager)`；`handler = make_shared<ZoneHandler>(zone_svc)`；creds 设置 SetAuthMetadataProcessor 后 AddListeningPort；RegisterService(handler.get())；BuildAndStart；退出前 manager.Shutdown()。**已实现**。 | §2.2 |
 
@@ -1474,8 +1474,8 @@ backend/zonesvr/
 
 | 步骤 | 细化工作 | 对应 system.md |
 |------|----------|----------------|
-| **Step 16** | **GateRpcClient**（rpc/gate_rpc_client）：支持按 `gate_addr` 发起调用（可每次创建 channel 或按 addr 缓存 stub）；实现 `PushMessage(user_id, cmd, payload)`，对应 Gate 侧 PushMessage RPC；在 ZoneSvr 内由 ZoneService 或 ChatSystem 使用，需能根据动态 gate_addr 调用不同 Gate | §6.2 |
-| **Step 17** | **RouteMessage / PushToUser 实现**：从 SessionStore `GetSession(to_user_id)`；若为空则返回 delivered=false（或仅写 ChatSvr 存离线）；若在线则取 `session.gate_addr`，用 GateRpcClient 调用该 addr 的 PushMessage；RouteMessage 与 PushToUser 可复用同一套“查 session → 推送到 Gate”的逻辑 | §6.2、§10 |
+| **Step 16** | **GateRpcClient**（rpc/gate_rpc_client）：支持按 `gate_addr` 发起调用（可每次创建 channel 或按 addr 缓存 stub）；实现 `PushMessage(user_id, cmd, payload)`，对应 Gate 侧 PushMessage RPC；在 ZoneSvr 内由 ZoneServiceImpl 使用，按 gate_addr 缓存/创建 stub 调用不同 Gate。**已实现**。 | §6.2 |
+| **Step 17** | **RouteMessage / PushToUser 实现**：从 SessionStore `GetSession(to_user_id)`；若为空则返回 delivered=false；若在线则取 `session.gate_addr`，用 GetOrCreateGateClient 取得 GateRpcClient 后调用 PushMessage；ChatSystem::PushToUser 通过 BindChatPushToUser 注入的 RouteToUser 回调投递。**已实现**。 | §6.2、§10 |
 
 #### 八、Redis 版 SessionStore
 
@@ -1560,7 +1560,7 @@ ZoneSvr 返回给 GateSvr → Client
 - **各 System**：持有对应后端 RPC Client，将请求 **通过 gRPC 转发到 AuthSvr、ChatSvr、FriendSvr、FileSvr 等**，由后端完成业务与存储。
 - **后端 Svr**：实际业务逻辑与数据落库。
 
-**已实现**：zone.proto 中已增加 `HandleClientRequest(HandleClientRequestRequest) returns (HandleClientRequestResponse)`；ZoneHandler 将请求交给 ZoneServiceImpl.HandleClientRequest，ZoneServiceImpl 通过 `manager_` 按 cmd 调用 `GetAuthSystem()` 等，由各 System 再通过 gRPC 调后端。当前已支持 `auth.login`、`auth.logout`、`auth.validate_token`（payload 为对应 proto 序列化）；其他 cmd 在 ZoneServiceImpl::HandleClientRequest 中扩展分支即可。
+**已实现**：zone.proto 中已增加 `HandleClientRequest(HandleClientRequestRequest) returns (HandleClientRequestResponse)`；ZoneHandler 将请求交给 ZoneServiceImpl.HandleClientRequest，ZoneServiceImpl 通过 `manager_` 按 cmd 调用各 System 再经 gRPC 调后端。当前已支持：**auth.***（login、logout、validate_token）；**chat.***（send_message、mark_read、pull_offline、recall_message、get_history、sync_conversations、delete_conversation）；**friend.***（add、handle_request、remove、block、unblock、get_friends、get_friend_requests）；**group.***（create、dismiss、invite_members、remove_member、leave、get_info、get_members、get_user_groups）；**file.***（get_upload_token、get_file_url、delete）。
 
 **HandleClientRequest 约定（auth.*）：**
 
@@ -1570,13 +1570,17 @@ ZoneSvr 返回给 GateSvr → Client
 | auth.logout | AuthLogoutPayload (user_id, token) | 无（code/message 在 response 上） |
 | auth.validate_token | AuthValidateTokenPayload (token) | AuthValidateTokenResponsePayload (user_id，空表示无效) |
 
-**HandleClientRequest 约定（chat.*，已实现部分）：**
+**HandleClientRequest 约定（chat.*，已实现）：**
 
 | cmd | 请求 payload（proto，均定义于 zone.proto） | 响应 payload（proto 或空） |
 |-----|--------------------------------------------|----------------------------|
 | chat.send_message | ChatSendMessagePayload (from_user_id, to_id, chat_type, content, media_url, media_type, client_msg_id, file_size, **mentions**, **reply_to_msg_id**) | ChatSendMessageResponsePayload (success, msg_id, timestamp, error) |
 | chat.mark_read | ChatMarkReadPayload (chat_id, chat_type, last_msg_id)；user_id 由连接绑定与 token 决定 | 无单独 payload（code/message 在 HandleClientRequestResponse 上）；成功后由 ZoneSvr 向会话内其他人推送 `cmd="chat.read_receipt"`，payload 为 `ReadReceiptNotify`（见 gate.proto） |
 | chat.pull_offline | ChatPullOfflinePayload (limit, cursor)；user_id 来自连接绑定 | ChatPullOfflineResponsePayload：`repeated ChatMessagePushPayload messages`（与实时 `chat.message` 推送格式一致）+ next_cursor + has_more |
+| chat.recall_message | ChatRecallMessagePayload (msg_id, user_id) | 无 payload（code/message 在 response 上） |
+| chat.get_history | ChatGetHistoryPayload (chat_id, chat_type, before_msg_id, limit)；user_id 来自连接 | ChatGetHistoryResponsePayload：repeated ChatMessagePushPayload messages + has_more |
+| chat.sync_conversations | ChatSyncConversationsPayload (last_sync_time)；user_id 来自连接 | ChatSyncConversationsResponsePayload：repeated ChatConversationPayload conversations |
+| chat.delete_conversation | ChatDeleteConversationPayload (chat_id, chat_type)；user_id 来自连接 | 无 payload（code/message 在 response 上） |
 
 #### 当前已实现的路径（会话/路由/Gate 管理）
 
@@ -1588,7 +1592,7 @@ GateSvr 调用 ZoneSvr 的 9 个 RPC（UserOnline、UserOffline、RouteMessage�
 |-----|------|----------|
 | UserOnline | Gate 上报用户上线 | ZoneServiceImpl → SessionStore.SetOnline |
 | UserOffline | Gate 上报用户下线 | ZoneServiceImpl → SessionStore.SetOffline |
-| RouteMessage | 路由单条消息到用户 | ZoneServiceImpl.RouteToUser（查 session；PushToGate 待接 GateRpcClient） |
+| RouteMessage | 路由单条消息到用户 | ZoneServiceImpl.RouteToUser（查 session → PushToGate 调 GateRpcClient::PushMessage） |
 | Broadcast | 广播到多用户 | ZoneServiceImpl.Broadcast（返 online_count/delivered_count） |
 | GetUserStatus | 批量查在线状态 | ZoneServiceImpl.GetUserSession 逐用户 |
 | PushToUser | 主动推送给指定用户 | ZoneServiceImpl.RouteToUser |
@@ -1776,13 +1780,13 @@ backend/gatesvr/
 
 ### 10.3 功能清单与 proto（gate.proto）
 
-- [ ] 配置：监听地址、WebSocket 端口(9090)、gRPC 端口(9091)、ZoneSvr 地址、**zonesvr_internal_secret**（与 ZoneSvr 一致，用于调用 ZoneSvr 时携带，见 system.md 2.7）；main 启动双端口
-- [ ] WebSocket 服务器（Boost.Beast）：接受连接、解析 ClientMessage、按 cmd 分发
-- [ ] 连接管理：conn_id ↔ user_id 绑定；断开时通知 ZoneSvr UserOffline
-- [ ] auth.login：客户端带 token/device_id/device_type；Gate 调 ZoneSvr 或 OnlineSvr ValidateToken，成功后 BindUser，并调用 ZoneSvr.UserOnline(user_id, gate_id, device_type, device_id)
-- [ ] heartbeat：维持连接，可选带 client_time，回包 server_time
-- [ ] 业务 cmd（chat.*、friend.*、group.*、file.* 等）：转发到 ZoneSvr.HandleRequest(cmd, payload)，将响应通过 WebSocket 回给客户端
-- [ ] gRPC PushMessage：ZoneSvr 调用时根据 user_id 查本 Gate 连接，推送 ServerMessage 到对应 WebSocket
+- [x] 配置：监听地址、WebSocket 端口(9090)、gRPC 端口(9091)、ZoneSvr 地址、**zonesvr_internal_secret**（与 ZoneSvr 一致，用于调用 ZoneSvr 时携带，见 system.md 2.7）；main 启动双端口
+- [x] WebSocket 服务器（Boost.Beast）：接受连接、解析 ClientMessage、按 cmd 分发
+- [x] 连接管理：conn_id ↔ user_id 绑定；断开时通知 ZoneSvr UserOffline
+- [x] auth.login：客户端带 token/device_id/device_type；Gate 调 ZoneSvr.ValidateToken（或 OnlineSvr），成功后 BindUser，并调用 ZoneSvr.UserOnline(user_id, gate_id, device_type, device_id)
+- [x] heartbeat：维持连接，可选带 client_time，回包 server_time
+- [x] 业务 cmd（chat.*、friend.*、group.*、file.* 等）：转发到 ZoneSvr.HandleClientRequest(cmd, payload)，将响应通过 WebSocket 回给客户端
+- [x] gRPC PushMessage：ZoneSvr 调用时根据 user_id 查本 Gate 连接，推送 ServerMessage 到对应 WebSocket
 
 **gate.proto：** ClientMessage/ServerMessage、ClientLoginRequest、HeartbeatRequest/Response、NewMessageNotify 等（见 proto 文件）；服务端需实现 GateInternalService.PushMessage。
 

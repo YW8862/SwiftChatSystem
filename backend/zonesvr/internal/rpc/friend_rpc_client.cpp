@@ -107,6 +107,43 @@ bool FriendRpcClient::GetFriends(const std::string& user_id, const std::string& 
     return true;
 }
 
+bool FriendRpcClient::GetFriendRequests(const std::string& user_id, int32_t type,
+                                        std::vector<FriendRequestInfoResult>* out_requests,
+                                        std::string* out_error, const std::string& token) {
+    if (!stub_) return false;
+    swift::relation::GetFriendRequestsRequest req;
+    req.set_user_id(user_id);
+    if (type >= 0) req.set_type(type);
+    swift::relation::FriendRequestListResponse resp;
+    auto ctx = CreateContext(5000, token);
+    grpc::Status status = stub_->GetFriendRequests(ctx.get(), req, &resp);
+    if (!status.ok()) {
+        if (out_error) *out_error = status.error_message();
+        return false;
+    }
+    if (resp.code() != 0 && out_error)
+        *out_error = resp.message().empty() ? "get friend requests failed" : resp.message();
+    if (resp.code() != 0) return false;
+    if (out_requests) {
+        out_requests->clear();
+        for (const auto& r : resp.requests()) {
+            FriendRequestInfoResult out;
+            out.request_id = r.request_id();
+            out.from_user_id = r.from_user_id();
+            out.to_user_id = r.to_user_id();
+            out.remark = r.remark();
+            out.status = r.status();
+            out.created_at = r.created_at();
+            if (r.has_from_profile()) {
+                out.from_nickname = r.from_profile().nickname();
+                out.from_avatar_url = r.from_profile().avatar_url();
+            }
+            out_requests->push_back(out);
+        }
+    }
+    return true;
+}
+
 bool FriendRpcClient::BlockUser(const std::string& user_id, const std::string& target_id,
                                 std::string* out_error, const std::string& token) {
     if (!stub_) return false;
@@ -141,6 +178,30 @@ bool FriendRpcClient::UnblockUser(const std::string& user_id, const std::string&
     if (resp.code() != 0 && out_error)
         *out_error = resp.message().empty() ? "unblock failed" : resp.message();
     return resp.code() == 0;
+}
+
+bool FriendRpcClient::GetBlockList(const std::string& user_id,
+                                   std::vector<std::string>* out_blocked_ids,
+                                   std::string* out_error, const std::string& token) {
+    if (!stub_) return false;
+    swift::relation::GetBlockListRequest req;
+    req.set_user_id(user_id);
+    swift::relation::BlockListResponse resp;
+    auto ctx = CreateContext(5000, token);
+    grpc::Status status = stub_->GetBlockList(ctx.get(), req, &resp);
+    if (!status.ok()) {
+        if (out_error) *out_error = status.error_message();
+        return false;
+    }
+    if (resp.code() != 0 && out_error)
+        *out_error = resp.message().empty() ? "get block list failed" : resp.message();
+    if (resp.code() != 0) return false;
+    if (out_blocked_ids) {
+        out_blocked_ids->clear();
+        for (const auto& id : resp.blocked_ids())
+            out_blocked_ids->push_back(id);
+    }
+    return true;
 }
 
 }  // namespace zone

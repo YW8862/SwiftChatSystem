@@ -116,6 +116,39 @@ bool GroupRpcClient::GetGroupMembers(const std::string& group_id, int32_t page, 
     return true;
 }
 
+bool GroupRpcClient::GetUserGroups(const std::string& user_id,
+                                   std::vector<GroupInfoResult>* out_groups,
+                                   std::string* out_error) {
+    if (!stub_) return false;
+    swift::group::GetUserGroupsRequest req;
+    req.set_user_id(user_id);
+    swift::group::UserGroupsResponse resp;
+    auto ctx = CreateContext(5000);
+    grpc::Status status = stub_->GetUserGroups(ctx.get(), req, &resp);
+    if (!status.ok()) {
+        if (out_error) *out_error = status.error_message();
+        return false;
+    }
+    if (resp.code() != 0 && out_error)
+        *out_error = resp.message().empty() ? "get user groups failed" : resp.message();
+    if (resp.code() != 0) return false;
+    if (out_groups) {
+        out_groups->clear();
+        for (const auto& g : resp.groups()) {
+            GroupInfoResult r;
+            r.group_id = g.group_id();
+            r.group_name = g.group_name();
+            r.avatar_url = g.avatar_url();
+            r.owner_id = g.owner_id();
+            r.member_count = g.member_count();
+            r.announcement = g.announcement();
+            r.created_at = g.created_at();
+            out_groups->push_back(r);
+        }
+    }
+    return true;
+}
+
 bool GroupRpcClient::InviteMembers(const std::string& group_id, const std::string& inviter_id,
                                    const std::vector<std::string>& member_ids, std::string* out_error) {
     if (!stub_) return false;

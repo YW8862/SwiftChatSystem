@@ -1,0 +1,165 @@
+# SwiftChatSystem 单机部署（Docker Compose）
+# 在仓库根目录执行: docker compose -f deploy/docker-compose.yml up -d
+# 构建镜像需先执行: deploy/docker/build-all.sh
+
+services:
+  authsvr:
+    image: swift/authsvr:latest
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        BUILD_TARGET: authsvr
+    ports:
+      - "9094:9094"
+    environment:
+      - AUTHSVR_HOST=0.0.0.0
+      - AUTHSVR_PORT=9094
+      - AUTHSVR_ROCKSDB_PATH=/data/auth
+      - AUTHSVR_LOG_DIR=/data/logs
+      - AUTHSVR_LOG_LEVEL=INFO
+    volumes:
+      - swift-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "true"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  onlinesvr:
+    image: swift/onlinesvr:latest
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        BUILD_TARGET: onlinesvr
+    ports:
+      - "9095:9095"
+    environment:
+      - ONLINESVR_HOST=0.0.0.0
+      - ONLINESVR_PORT=9095
+      - ONLINESVR_ROCKSDB_PATH=/data/online
+      - ONLINESVR_LOG_DIR=/data/logs
+      - ONLINESVR_LOG_LEVEL=INFO
+    volumes:
+      - swift-data:/data
+    restart: unless-stopped
+
+  friendsvr:
+    image: swift/friendsvr:latest
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        BUILD_TARGET: friendsvr
+    ports:
+      - "9096:9096"
+    environment:
+      - FRIENDSVR_HOST=0.0.0.0
+      - FRIENDSVR_PORT=9096
+      - FRIENDSVR_ROCKSDB_PATH=/data/friend
+      - FRIENDSVR_LOG_DIR=/data/logs
+      - FRIENDSVR_LOG_LEVEL=INFO
+    volumes:
+      - swift-data:/data
+    restart: unless-stopped
+
+  chatsvr:
+    image: swift/chatsvr:latest
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        BUILD_TARGET: chatsvr
+    ports:
+      - "9098:9098"
+    environment:
+      - CHATSVR_HOST=0.0.0.0
+      - CHATSVR_PORT=9098
+      - CHATSVR_ROCKSDB_PATH=/data/chat
+      - CHATSVR_LOG_DIR=/data/logs
+      - CHATSVR_LOG_LEVEL=INFO
+    volumes:
+      - swift-data:/data
+    restart: unless-stopped
+
+  filesvr:
+    image: swift/filesvr:latest
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        BUILD_TARGET: filesvr
+    ports:
+      - "9100:9100"
+      - "8080:8080"
+    environment:
+      - FILESVR_HOST=0.0.0.0
+      - FILESVR_GRPC_PORT=9100
+      - FILESVR_HTTP_PORT=8080
+      - FILESVR_STORAGE_PATH=/data/files
+      - FILESVR_ROCKSDB_PATH=/data/file-meta
+      - FILESVR_LOG_DIR=/data/logs
+      - FILESVR_LOG_LEVEL=INFO
+    volumes:
+      - swift-data:/data
+    restart: unless-stopped
+
+  zonesvr:
+    image: swift/zonesvr:latest
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        BUILD_TARGET: zonesvr
+    ports:
+      - "9092:9092"
+    environment:
+      - ZONESVR_HOST=0.0.0.0
+      - ZONESVR_PORT=9092
+      - ZONESVR_AUTH_SVR_ADDR=authsvr:9094
+      - ZONESVR_ONLINE_SVR_ADDR=onlinesvr:9095
+      - ZONESVR_FRIEND_SVR_ADDR=friendsvr:9096
+      - ZONESVR_CHAT_SVR_ADDR=chatsvr:9098
+      - ZONESVR_FILE_SVR_ADDR=filesvr:9100
+      - ZONESVR_GATE_SVR_ADDR=gatesvr:9091
+      - ZONESVR_SESSION_STORE_TYPE=memory
+      - ZONESVR_SESSION_EXPIRE_SECONDS=3600
+      - ZONESVR_LOG_DIR=/data/logs
+      - ZONESVR_LOG_LEVEL=INFO
+    volumes:
+      - swift-data:/data
+    depends_on:
+      - authsvr
+      - onlinesvr
+      - friendsvr
+      - chatsvr
+      - filesvr
+    restart: unless-stopped
+
+  gatesvr:
+    image: swift/gatesvr:latest
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        BUILD_TARGET: gatesvr
+    ports:
+      - "9090:9090"
+      - "9091:9091"
+    environment:
+      - GATESVR_HOST=0.0.0.0
+      - GATESVR_WEBSOCKET_PORT=9090
+      - GATESVR_GRPC_PORT=9091
+      - GATESVR_ZONE_SVR_ADDR=zonesvr:9092
+      - GATESVR_LOG_DIR=/data/logs
+      - GATESVR_LOG_LEVEL=INFO
+    volumes:
+      - swift-data:/data
+    depends_on:
+      - zonesvr
+    restart: unless-stopped
+
+volumes:
+  swift-data:

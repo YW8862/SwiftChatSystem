@@ -38,6 +38,7 @@ int main(int argc, char* argv[]) {
 
     auto zone_svc = std::make_shared<swift::zone::ZoneServiceImpl>(
         manager.GetSessionStore(), &manager);
+    zone_svc->BindChatPushToUser();
     auto handler = std::make_shared<swift::zone::ZoneHandler>(zone_svc);
 
     std::string addr = config.host + ":" + std::to_string(config.port);

@@ -221,6 +221,41 @@ message FriendBlockPayload {
     string target_id = 2;
 }
 
+// 获取好友列表请求（user_id 由 Zone 从 token 解析）
+message FriendGetFriendsPayload {
+    string group_id = 1;       // 可选，指定分组
+}
+// 好友项（与 relation.FriendInfo 对齐，不含 profile 嵌套）
+message FriendInfoPayload {
+    string friend_id = 1;
+    string remark = 2;
+    string group_id = 3;
+    string nickname = 4;
+    string avatar_url = 5;
+    int64 added_at = 6;
+}
+message FriendGetFriendsResponsePayload {
+    repeated FriendInfoPayload friends = 1;
+}
+
+// 获取好友申请列表请求
+message FriendGetRequestsPayload {
+    int32 type = 1;            // 0=全部, 1=收到的, 2=发出的
+}
+message FriendRequestInfoPayload {
+    string request_id = 1;
+    string from_user_id = 2;
+    string to_user_id = 3;
+    string remark = 4;
+    int32 status = 5;          // 0=待处理, 1=已接受, 2=已拒绝
+    int64 created_at = 6;
+    string from_nickname = 7;
+    string from_avatar_url = 8;
+}
+message FriendGetRequestsResponsePayload {
+    repeated FriendRequestInfoPayload requests = 1;
+}
+
 // ---------- group.* ----------
 message GroupCreatePayload {
     string creator_id = 1;
@@ -254,6 +289,85 @@ message GroupRemoveMemberPayload {
 message GroupLeavePayload {
     string group_id = 1;
     string user_id = 2;
+}
+
+// 获取群信息请求
+message GroupGetInfoPayload {
+    string group_id = 1;
+}
+message GroupInfoPayload {
+    string group_id = 1;
+    string group_name = 2;
+    string avatar_url = 3;
+    string owner_id = 4;
+    int32 member_count = 5;
+    string announcement = 6;
+    int64 created_at = 7;
+}
+message GroupGetInfoResponsePayload {
+    GroupInfoPayload group = 1;
+}
+
+// 获取群成员列表请求
+message GroupGetMembersPayload {
+    string group_id = 1;
+    int32 page = 2;
+    int32 page_size = 3;
+}
+message GroupMemberPayload {
+    string user_id = 1;
+    int32 role = 2;
+    string nickname = 3;
+    int64 joined_at = 4;
+}
+message GroupGetMembersResponsePayload {
+    repeated GroupMemberPayload members = 1;
+    int32 total = 2;
+}
+
+// 获取用户加入的群列表请求（user_id 由 Zone 从 token 解析）
+message GroupGetUserGroupsPayload {}
+message GroupGetUserGroupsResponsePayload {
+    repeated GroupInfoPayload groups = 1;
+}
+
+// ---------- chat.* 读接口 ----------
+// 获取历史消息请求
+message ChatGetHistoryPayload {
+    string chat_id = 1;
+    int32 chat_type = 2;        // 1=私聊, 2=群聊
+    string before_msg_id = 3;
+    int32 limit = 4;
+}
+message ChatGetHistoryResponsePayload {
+    repeated ChatMessagePushPayload messages = 1;
+    bool has_more = 2;
+}
+
+// 同步会话列表请求
+message ChatSyncConversationsPayload {
+    int64 last_sync_time = 1;
+}
+message ChatConversationPayload {
+    string chat_id = 1;
+    int32 chat_type = 2;
+    string peer_id = 3;
+    string peer_name = 4;
+    string peer_avatar = 5;
+    int32 unread_count = 6;
+    int64 updated_at = 7;
+    string last_msg_id = 8;
+    string last_content = 9;
+    int64 last_timestamp = 10;
+}
+message ChatSyncConversationsResponsePayload {
+    repeated ChatConversationPayload conversations = 1;
+}
+
+// 删除会话请求
+message ChatDeleteConversationPayload {
+    string chat_id = 1;
+    int32 chat_type = 2;
 }
 
 // ---------- file.* ----------

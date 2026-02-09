@@ -14,9 +14,12 @@
 #pragma once
 
 #include "base_system.h"
+#include "../rpc/chat_rpc_client.h"
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
+#include <cstdint>
 
 namespace swift {
 namespace zone {
@@ -81,15 +84,42 @@ public:
     bool MarkRead(const std::string& user_id, const std::string& chat_id, int32_t chat_type,
                   const std::string& last_msg_id, std::string* out_error);
 
+    /// 会话历史 → ChatSvr.GetHistory
+    struct GetHistoryResult {
+        bool success = false;
+        std::vector<ChatMessageResult> messages;
+        bool has_more = false;
+        std::string error;
+    };
+    GetHistoryResult GetHistory(const std::string& user_id, const std::string& chat_id,
+                                int32_t chat_type, const std::string& before_msg_id, int32_t limit);
+
+    /// 同步会话列表 → ChatSvr.SyncConversations
+    struct SyncConversationsResult {
+        bool success = false;
+        std::vector<ConversationResult> conversations;
+        std::string error;
+    };
+    SyncConversationsResult SyncConversations(const std::string& user_id, int64_t last_sync_time);
+
+    /// 删除会话 → ChatSvr.DeleteConversation
+    bool DeleteConversation(const std::string& user_id, const std::string& chat_id,
+                            int32_t chat_type, std::string* out_error);
+
     // ============ 消息路由（ZoneSvr 特有职责）============
 
-    /// 将消息推送给在线用户（查 SessionStore，调用 Gate.PushMessage）
-    bool PushToUser(const std::string& user_id, 
-                    const std::string& cmd, 
-                    const std::string& payload);
+    /// 注入由 Zone 层提供的“推送到用户”回调（RouteToUser），用于 PushToUser 实际投递
+    using PushToUserCallback = std::function<bool(const std::string& user_id,
+                                                   const std::string& cmd,
+                                                   const std::string& payload)>;
+    void SetPushToUserCallback(PushToUserCallback cb) { push_to_user_callback_ = std::move(cb); }
+
+    /// 将消息推送给在线用户；依赖 SetPushToUserCallback 注入的回调（主推送链路在 Zone 的 RouteToUser）
+    bool PushToUser(const std::string& user_id, const std::string& cmd, const std::string& payload);
 
 private:
     std::unique_ptr<ChatRpcClient> rpc_client_;  // ChatSvr Client
+    PushToUserCallback push_to_user_callback_;
 };
 
 }  // namespace zone

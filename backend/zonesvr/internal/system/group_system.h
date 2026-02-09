@@ -72,7 +72,11 @@ public:
                          std::string* out_error);
 
     /// 获取群信息
-    // GroupInfo GetGroupInfo(const std::string& group_id);
+    bool GetGroupInfo(const std::string& group_id, GroupInfoResult* out_info, std::string* out_error);
+
+    /// 获取用户加入的群列表
+    bool GetUserGroups(const std::string& user_id, std::vector<GroupInfoResult>* out_groups,
+                       std::string* out_error);
 
 private:
     /// 广播群消息给所有在线成员

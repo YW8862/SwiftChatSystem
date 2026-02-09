@@ -29,6 +29,17 @@ ZoneServiceImpl::ZoneServiceImpl(std::shared_ptr<SessionStore> store, SystemMana
 
 ZoneServiceImpl::~ZoneServiceImpl() = default;
 
+void ZoneServiceImpl::BindChatPushToUser() {
+    if (!manager_) return;
+    auto* chat = manager_->GetChatSystem();
+    if (!chat) return;
+    chat->SetPushToUserCallback([this](const std::string& user_id, const std::string& cmd,
+                                       const std::string& payload) {
+        auto r = RouteToUser(user_id, cmd, payload);
+        return r.delivered;
+    });
+}
+
 bool ZoneServiceImpl::UserOnline(const std::string& user_id, const std::string& gate_id,
                                  const std::string& device_type, const std::string& device_id) {
     auto gate = store_->GetGate(gate_id);
@@ -425,6 +436,99 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleChat(
         else if (!ok) result.message = swift::ErrorCodeToString(swift::ErrorCode::RECALL_NOT_ALLOWED);
         return result;
     }
+    if (cmd == "chat.get_history") {
+        ChatGetHistoryPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        if (user_id.empty()) {
+            SetResultError(result, swift::ErrorCode::SESSION_INVALID, request_id);
+            return result;
+        }
+        int32_t limit = req.limit() > 0 && req.limit() <= 100 ? req.limit() : 50;
+        auto r = chat->GetHistory(user_id, req.chat_id(), req.chat_type(),
+                                  req.before_msg_id(), limit);
+        if (!r.success) {
+            result.code = swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
+            result.message = r.error.empty() ? "get history failed" : r.error;
+            return result;
+        }
+        ChatGetHistoryResponsePayload resp_pb;
+        for (const auto& m : r.messages) {
+            auto* out = resp_pb.add_messages();
+            out->set_msg_id(m.msg_id);
+            out->set_from_user_id(m.from_user_id);
+            out->set_to_id(m.to_id);
+            out->set_chat_type(m.chat_type);
+            out->set_content(m.content);
+            out->set_media_url(m.media_url);
+            out->set_media_type(m.media_type);
+            out->set_timestamp(m.timestamp);
+        }
+        resp_pb.set_has_more(r.has_more);
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        result.code = swift::ErrorCodeToInt(swift::ErrorCode::OK);
+        return result;
+    }
+    if (cmd == "chat.sync_conversations") {
+        ChatSyncConversationsPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        if (user_id.empty()) {
+            SetResultError(result, swift::ErrorCode::SESSION_INVALID, request_id);
+            return result;
+        }
+        int64_t last_sync = req.last_sync_time();
+        auto r = chat->SyncConversations(user_id, last_sync);
+        if (!r.success) {
+            result.code = swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
+            result.message = r.error.empty() ? "sync conversations failed" : r.error;
+            return result;
+        }
+        ChatSyncConversationsResponsePayload resp_pb;
+        for (const auto& c : r.conversations) {
+            auto* out = resp_pb.add_conversations();
+            out->set_chat_id(c.chat_id);
+            out->set_chat_type(c.chat_type);
+            out->set_peer_id(c.peer_id);
+            out->set_peer_name(c.peer_name);
+            out->set_peer_avatar(c.peer_avatar);
+            out->set_unread_count(c.unread_count);
+            out->set_updated_at(c.updated_at);
+            out->set_last_msg_id(c.last_msg_id);
+            out->set_last_content(c.last_content);
+            out->set_last_timestamp(c.last_timestamp);
+        }
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        result.code = swift::ErrorCodeToInt(swift::ErrorCode::OK);
+        return result;
+    }
+    if (cmd == "chat.delete_conversation") {
+        ChatDeleteConversationPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        if (user_id.empty()) {
+            SetResultError(result, swift::ErrorCode::SESSION_INVALID, request_id);
+            return result;
+        }
+        std::string err;
+        bool ok = chat->DeleteConversation(user_id, req.chat_id(), req.chat_type(), &err);
+        result.code = ok ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
+                        : swift::ErrorCodeToInt(swift::ErrorCode::INVALID_PARAM);
+        if (!err.empty()) result.message = err;
+        return result;
+    }
     return NotImplemented(cmd, request_id);
 }
 
@@ -493,6 +597,78 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleFriend(
         bool ok = fr->UnblockUser(req.user_id(), req.target_id(), token);
         result.code = ok ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
                         : swift::ErrorCodeToInt(swift::ErrorCode::UNKNOWN);
+        return result;
+    }
+    if (cmd == "friend.get_friends") {
+        FriendGetFriendsPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        if (user_id.empty()) {
+            SetResultError(result, swift::ErrorCode::SESSION_INVALID, request_id);
+            return result;
+        }
+        std::vector<FriendInfoResult> friends;
+        std::string err;
+        bool ok = fr->GetFriends(user_id, req.group_id(), &friends, &err, token);
+        if (!ok) {
+            result.code = swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
+            result.message = err.empty() ? "get friends failed" : err;
+            return result;
+        }
+        FriendGetFriendsResponsePayload resp_pb;
+        for (const auto& f : friends) {
+            auto* out = resp_pb.add_friends();
+            out->set_friend_id(f.friend_id);
+            out->set_remark(f.remark);
+            out->set_group_id(f.group_id);
+            out->set_nickname(f.nickname);
+            out->set_avatar_url(f.avatar_url);
+            out->set_added_at(f.added_at);
+        }
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        result.code = swift::ErrorCodeToInt(swift::ErrorCode::OK);
+        return result;
+    }
+    if (cmd == "friend.get_friend_requests") {
+        FriendGetRequestsPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        if (user_id.empty()) {
+            SetResultError(result, swift::ErrorCode::SESSION_INVALID, request_id);
+            return result;
+        }
+        std::vector<FriendRequestInfoResult> requests;
+        std::string err;
+        bool ok = fr->GetFriendRequests(user_id, req.type(), &requests, &err, token);
+        if (!ok) {
+            result.code = swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
+            result.message = err.empty() ? "get friend requests failed" : err;
+            return result;
+        }
+        FriendGetRequestsResponsePayload resp_pb;
+        for (const auto& r : requests) {
+            auto* out = resp_pb.add_requests();
+            out->set_request_id(r.request_id);
+            out->set_from_user_id(r.from_user_id);
+            out->set_to_user_id(r.to_user_id);
+            out->set_remark(r.remark);
+            out->set_status(r.status);
+            out->set_created_at(r.created_at);
+            out->set_from_nickname(r.from_nickname);
+            out->set_from_avatar_url(r.from_avatar_url);
+        }
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        result.code = swift::ErrorCodeToInt(swift::ErrorCode::OK);
         return result;
     }
     return NotImplemented(cmd, request_id);
@@ -577,6 +753,105 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleGroup(
         bool ok = grp->LeaveGroup(req.group_id(), req.user_id());
         result.code = ok ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
                         : swift::ErrorCodeToInt(swift::ErrorCode::UNKNOWN);
+        return result;
+    }
+    if (cmd == "group.get_info") {
+        GroupGetInfoPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        GroupInfoResult info;
+        std::string err;
+        bool ok = grp->GetGroupInfo(req.group_id(), &info, &err);
+        if (!ok) {
+            result.code = swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
+            result.message = err.empty() ? "get group info failed" : err;
+            return result;
+        }
+        GroupGetInfoResponsePayload resp_pb;
+        auto* g = resp_pb.mutable_group();
+        g->set_group_id(info.group_id);
+        g->set_group_name(info.group_name);
+        g->set_avatar_url(info.avatar_url);
+        g->set_owner_id(info.owner_id);
+        g->set_member_count(info.member_count);
+        g->set_announcement(info.announcement);
+        g->set_created_at(info.created_at);
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        result.code = swift::ErrorCodeToInt(swift::ErrorCode::OK);
+        return result;
+    }
+    if (cmd == "group.get_members") {
+        GroupGetMembersPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        int32_t page = req.page() > 0 ? req.page() : 1;
+        int32_t page_size = req.page_size() > 0 && req.page_size() <= 100 ? req.page_size() : 20;
+        std::vector<GroupMemberResult> members;
+        int32_t total = 0;
+        std::string err;
+        bool ok = grp->GetGroupMembers(req.group_id(), page, page_size, &members, &total, &err);
+        if (!ok) {
+            result.code = swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
+            result.message = err.empty() ? "get members failed" : err;
+            return result;
+        }
+        GroupGetMembersResponsePayload resp_pb;
+        for (const auto& m : members) {
+            auto* out = resp_pb.add_members();
+            out->set_user_id(m.user_id);
+            out->set_role(m.role);
+            out->set_nickname(m.nickname);
+            out->set_joined_at(m.joined_at);
+        }
+        resp_pb.set_total(total);
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        result.code = swift::ErrorCodeToInt(swift::ErrorCode::OK);
+        return result;
+    }
+    if (cmd == "group.get_user_groups") {
+        GroupGetUserGroupsPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        if (user_id.empty()) {
+            SetResultError(result, swift::ErrorCode::SESSION_INVALID, request_id);
+            return result;
+        }
+        std::vector<GroupInfoResult> groups;
+        std::string err;
+        bool ok = grp->GetUserGroups(user_id, &groups, &err);
+        if (!ok) {
+            result.code = swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
+            result.message = err.empty() ? "get user groups failed" : err;
+            return result;
+        }
+        GroupGetUserGroupsResponsePayload resp_pb;
+        for (const auto& g : groups) {
+            auto* out = resp_pb.add_groups();
+            out->set_group_id(g.group_id);
+            out->set_group_name(g.group_name);
+            out->set_avatar_url(g.avatar_url);
+            out->set_owner_id(g.owner_id);
+            out->set_member_count(g.member_count);
+            out->set_announcement(g.announcement);
+            out->set_created_at(g.created_at);
+        }
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        result.code = swift::ErrorCodeToInt(swift::ErrorCode::OK);
         return result;
     }
     return NotImplemented(cmd, request_id);

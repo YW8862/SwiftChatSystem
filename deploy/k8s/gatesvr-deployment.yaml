@@ -18,9 +18,14 @@ spec:
         ports:
         - containerPort: 9090
           name: websocket
+        - containerPort: 9091
+          name: grpc
         envFrom:
         - configMapRef:
             name: swift-config
+        volumeMounts:
+        - name: logs
+          mountPath: /data/logs
         resources:
           limits:
             memory: "256Mi"
@@ -28,6 +33,9 @@ spec:
           requests:
             memory: "128Mi"
             cpu: "100m"
+      volumes:
+      - name: logs
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -42,3 +50,6 @@ spec:
     targetPort: 9090
     nodePort: 30090
     name: websocket
+  - port: 9091
+    targetPort: 9091
+    name: grpc

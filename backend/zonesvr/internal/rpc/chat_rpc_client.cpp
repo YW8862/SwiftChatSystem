@@ -136,6 +136,64 @@ bool ChatRpcClient::GetHistory(const std::string& user_id, const std::string& ch
     return true;
 }
 
+bool ChatRpcClient::SyncConversations(const std::string& user_id, int64_t last_sync_time,
+                                      std::vector<ConversationResult>* out_conversations,
+                                      std::string* out_error) {
+    if (!stub_) return false;
+    swift::chat::SyncConversationsRequest req;
+    req.set_user_id(user_id);
+    if (last_sync_time > 0) req.set_last_sync_time(last_sync_time);
+    swift::chat::SyncConversationsResponse resp;
+    auto ctx = CreateContext(10000);
+    grpc::Status status = stub_->SyncConversations(ctx.get(), req, &resp);
+    if (!status.ok()) {
+        if (out_error) *out_error = status.error_message();
+        return false;
+    }
+    if (resp.code() != 0 && out_error)
+        *out_error = resp.message().empty() ? "sync conversations failed" : resp.message();
+    if (resp.code() != 0) return false;
+    if (out_conversations) {
+        out_conversations->clear();
+        for (const auto& c : resp.conversations()) {
+            ConversationResult r;
+            r.chat_id = c.chat_id();
+            r.chat_type = c.chat_type();
+            r.peer_id = c.peer_id();
+            r.peer_name = c.peer_name();
+            r.peer_avatar = c.peer_avatar();
+            r.unread_count = c.unread_count();
+            r.updated_at = c.updated_at();
+            if (c.has_last_message()) {
+                r.last_msg_id = c.last_message().msg_id();
+                r.last_content = c.last_message().content();
+                r.last_timestamp = c.last_message().timestamp();
+            }
+            out_conversations->push_back(r);
+        }
+    }
+    return true;
+}
+
+bool ChatRpcClient::DeleteConversation(const std::string& user_id, const std::string& chat_id,
+                                       int32_t chat_type, std::string* out_error) {
+    if (!stub_) return false;
+    swift::chat::DeleteConversationRequest req;
+    req.set_user_id(user_id);
+    req.set_chat_id(chat_id);
+    req.set_chat_type(chat_type);
+    swift::chat::DeleteConversationResponse resp;
+    auto ctx = CreateContext(5000);
+    grpc::Status status = stub_->DeleteConversation(ctx.get(), req, &resp);
+    if (!status.ok()) {
+        if (out_error) *out_error = status.error_message();
+        return false;
+    }
+    if (resp.code() != 0 && out_error)
+        *out_error = resp.message().empty() ? "delete conversation failed" : resp.message();
+    return resp.code() == 0;
+}
+
 bool ChatRpcClient::MarkRead(const std::string& user_id, const std::string& chat_id, int32_t chat_type,
                              const std::string& last_msg_id, std::string* out_error) {
     if (!stub_) return false;
