@@ -14,6 +14,7 @@ ARG BUILD_TARGET
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
+    ninja-build \
     git \
     curl \
     zip \
@@ -23,10 +24,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装 vcpkg（使用 Gitee 镜像，避免 GitHub 连接超时）
+# 安装 vcpkg（Gitee 镜像）；bootstrap 使用系统工具并重试，避免下载中断
 ENV VCPKG_ROOT=/vcpkg
+ENV VCPKG_FORCE_SYSTEM_BINARIES=1
 RUN git clone --depth 1 https://gitee.com/mirrors/vcpkg.git /vcpkg \
-    && /vcpkg/bootstrap-vcpkg.sh -disableMetrics
+    && for i in 1 2 3 4 5; do /vcpkg/bootstrap-vcpkg.sh -disableMetrics && break || { echo "Bootstrap attempt $i failed, retry in 20s..."; sleep 20; }; done
 
 # 复制仓库（构建上下文需为仓库根目录）
 WORKDIR /app
