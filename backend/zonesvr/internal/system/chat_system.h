@@ -16,6 +16,7 @@
 #include "base_system.h"
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace swift {
 namespace zone {
@@ -49,6 +50,8 @@ public:
     SendMessageResult SendMessage(const std::string& from_user_id, const std::string& to_id,
                                   int32_t chat_type, const std::string& content,
                                   const std::string& media_url = "", const std::string& media_type = "",
+                                  const std::vector<std::string>& mentions = {},
+                                  const std::string& reply_to_msg_id = "",
                                   const std::string& client_msg_id = "", int64_t file_size = 0);
 
     /// 撤回消息 → ChatSvr.RecallMessage
@@ -61,7 +64,8 @@ public:
     // GetHistoryResponse GetHistory(const GetHistoryRequest& request);
 
     /// 标记已读 → ChatSvr.MarkRead
-    // CommonResponse MarkRead(const MarkReadRequest& request);
+    bool MarkRead(const std::string& user_id, const std::string& chat_id, int32_t chat_type,
+                  const std::string& last_msg_id, std::string* out_error);
 
     // ============ 消息路由（ZoneSvr 特有职责）============
 

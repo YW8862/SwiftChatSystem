@@ -48,6 +48,8 @@ public:
     SendMessageResult SendMessage(const std::string& from_user_id, const std::string& to_id,
                                   int32_t chat_type, const std::string& content,
                                   const std::string& media_url, const std::string& media_type,
+                                  const std::vector<std::string>& mentions,
+                                  const std::string& reply_to_msg_id,
                                   const std::string& client_msg_id, int64_t file_size);
     bool RecallMessage(const std::string& msg_id, const std::string& user_id, std::string* out_error);
     bool PullOffline(const std::string& user_id, int32_t limit, const std::string& cursor,

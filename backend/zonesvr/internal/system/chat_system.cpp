@@ -36,12 +36,15 @@ ChatSystem::SendMessageResult ChatSystem::SendMessage(const std::string& from_us
                                                       const std::string& content,
                                                       const std::string& media_url,
                                                       const std::string& media_type,
+                                                      const std::vector<std::string>& mentions,
+                                                      const std::string& reply_to_msg_id,
                                                       const std::string& client_msg_id,
                                                       int64_t file_size) {
     SendMessageResult result;
     if (!rpc_client_) return result;
     auto r = rpc_client_->SendMessage(from_user_id, to_id, chat_type, content,
-                                      media_url, media_type, client_msg_id, file_size);
+                                      media_url, media_type, mentions, reply_to_msg_id,
+                                      client_msg_id, file_size);
     result.success = r.success;
     result.msg_id = r.msg_id;
     result.timestamp = r.timestamp;
@@ -56,6 +59,16 @@ bool ChatSystem::RecallMessage(const std::string& msg_id, const std::string& use
         return false;
     }
     return rpc_client_->RecallMessage(msg_id, user_id, out_error);
+}
+
+bool ChatSystem::MarkRead(const std::string& user_id, const std::string& chat_id,
+                          int32_t chat_type, const std::string& last_msg_id,
+                          std::string* out_error) {
+    if (!rpc_client_) {
+        if (out_error) *out_error = "ChatSystem not available";
+        return false;
+    }
+    return rpc_client_->MarkRead(user_id, chat_id, chat_type, last_msg_id, out_error);
 }
 
 bool ChatSystem::PushToUser(const std::string& user_id, 

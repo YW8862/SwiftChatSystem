@@ -1,5 +1,6 @@
 #include "zone_service.h"
 #include "zone.pb.h"
+#include "gate.pb.h"
 #include "swift/chat_type.h"
 #include "system/system_manager.h"
 #include "system/auth_system.h"
@@ -268,8 +269,10 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleChat(
             SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
             return result;
         }
+        std::vector<std::string> mentions(req.mentions().begin(), req.mentions().end());
         auto r = chat->SendMessage(req.from_user_id(), req.to_id(), req.chat_type(),
                                   req.content(), req.media_url(), req.media_type(),
+                                  mentions, req.reply_to_msg_id(),
                                   req.client_msg_id(), req.file_size());
         ChatSendMessageResponsePayload resp_pb;
         resp_pb.set_success(r.success);
@@ -296,6 +299,8 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleChat(
             push_pb.set_media_url(req.media_url());
             push_pb.set_media_type(req.media_type());
             push_pb.set_timestamp(r.timestamp);
+            for (const auto& u : req.mentions()) push_pb.add_mentions(u);
+            if (!req.reply_to_msg_id().empty()) push_pb.set_reply_to_msg_id(req.reply_to_msg_id());
             std::string push_payload;
             if (push_pb.SerializeToString(&push_payload)) {
                 if (req.chat_type() == static_cast<int32_t>(swift::ChatType::PRIVATE)) {
@@ -319,6 +324,48 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleChat(
             }
         }
 
+        return result;
+    }
+    if (cmd == "chat.mark_read") {
+        ChatMarkReadPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        std::string err;
+        bool ok = chat->MarkRead(user_id, req.chat_id(), req.chat_type(),
+                                req.last_msg_id(), &err);
+        result.code = ok ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
+                        : swift::ErrorCodeToInt(swift::ErrorCode::INVALID_PARAM);
+        if (!err.empty()) result.message = err;
+        else if (!ok) result.message = "mark read failed";
+
+        // 已读回执：推送给会话内其他人（私聊推给对方，群聊推给除自己外的成员）
+        if (ok && !req.last_msg_id().empty()) {
+            swift::gate::ReadReceiptNotify receipt;
+            receipt.set_chat_id(req.chat_id());
+            receipt.set_user_id(user_id);
+            receipt.set_last_read_msg_id(req.last_msg_id());
+            std::string receipt_payload;
+            if (receipt.SerializeToString(&receipt_payload)) {
+                if (req.chat_type() == static_cast<int32_t>(swift::ChatType::PRIVATE)) {
+                    RouteToUser(req.chat_id(), "chat.read_receipt", receipt_payload);
+                } else if (req.chat_type() == static_cast<int32_t>(swift::ChatType::GROUP)) {
+                    auto* grp = manager_->GetGroupSystem();
+                    if (grp) {
+                        std::vector<GroupMemberResult> members;
+                        int total = 0;
+                        std::string grp_err;
+                        if (grp->GetGroupMembers(req.chat_id(), 0, 10000, &members, &total, &grp_err)) {
+                            for (const auto& m : members) {
+                                if (m.user_id != user_id)
+                                    RouteToUser(m.user_id, "chat.read_receipt", receipt_payload);
+                            }
+                        }
+                    }
+                }
+            }
+        }
         return result;
     }
     if (cmd == "chat.recall_message") {

@@ -29,6 +29,8 @@ static ChatMessageResult FromProto(const swift::chat::ChatMessage& m) {
 SendMessageResult ChatRpcClient::SendMessage(const std::string& from_user_id, const std::string& to_id,
                                              int32_t chat_type, const std::string& content,
                                              const std::string& media_url, const std::string& media_type,
+                                             const std::vector<std::string>& mentions,
+                                             const std::string& reply_to_msg_id,
                                              const std::string& client_msg_id, int64_t file_size) {
     SendMessageResult result;
     if (!stub_) return result;
@@ -39,6 +41,8 @@ SendMessageResult ChatRpcClient::SendMessage(const std::string& from_user_id, co
     req.set_content(content);
     if (!media_url.empty()) req.set_media_url(media_url);
     if (!media_type.empty()) req.set_media_type(media_type);
+    for (const auto& u : mentions) req.add_mentions(u);
+    if (!reply_to_msg_id.empty()) req.set_reply_to_msg_id(reply_to_msg_id);
     if (!client_msg_id.empty()) req.set_client_msg_id(client_msg_id);
     if (file_size > 0) req.set_file_size(file_size);
     swift::chat::SendMessageResponse resp;

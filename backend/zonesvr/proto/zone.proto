@@ -148,6 +148,8 @@ message ChatSendMessagePayload {
     string media_type = 6;
     string client_msg_id = 7;
     int64 file_size = 8;
+    repeated string mentions = 9;  // @提醒的用户 ID 列表
+    string reply_to_msg_id = 10;   // 回复的消息 ID
 }
 
 message ChatSendMessageResponsePayload {
@@ -167,11 +169,20 @@ message ChatMessagePushPayload {
     string media_url = 6;
     string media_type = 7;
     int64 timestamp = 8;
+    repeated string mentions = 9;   // @提醒的用户 ID 列表
+    string reply_to_msg_id = 10;   // 回复的消息 ID
 }
 
 message ChatRecallMessagePayload {
     string msg_id = 1;
     string user_id = 2;
+}
+
+// 标记已读请求（user_id 由 Zone 从 token 解析）
+message ChatMarkReadPayload {
+    string chat_id = 1;            // 私聊=对方 user_id，群聊=group_id
+    int32 chat_type = 2;           // 1=私聊, 2=群聊
+    string last_msg_id = 3;        // 已读到的最后一条消息 ID
 }
 
 // ---------- friend.* ----------
