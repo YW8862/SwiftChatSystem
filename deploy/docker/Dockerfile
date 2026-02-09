@@ -22,9 +22,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装 vcpkg（manifest 模式依赖）
+# 安装 vcpkg（使用 Gitee 镜像，避免 GitHub 连接超时）
 ENV VCPKG_ROOT=/vcpkg
-RUN git clone --depth 1 https://github.com/microsoft/vcpkg.git /vcpkg \
+RUN git clone --depth 1 https://gitee.com/mirrors/vcpkg.git /vcpkg \
     && /vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
 # 复制仓库（构建上下文需为仓库根目录）
