@@ -57,55 +57,134 @@ SwiftChatSystem/
 
 > **写入路径**：当前 ChatSvr、FileSvr 等**直接同步写**（不经过异步写中间层）。`swift::async::IWriteExecutor`（`swift/async_write.h`）已实现并预留，待引入真正异步写（如 Redis/MySQL 集群下的 `AsyncDbWriteExecutor`）时，再由业务注入并改用 `SubmitAndWait` / `Submit`。
 
-## 快速开始
+## 部署方式
 
-### 1. 安装依赖
+本项目支持三种部署方式：
+
+1. **本地部署（源码编译 + 本机运行）**：适合开发与调试。
+2. **Docker Compose 单机部署**：适合单台服务器一键部署。
+3. **Kubernetes 集群部署（以 Minikube 为例）**：适合本地模拟生产集群。
+
+下面给出每种方式的概览，详细步骤请参考对应文档。
+
+### 1. 本地部署（源码编译 + 本机运行）
+
+适用场景：本地开发、调试、单机演示。
+
+- **步骤概览**（详细见 `docs/deploy-to-server.md` 中“本机编译并运行”部分）：
 
 ```bash
-# 使用 vcpkg（需指定工具链）
-vcpkg install grpc protobuf rocksdb boost-beast openssl nlohmann-json
-# 或从项目根目录：cmake -B build -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
-```
+# 1）安装构建依赖（以 Ubuntu 为例）
+sudo apt-get update
+sudo apt-get install -y build-essential cmake git curl unzip tar pkg-config
 
-### 2. 构建项目
+# 2）安装 vcpkg
+git clone https://github.com/microsoft/vcpkg.git
+cd vcpkg
+./bootstrap-vcpkg.sh -disableMetrics
+export VCPKG_ROOT=$(pwd)
 
-```bash
-mkdir build && cd build
-cmake .. -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+# 3）在项目根目录编译
+cd /path/to/SwiftChatSystem
+mkdir -p build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
 make -j$(nproc)
 ```
 
-### 3. 配置文件
-
-各服务通过 **.conf 文件 + 环境变量** 加载配置（详见 `config/README.md`）。
+- **配置与启动**：
 
 ```bash
-# 从示例复制为实际配置（建议将 *.conf 加入 .gitignore，不提交敏感信息）
-cp config/authsvr.conf.example config/authsvr.conf
-cp config/onlinesvr.conf.example config/onlinesvr.conf
-# … 其他服务按需复制
+# 从示例复制配置（按需修改）
+cd /path/to/SwiftChatSystem
+cp config/authsvr.conf.example    config/authsvr.conf
+cp config/onlinesvr.conf.example  config/onlinesvr.conf
+cp config/friendsvr.conf.example  config/friendsvr.conf
+cp config/chatsvr.conf.example    config/chatsvr.conf
+cp config/filesvr.conf.example    config/filesvr.conf
+cp config/zonesvr.conf.example    config/zonesvr.conf
+cp config/gatesvr.conf.example    config/gatesvr.conf
 
-# 启动时指定配置路径（可选）
-./build/authsvr config/authsvr.conf
-# 或使用环境变量
-export AUTHSVR_CONFIG=config/authsvr.conf
-./build/authsvr
+# 按依赖顺序在 build 目录启动（可各开一终端）
+cd build
+./backend/authsvr/authsvr       ../config/authsvr.conf &
+./backend/onlinesvr/onlinesvr   ../config/onlinesvr.conf &
+./backend/friendsvr/friendsvr   ../config/friendsvr.conf &
+./backend/chatsvr/chatsvr       ../config/chatsvr.conf &
+./backend/filesvr/filesvr       ../config/filesvr.conf &
+./backend/zonesvr/zonesvr       ../config/zonesvr.conf &
+./backend/gatesvr/gatesvr       ../config/gatesvr.conf &
 ```
 
-未指定路径时，服务默认使用当前工作目录下同名 .conf（如 `authsvr.conf`）。环境变量 `AUTHSVR_*`、`FILESVR_*` 等可覆盖配置文件中的同名项。
+> 更多细节（系统依赖、systemd 管理、云服务器本机部署等），请查看：`docs/deploy-to-server.md` 的“部署方式二：本机编译并运行”。
 
-### 4. 部署到 Minikube
+### 2. Docker Compose 单机部署
+
+适用场景：一台物理机/云服务器上快速拉起全部 7 个服务，依赖通过 Docker 镜像统一管理。
+
+- **前置条件**：已安装 Docker 与 Docker Compose 插件（见 `docs/deploy-to-server.md` 中“安装 Docker 与 Docker Compose”）。
+
+- **构建镜像并启动**（在项目根目录）：
 
 ```bash
-# 启动 Minikube
-minikube start --driver=docker
+cd /path/to/SwiftChatSystem
 
-# 部署服务
-kubectl apply -k deploy/k8s/
+# 1）构建全部镜像（首次会比较慢）
+chmod +x deploy/docker/build-all.sh
+./deploy/docker/build-all.sh
 
-# 获取客户端连接地址
-minikube service gatesvr --url
+# 2）使用 docker-compose 启动所有服务
+docker compose -f deploy/docker-compose.yml up -d
+
+# 3）查看状态
+docker compose -f deploy/docker-compose.yml ps
 ```
+
+- **停止/重启**：
+
+```bash
+# 停止（保留数据卷）
+docker compose -f deploy/docker-compose.yml down
+
+# 仅重启网关
+docker compose -f deploy/docker-compose.yml restart gatesvr
+```
+
+> 详细的云服务器部署（包括防火墙、安全组、内网密钥配置等），请参考：`docs/deploy-to-server.md` 中“部署方式一：Docker Compose（推荐）”。
+
+### 3. 集群部署（Minikube 示例）
+
+适用场景：在本地模拟 Kubernetes 生产环境，验证多副本、服务发现与负载均衡。
+
+- **前置条件**：已安装 `kubectl` 与 `minikube`（见 `docs/deploy-minikube.md` 第 1 章）。
+
+- **快速流程概览**：
+
+```bash
+cd /path/to/SwiftChatSystem
+
+# 1）启动 Minikube（建议至少 2 CPU / 4GB 内存）
+minikube start --cpus=2 --memory=4096 --driver=docker
+
+# 2）在 Minikube 节点上创建数据目录（hostPath）
+minikube ssh -- "sudo mkdir -p /data/swift-chat /data/swift-files && sudo chmod 777 /data/swift-chat /data/swift-files"
+
+# 3）构建并导入镜像
+./deploy/docker/build-all.sh
+for s in authsvr onlinesvr friendsvr chatsvr filesvr zonesvr gatesvr; do
+  minikube image load swift/$s:latest
+done
+
+# 4）应用 K8s 配置
+kubectl apply -k deploy/k8s
+
+# 5）等待 Pod 就绪 & 获取 GateSvr 地址
+kubectl -n swift-chat get pods
+minikube service -n swift-chat gatesvr --url
+```
+
+客户端将 WebSocket 地址配置为上述输出的 `ws://<host>:<port>` 即可连接（通常为 NodePort 30090）。
+
+> 集群部署的详细步骤、排错指南与常见问题，请参考：`docs/deploy-minikube.md`。
 
 ## 服务端口
 
@@ -118,15 +197,6 @@ minikube service gatesvr --url
 | FriendSvr  | 9096      | -                 |
 | ChatSvr    | 9098      | -                 |
 | FileSvr    | 9100      | HTTP: 8080        |
-
-## 开发进度
-
-- [x] 阶段 1：基础设施（Proto、AsyncLogger、common 公共库与 JWT）
-- [x] 阶段 2：AuthSvr（注册、VerifyCredentials、资料）、OnlineSvr（登录会话、JWT）
-- [ ] 阶段 3：FriendSvr / ChatSvr / FileSvr 业务服务
-- [ ] 阶段 4：ZoneSvr 路由与 GateSvr 接入
-- [ ] 阶段 5：Qt 客户端
-- [ ] 阶段 6：容器化与 K8s 部署
 
 ## License
 
