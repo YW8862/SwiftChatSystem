@@ -15,6 +15,7 @@ spec:
       containers:
       - name: onlinesvr
         image: swift/onlinesvr:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 9095
           name: grpc

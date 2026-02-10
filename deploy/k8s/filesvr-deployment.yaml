@@ -15,6 +15,7 @@ spec:
       containers:
       - name: filesvr
         image: swift/filesvr:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 9100
           name: grpc

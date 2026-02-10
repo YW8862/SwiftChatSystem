@@ -15,6 +15,7 @@ spec:
       containers:
       - name: chatsvr
         image: swift/chatsvr:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 9098
           name: grpc

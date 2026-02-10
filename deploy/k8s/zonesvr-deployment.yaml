@@ -15,6 +15,7 @@ spec:
       containers:
       - name: zonesvr
         image: swift/zonesvr:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 9092
           name: grpc

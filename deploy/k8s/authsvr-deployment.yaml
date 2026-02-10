@@ -15,6 +15,7 @@ spec:
       containers:
       - name: authsvr
         image: swift/authsvr:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 9094
           name: grpc

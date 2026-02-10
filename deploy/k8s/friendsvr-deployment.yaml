@@ -15,6 +15,7 @@ spec:
       containers:
       - name: friendsvr
         image: swift/friendsvr:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 9096
           name: grpc

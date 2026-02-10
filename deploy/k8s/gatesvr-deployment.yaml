@@ -15,6 +15,7 @@ spec:
       containers:
       - name: gatesvr
         image: swift/gatesvr:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 9090
           name: websocket
