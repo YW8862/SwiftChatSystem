@@ -26,6 +26,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libprotobuf-dev \
     protobuf-compiler-grpc \
     librocksdb-dev \
+    libsnappy-dev \
+    liblz4-dev \
+    libbz2-dev \
     libboost-all-dev \
     libssl-dev \
     libhiredis-dev \
