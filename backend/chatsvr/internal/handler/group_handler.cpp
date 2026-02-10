@@ -8,6 +8,7 @@
 #include "swift/error_code.h"
 #include "swift/grpc_auth.h"
 #include <grpcpp/server_context.h>
+#include <swift/log_helper.h>
 
 namespace swift::group_ {
 
@@ -58,6 +59,7 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
     if (uid.empty()) {
         response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
         response->set_message("token invalid or missing");
+        LogError(TAG("service", "chatsvr"),"CreateGroup token invalid or missing");
         return ::grpc::Status::OK;
     }
     std::vector<std::string> member_ids(request->member_ids().begin(), request->member_ids().end());
@@ -65,6 +67,7 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
                                         request->avatar_url(), member_ids);
     response->set_code(swift::ErrorCodeToInt(result.error_code));
     response->set_message(swift::ErrorCodeToString(result.error_code));
+    LogError(TAG("service", "chatsvr"),"CreateGroup failed: " << swift::ErrorCodeToString(result.error_code));
     if (result.error_code == swift::ErrorCode::OK)
         response->set_group_id(result.group_id);
     return ::grpc::Status::OK;
@@ -99,6 +102,7 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
     if (!g) {
         response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::GROUP_NOT_FOUND));
         response->set_message(swift::ErrorCodeToString(swift::ErrorCode::GROUP_NOT_FOUND));
+        LogError(TAG("service", "chatsvr"),"GetGroupInfo group not found");
         return ::grpc::Status::OK;
     }
     response->set_code(static_cast<int>(swift::ErrorCode::OK));
@@ -130,6 +134,7 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
     std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
     if (uid.empty()) {
         SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        LogError(TAG("service", "chatsvr"),"InviteMembers token invalid or missing");
         return ::grpc::Status::OK;
     }
     std::vector<std::string> member_ids(request->member_ids().begin(), request->member_ids().end());
@@ -154,8 +159,11 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
                                                     request->member_id());
     if (code == swift::ErrorCode::OK)
         SetCommonOk(response);
-    else
+    else{
         SetCommonFail(response, code);
+        LogError(TAG("service", "chatsvr"),"RemoveMember failed: " << swift::ErrorCodeToString(code));
+    }
+        
     return ::grpc::Status::OK;
 }
 
@@ -165,6 +173,7 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
     std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
     if (uid.empty()) {
         SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        LogError(TAG("service", "chatsvr"),"LeaveGroup token invalid or missing");
         return ::grpc::Status::OK;
     }
     swift::ErrorCode code = service_->LeaveGroup(request->group_id(), uid);
@@ -182,6 +191,7 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
     if (uid.empty()) {
         response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
         response->set_message("token invalid or missing");
+        LogError(TAG("service", "chatsvr"),"GetGroupMembers token invalid or missing");
         return ::grpc::Status::OK;
     }
     int page = request->page() > 0 ? request->page() : 1;
@@ -202,6 +212,7 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
     std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
     if (uid.empty()) {
         SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        LogError(TAG("service", "chatsvr"),"TransferOwner token invalid or missing");
         return ::grpc::Status::OK;
     }
     swift::ErrorCode code = service_->TransferOwner(request->group_id(), uid,
@@ -219,6 +230,7 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
     std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
     if (uid.empty()) {
         SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        LogError(TAG("service", "chatsvr"),"SetMemberRole token invalid or missing");
         return ::grpc::Status::OK;
     }
     swift::ErrorCode code = service_->SetMemberRole(request->group_id(), uid,
@@ -237,6 +249,7 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
     if (uid.empty()) {
         response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
         response->set_message("token invalid or missing");
+        LogError(TAG("service", "chatsvr"),"GetUserGroups token invalid or missing");
         return ::grpc::Status::OK;
     }
     auto groups = service_->GetUserGroups(uid);
@@ -253,6 +266,7 @@ void FillGroupMember(::swift::group::GroupMember* out, const GroupMemberData& m)
     std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
     if (uid.empty()) {
         SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        LogError(TAG("service", "chatsvr"),"MuteGroup token invalid or missing");
         return ::grpc::Status::OK;
     }
     (void)request;

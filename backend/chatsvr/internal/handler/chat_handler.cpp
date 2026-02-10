@@ -13,6 +13,7 @@
 #include <grpcpp/server_context.h>
 #include <algorithm>
 #include <optional>
+#include <swift/log_helper.h>
 
 namespace swift::chat {
 
@@ -101,11 +102,13 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
     if (uid.empty()) {
         response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
         response->set_message("token invalid or missing");
+        LogError(TAG("service", "chatsvr"),"SendMessage token invalid or missing");
         return ::grpc::Status::OK;
     }
     if (request->to_id().empty()) {
         response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::INVALID_PARAM));
         response->set_message(swift::ErrorCodeToString(swift::ErrorCode::INVALID_PARAM));
+        LogError(TAG("service", "chatsvr"),"SendMessage to_id empty");
         return ::grpc::Status::OK;
     }
     std::vector<std::string> mentions(request->mentions().begin(), request->mentions().end());
@@ -119,10 +122,12 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
         response->set_message(swift::ErrorCodeToString(swift::ErrorCode::OK));
         response->set_msg_id(result.msg_id);
         response->set_timestamp(result.timestamp);
+        LogInfo(TAG("service", "chatsvr"),"SendMessage success: " << result.msg_id);
     } else {
         swift::ErrorCode code = MapSendErrorToCode(result.error);
         response->set_code(swift::ErrorCodeToInt(code));
         response->set_message(result.error.empty() ? swift::ErrorCodeToString(code) : result.error);
+        LogError(TAG("service", "chatsvr"),"SendMessage failed: " << result.error);
     }
     return ::grpc::Status::OK;
 }
@@ -137,6 +142,7 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
     }
     if (request->msg_id().empty()) {
         SetCommonFail(response, swift::ErrorCode::INVALID_PARAM);
+        LogError(TAG("service", "chatsvr"),"RecallMessage msg_id empty");
         return ::grpc::Status::OK;
     }
     auto result = service_->RecallMessage(request->msg_id(), uid);
@@ -174,10 +180,12 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
     std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
     if (uid.empty()) {
         SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        LogError(TAG("service", "chatsvr"),"MarkRead token invalid or missing");
         return ::grpc::Status::OK;
     }
     if (request->chat_id().empty()) {
         SetCommonFail(response, swift::ErrorCode::INVALID_PARAM);
+        LogError(TAG("service", "chatsvr"),"MarkRead chat_id empty");
         return ::grpc::Status::OK;
     }
     ChatType ctype = request->chat_type() == 2 ? ChatType::GROUP : ChatType::PRIVATE;
@@ -196,11 +204,13 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
     if (uid.empty()) {
         response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
         response->set_message("token invalid or missing");
+        LogError(TAG("service", "chatsvr"),"GetHistory token invalid or missing");
         return ::grpc::Status::OK;
     }
     if (request->chat_id().empty()) {
         response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::INVALID_PARAM));
         response->set_message(swift::ErrorCodeToString(swift::ErrorCode::INVALID_PARAM));
+        LogError(TAG("service", "chatsvr"),"GetHistory chat_id empty");
         return ::grpc::Status::OK;
     }
     int limit = request->limit() > 0 ? std::min(request->limit(), kMaxHistoryLimit) : 50;
@@ -224,6 +234,7 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
     if (uid.empty()) {
         response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
         response->set_message("token invalid or missing");
+        LogError(TAG("service", "chatsvr"),"SyncConversations token invalid or missing");
         return ::grpc::Status::OK;
     }
     auto convs = service_->SyncConversations(uid);
@@ -247,10 +258,12 @@ void FillConversation(::swift::chat::Conversation* out, const ConversationData& 
     std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
     if (uid.empty()) {
         SetCommonFail(response, swift::ErrorCode::TOKEN_INVALID);
+        LogError(TAG("service", "chatsvr"),"DeleteConversation token invalid or missing");
         return ::grpc::Status::OK;
     }
     if (request->chat_id().empty()) {
         SetCommonFail(response, swift::ErrorCode::INVALID_PARAM);
+        LogError(TAG("service", "chatsvr"),"DeleteConversation chat_id empty");
         return ::grpc::Status::OK;
     }
     ChatType ctype = request->chat_type() == 2 ? ChatType::GROUP : ChatType::PRIVATE;

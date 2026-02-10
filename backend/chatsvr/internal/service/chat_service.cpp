@@ -8,6 +8,7 @@
 #include "swift/utils.h"
 #include <algorithm>
 #include <cstdint>
+#include <swift/log_helper.h>
 
 namespace swift::chat {
 
@@ -48,6 +49,7 @@ ChatServiceCore::SendResult ChatServiceCore::SendMessage(const std::string& from
     SendResult result{false, "", "", 0, ""};
     if (from_user_id.empty() || to_id.empty()) {
         result.error = "invalid params";
+        LogError(TAG("service", "chatsvr"),"SendMessage invalid params");
         return result;
     }
 
@@ -55,6 +57,7 @@ ChatServiceCore::SendResult ChatServiceCore::SendMessage(const std::string& from
     if (chat_type == ChatType::PRIVATE) {
         if (!conv_registry_) {
             result.error = "conv_registry not set";
+            LogError(TAG("service", "chatsvr"),"SendMessage conv_registry not set");
             return result;
         }
         conversation_id = conv_registry_->GetOrCreatePrivateConversation(from_user_id, to_id);
@@ -62,6 +65,7 @@ ChatServiceCore::SendResult ChatServiceCore::SendMessage(const std::string& from
         conversation_id = to_id;  // 群聊
         if (group_store_ && !group_store_->IsMember(to_id, from_user_id)) {
             result.error = "not a group member";
+            LogError(TAG("service", "chatsvr"),"SendMessage not a group member");
             return result;
         }
     }
@@ -84,6 +88,7 @@ ChatServiceCore::SendResult ChatServiceCore::SendMessage(const std::string& from
 
     if (!msg_store_->Save(msg)) {
         result.error = "save failed";
+        LogError(TAG("service", "chatsvr"),"SendMessage save failed");
         return result;
     }
 

@@ -7,6 +7,7 @@
 #include "swift/utils.h"
 #include <algorithm>
 #include <cctype>
+#include <swift/log_helper.h>
 
 namespace swift::auth {
 
@@ -76,6 +77,7 @@ AuthServiceCore::Register(const std::string &username,
     result.success = false;
     result.error = "Username already exists";
     result.error_code = swift::ErrorCode::USER_ALREADY_EXISTS;
+    LogError(TAG("service", "authsvr"),"Register username already exists");
     return result;
   }
 
@@ -101,6 +103,7 @@ AuthServiceCore::Register(const std::string &username,
     result.success = false;
     result.error = "Failed to create user";
     result.error_code = swift::ErrorCode::ROCKSDB_ERROR;
+    LogError(TAG("service", "authsvr"),"Register failed: " << result.error);
   }
 
   return result;
@@ -121,6 +124,7 @@ AuthServiceCore::VerifyCredentials(const std::string &username,
     result.success = false;
     result.error = "User not found";
     result.error_code = swift::ErrorCode::USER_NOT_FOUND;
+    LogError(TAG("service", "authsvr"),"VerifyCredentials user not found");
     return result;
   }
 
@@ -128,6 +132,7 @@ AuthServiceCore::VerifyCredentials(const std::string &username,
     result.success = false;
     result.error = "Wrong password";
     result.error_code = swift::ErrorCode::PASSWORD_WRONG;
+    LogError(TAG("service", "authsvr"),"VerifyCredentials wrong password");
     return result;
   }
 
@@ -164,6 +169,7 @@ AuthServiceCore::UpdateProfileResult AuthServiceCore::UpdateProfile(
     result.success = false;
     result.error = "User not found";
     result.error_code = swift::ErrorCode::USER_NOT_FOUND;
+    LogError(TAG("service", "authsvr"),"UpdateProfile user not found");
     return result;
   }
 
@@ -182,6 +188,7 @@ AuthServiceCore::UpdateProfileResult AuthServiceCore::UpdateProfile(
     result.success = false;
     result.error = "Failed to update profile";
     result.error_code = swift::ErrorCode::ROCKSDB_ERROR;
+    LogError(TAG("service", "authsvr"),"UpdateProfile failed: " << result.error);
   }
 
   return result;

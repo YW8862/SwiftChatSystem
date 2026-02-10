@@ -2,6 +2,7 @@
 #include "../service/auth_service.h"
 #include "swift/error_code.h"
 #include "swift/grpc_auth.h"
+#include <swift/log_helper.h>
 
 namespace swift::auth {
 
@@ -24,9 +25,11 @@ AuthHandler::Register(::grpc::ServerContext *context,
   if (result.success) {
     response->set_code(static_cast<int>(swift::ErrorCode::OK));
     response->set_user_id(result.user_id);
+    LogInfo(TAG("service", "authsvr"),"user_id"<<result.user_id<<"Register success");
   } else {
     response->set_code(swift::ErrorCodeToInt(result.error_code));
     response->set_message(result.error);
+    LogError(TAG("service", "authsvr"),"Register failed: " << result.error);
   }
   return ::grpc::Status::OK;
 }
@@ -56,6 +59,7 @@ AuthHandler::Register(::grpc::ServerContext *context,
   } else {
     response->set_code(swift::ErrorCodeToInt(result.error_code));
     response->set_message(result.error);
+    LogError(TAG("service", "authsvr"),"VerifyCredentials failed: " << result.error);
   }
   return ::grpc::Status::OK;
 }
@@ -68,10 +72,12 @@ AuthHandler::GetProfile(::grpc::ServerContext *context,
   if (uid.empty()) {
     return ::grpc::Status(::grpc::StatusCode::UNAUTHENTICATED,
                          "token invalid or missing");
+    LogError(TAG("service", "authsvr"),"GetProfile token invalid or missing");
   }
   (void)request;
   auto profile = service_->GetProfile(uid);
   if (!profile) {
+    LogError(TAG("service", "authsvr"),"GetProfile user not found");
     return ::grpc::Status(::grpc::StatusCode::NOT_FOUND, "user not found");
   }
   response->set_user_id(profile->user_id);
@@ -92,6 +98,7 @@ AuthHandler::UpdateProfile(::grpc::ServerContext *context,
   if (uid.empty()) {
     response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
     response->set_message("token invalid or missing");
+    LogError(TAG("service", "authsvr"),"UpdateProfile token invalid or missing");
     return ::grpc::Status::OK;
   }
   auto result =
@@ -100,6 +107,7 @@ AuthHandler::UpdateProfile(::grpc::ServerContext *context,
   if (result.success) {
     response->set_code(static_cast<int>(swift::ErrorCode::OK));
   } else {
+    LogError(TAG("service", "authsvr"),"UpdateProfile failed: " << result.error);
     response->set_code(swift::ErrorCodeToInt(result.error_code));
     response->set_message(result.error);
   }

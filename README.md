@@ -15,10 +15,10 @@
 - Windows 客户端（Qt5）
 - Minikube 本地 Kubernetes 部署
 
-**请求链路（Gate → Zone → System → 后端 gRPC）：** 客户端通过 WebSocket 连接 **GateSvr**；业务请求由 GateSvr 经 gRPC 转发到 **ZoneSvr**，ZoneSvr 根据 cmd 分发到对应 **System**（AuthSystem、ChatSystem、FriendSystem、GroupSystem、FileSystem），各 System **通过 gRPC 调用后端业务服务**（AuthSvr、ChatSvr、FriendSvr、FileSvr 等）执行业务逻辑，结果经 Zone → Gate 返回客户端。详见 `docs/develop.md` 9.6、`docs/system.md` 2.2。
+**请求链路（Gate → Zone → System → 后端 gRPC）：** 客户端通过 WebSocket 连接 **GateSvr**；业务请求由 GateSvr 经 gRPC 转发到 **ZoneSvr**，ZoneSvr 根据 cmd 分发到对应 **System**（AuthSystem、ChatSystem、FriendSystem、GroupSystem、FileSystem），各 System **通过 gRPC 调用后端业务服务**（AuthSvr、ChatSvr、FriendSvr、FileSvr 等）执行业务逻辑，结果经 Zone → Gate 返回客户端。
 
 认证与登录：**AuthSvr** 负责注册、校验用户名密码（VerifyCredentials）、用户资料；**OnlineSvr** 负责登录会话、Token 签发与校验（Login/Logout/ValidateToken）。  
-**API 鉴权**：涉及「当前用户」的接口（AuthSvr 的 GetProfile/UpdateProfile、FriendSvr、ChatSvr 全部接口）须在 gRPC metadata 中携带 JWT（`authorization: Bearer <token>` 或 `x-token: <token>`），服务端以 Token 解析出的 user_id 为准，不信任请求体中的 user_id，防止越权。详见 `develop.md` 第 16 节、`system.md` 2.3。
+**API 鉴权**：涉及「当前用户」的接口（AuthSvr 的 GetProfile/UpdateProfile、FriendSvr、ChatSvr 全部接口）须在 gRPC metadata 中携带 JWT（`authorization: Bearer <token>` 或 `x-token: <token>`），服务端以 Token 解析出的 user_id 为准，不信任请求体中的 user_id，防止越权。
 
 ## 项目结构
 
@@ -37,9 +37,8 @@ SwiftChatSystem/
 │   ├── proto/                  # 客户端协议
 │   └── desktop/                # Qt 桌面客户端
 ├── component/                  # 内部组件（如 AsyncLogger）
-├── deploy/                     # 部署配置
-│   └── k8s/                    # Kubernetes YAML
-└── develop.md / system.md      # 开发与架构文档
+├── deploy/                     # 部署配置（Docker / Kubernetes）
+└── docs/                       # 设计说明与开发文档
 ```
 
 ## 技术栈
@@ -65,13 +64,11 @@ SwiftChatSystem/
 2. **Docker Compose 单机部署**：适合单台服务器一键部署。
 3. **Kubernetes 集群部署（以 Minikube 为例）**：适合本地模拟生产集群。
 
-下面给出每种方式的概览，详细步骤请参考对应文档。
-
 ### 1. 本地部署（源码编译 + 本机运行）
 
 适用场景：本地开发、调试、单机演示。
 
-- **步骤概览**（详细见 `docs/deploy-to-server.md` 中“本机编译并运行”部分）：
+- **步骤概览**：
 
 ```bash
 # 1）安装构建依赖（以 Ubuntu 为例）
@@ -94,7 +91,7 @@ make -j$(nproc)
 - **配置与启动**：
 
 ```bash
-# 从示例复制配置（按需修改）
+# 从示例复制配置（按需修改，避免将实际 .conf 提交到仓库）
 cd /path/to/SwiftChatSystem
 cp config/authsvr.conf.example    config/authsvr.conf
 cp config/onlinesvr.conf.example  config/onlinesvr.conf
@@ -104,7 +101,7 @@ cp config/filesvr.conf.example    config/filesvr.conf
 cp config/zonesvr.conf.example    config/zonesvr.conf
 cp config/gatesvr.conf.example    config/gatesvr.conf
 
-# 按依赖顺序在 build 目录启动（可各开一终端）
+# 按依赖顺序在 build 目录启动（可各开一个终端或使用进程管理器）
 cd build
 ./backend/authsvr/authsvr       ../config/authsvr.conf &
 ./backend/onlinesvr/onlinesvr   ../config/onlinesvr.conf &
@@ -115,13 +112,11 @@ cd build
 ./backend/gatesvr/gatesvr       ../config/gatesvr.conf &
 ```
 
-> 更多细节（系统依赖、systemd 管理、云服务器本机部署等），请查看：`docs/deploy-to-server.md` 的“部署方式二：本机编译并运行”。
-
 ### 2. Docker Compose 单机部署
 
 适用场景：一台物理机/云服务器上快速拉起全部 7 个服务，依赖通过 Docker 镜像统一管理。
 
-- **前置条件**：已安装 Docker 与 Docker Compose 插件（见 `docs/deploy-to-server.md` 中“安装 Docker 与 Docker Compose”）。
+- **前置条件**：已安装 Docker 与 Docker Compose 插件。
 
 - **构建镜像并启动**（在项目根目录）：
 
@@ -142,20 +137,18 @@ docker compose -f deploy/docker-compose.yml ps
 - **停止/重启**：
 
 ```bash
-# 停止（保留数据卷）
+# 停止（保留数据卷与数据）
 docker compose -f deploy/docker-compose.yml down
 
 # 仅重启网关
 docker compose -f deploy/docker-compose.yml restart gatesvr
 ```
 
-> 详细的云服务器部署（包括防火墙、安全组、内网密钥配置等），请参考：`docs/deploy-to-server.md` 中“部署方式一：Docker Compose（推荐）”。
-
 ### 3. 集群部署（Minikube 示例）
 
 适用场景：在本地模拟 Kubernetes 生产环境，验证多副本、服务发现与负载均衡。
 
-- **前置条件**：已安装 `kubectl` 与 `minikube`（见 `docs/deploy-minikube.md` 第 1 章）。
+- **前置条件**：已安装 `kubectl` 与 `minikube`。
 
 - **快速流程概览**：
 
@@ -183,8 +176,6 @@ minikube service -n swift-chat gatesvr --url
 ```
 
 客户端将 WebSocket 地址配置为上述输出的 `ws://<host>:<port>` 即可连接（通常为 NodePort 30090）。
-
-> 集群部署的详细步骤、排错指南与常见问题，请参考：`docs/deploy-minikube.md`。
 
 ## 服务端口
 

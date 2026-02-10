@@ -26,7 +26,8 @@ std::unique_ptr<grpc::Server> g_server;
 } // namespace
 
 void SignalHandler(int signal) {
-  LogInfo("Received signal " << signal << ", shutting down...");
+  LogInfo(TAG("service", "authsvr").Add("signal", std::to_string(signal)),
+          "Received signal, shutting down...");
   g_running = false;
   if (g_server) {
     g_server->Shutdown();
@@ -53,9 +54,11 @@ int main(int argc, char *argv[]) {
   LogInfo("========================================");
   LogInfo("AuthSvr starting...");
   LogInfo("========================================");
+  LogInfo(TAG("service", "authsvr"), "Using config file: " << config_file);
 
   swift::auth::AuthConfig config = swift::auth::LoadConfig(config_file);
-  LogInfo("Config: host=" << config.host << " port=" << config.port
+  LogInfo(TAG("service", "authsvr"),
+          "Config: host=" << config.host << " port=" << config.port
                           << " store=" << config.store_type
                           << " path=" << config.rocksdb_path);
 
@@ -65,14 +68,16 @@ int main(int argc, char *argv[]) {
     try {
       store =
           std::make_shared<swift::auth::RocksDBUserStore>(config.rocksdb_path);
-      LogInfo("RocksDB opened: " << config.rocksdb_path);
+      LogInfo(TAG("service", "authsvr"), "RocksDB opened: " << config.rocksdb_path);
     } catch (const std::exception &e) {
-      LogError("Failed to open RocksDB: " << e.what());
+      LogError(TAG("service", "authsvr"),
+               "Failed to open RocksDB: " << e.what());
       swift::log::Shutdown();
       return 1;
     }
   } else {
-    LogError("Unsupported store_type: " << config.store_type);
+    LogError(TAG("service", "authsvr").Add("store_type", config.store_type),
+             "Unsupported store_type");
     swift::log::Shutdown();
     return 1;
   }
@@ -89,17 +94,19 @@ int main(int argc, char *argv[]) {
 
   g_server = builder.BuildAndStart();
   if (!g_server) {
-    LogError("Failed to start gRPC server on " << addr);
+    LogError(TAG("service", "authsvr"),
+             "Failed to start gRPC server on " << addr);
     swift::log::Shutdown();
     return 1;
   }
 
-  LogInfo("AuthSvr listening on " << addr << " (press Ctrl+C to stop)");
+  LogInfo(TAG("service", "authsvr"),
+          "AuthSvr listening on " << addr << " (press Ctrl+C to stop)");
 
   g_server->Wait();
 
   g_server.reset();
-  LogInfo("AuthSvr shut down.");
+  LogInfo(TAG("service", "authsvr"), "AuthSvr shut down.");
   swift::log::Shutdown();
   return 0;
 }

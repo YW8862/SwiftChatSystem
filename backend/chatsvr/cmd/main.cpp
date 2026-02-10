@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) {
   std::signal(SIGTERM, SignalHandler);
 
   if (!swift::log::InitFromEnv("chatsvr")) {
-    std::cerr << "Failed to initialize logger!" << std::endl;
+    LogError(TAG("service", "chatsvr"), "Failed to initialize logger!");
     return 1;
   }
 

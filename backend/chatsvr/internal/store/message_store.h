@@ -9,7 +9,8 @@
 namespace swift::chat {
 
 /**
- * 统一会话模型：私聊 = 两人会话（conversation_id 由 GetOrCreatePrivateConversation 得到），
+ * 统一会话模型：
+ * 私聊 = 两人会话（conversation_id 由 GetOrCreatePrivateConversation 得到），
  * 群聊 = 多人会话（conversation_id = group_id）。消息统一按 conversation_id 存储。
  */
 struct MessageData {
