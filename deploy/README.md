@@ -1,6 +1,7 @@
 # SwiftChatSystem 部署
 
-**云服务器从零部署**：参见 **[docs/deploy-to-server.md](docs/deploy-to-server.md)**，按步骤完成环境准备、构建镜像与 Docker Compose 或本机运行。
+- **云服务器从零部署**：参见 **[docs/deploy-to-server.md](../docs/deploy-to-server.md)**，按步骤完成环境准备、构建镜像与 Docker Compose 或本机运行。
+- **本地 Kubernetes（Minikube）**：参见 **[docs/deploy-minikube.md](../docs/deploy-minikube.md)**，使用 Minikube 创建集群并部署全部后端服务。
 
 ---
 
@@ -38,15 +39,17 @@ docker build -f backend/gatesvr/Dockerfile -t swift/gatesvr:latest .
 
 ## Kubernetes 部署
 
+**使用 Minikube 在本地建集群**：完整步骤见 **[docs/deploy-minikube.md](../docs/deploy-minikube.md)**（安装 Minikube、创建 hostPath、构建/导入镜像、应用配置、访问服务）。
+
 ### 前置条件
 
-- 集群可访问镜像：`swift/<service>:latest`（本地构建后需推送到集群可拉取的仓库，或使用 `imagePullPolicy: Never` / 本地 kind/minikube 加载）
-- 已创建 PVC：`swift-data-pvc`（RocksDB 等）、`swift-files-pvc`（文件存储）
+- 集群可访问镜像：`swift/<service>:latest`（本地构建后需推送到集群可拉取的仓库，或使用 Minikube 加载：`minikube image load swift/<service>:latest`，并设置 `imagePullPolicy: Never`）
+- 已创建 PVC：`swift-data-pvc`（RocksDB 等）、`swift-files-pvc`（文件存储）；Minikube 下需在节点上预先创建 hostPath 目录（见 Minikube 文档）
 
-### 部署步骤
+### 通用部署步骤
 
 ```bash
-# 若使用 Minikube，先加载本地镜像（可选）
+# 若使用 Minikube，先加载本地镜像（详见 docs/deploy-minikube.md）
 for s in authsvr onlinesvr friendsvr chatsvr filesvr zonesvr gatesvr; do
   minikube image load swift/$s:latest
 done
