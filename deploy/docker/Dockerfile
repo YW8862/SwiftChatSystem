@@ -29,7 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libboost-all-dev \
     libssl-dev \
     libhiredis-dev \
-    libnlohmann-json3-dev \
+    nlohmann-json3-dev \
     libspdlog-dev \
     && rm -rf /var/lib/apt/lists/*
 
