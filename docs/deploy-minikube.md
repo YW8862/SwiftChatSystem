@@ -167,7 +167,51 @@ kubectl -n swift-chat describe pod -l app=zonesvr
 
 ---
 
-## 七、停止与清理
+## 七、常见问题排查
+
+### 7.1 kubeadm 报错 "cannot open html" / "Syntax error: redirection unexpected"
+
+说明 Minikube 下载的 Kubernetes 组件**不是真正的二进制**，而是被替换成了 HTML（例如网络劫持、代理错误页、下载未完成）。集群内的 `kubeadm` 实为 HTML 文件，被当作脚本执行就会报上述错误。
+
+**处理步骤：**
+
+1. **删除当前集群并清理缓存**（让 Minikube 重新下载组件）：
+   ```bash
+   minikube delete
+   minikube delete --all --purge
+   ```
+   若仍有问题，可手动删缓存后再启动：
+   ```bash
+   rm -rf ~/.minikube/cache
+   minikube start --cpus=2 --memory=4096 --driver=docker
+   ```
+
+2. **检查网络与代理**：
+   - 若使用 HTTP 代理，确保 `HTTP_PROXY`/`HTTPS_PROXY` 正确，且不会把 `dl.k8s.io`、`storage.googleapis.com` 等返回成 HTML 错误页。
+   - 若在国内网络，可尝试使用镜像或代理后再执行 `minikube start`。
+
+3. **指定较旧且可能已缓存的 Kubernetes 版本**（避免重新拉取失败）：
+   ```bash
+   minikube start --cpus=2 --memory=4096 --driver=docker --kubernetes-version=v1.28.0
+   ```
+
+4. **确认本机可直接下载到真实二进制**（可选）：
+   ```bash
+   curl -sL "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubeadm" -o /tmp/kubeadm
+   file /tmp/kubeadm   # 应显示 "ELF 64-bit LSB executable"
+   ```
+   若这里是 HTML，说明当前网络环境下 K8s 官方地址被重定向到错误页，需先解决网络或改用镜像。
+
+### 7.2 基础镜像 / 组件下载很慢
+
+若 Minikube 从 GitHub 或 Google 拉取 kicbase 等镜像很慢，可：
+
+- 使用已有镜像（若曾成功拉取过）：Minikube 会复用本地/缓存镜像。
+- 配置 Docker 镜像加速或 HTTP 代理后再执行 `minikube start`。
+
+---
+
+## 八、停止与清理
 
 ```bash
 # 删除本项目的 K8s 资源（保留命名空间也可）
@@ -182,7 +226,7 @@ minikube delete
 
 ---
 
-## 八、简要流程汇总
+## 九、简要流程汇总
 
 ```bash
 # 1. 安装并启动 Minikube
