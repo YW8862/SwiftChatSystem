@@ -45,7 +45,9 @@ data:
   # ---------- ChatSvr ----------
   CHATSVR_HOST: "0.0.0.0"
   CHATSVR_PORT: "9098"
-  CHATSVR_ROCKSDB_PATH: "/data/chat"
+  # 在 k8s 中 /data 已挂载到 PVC（见 chatsvr-deployment），
+  # 这里直接使用 /data 作为 RocksDB 根目录，内部再按 group/message 等划分子目录。
+  CHATSVR_ROCKSDB_PATH: "/data"
 
   # ---------- FileSvr ----------
   FILESVR_HOST: "0.0.0.0"
