@@ -1932,205 +1932,129 @@ void GateService::HandleLogin(
 
 ## 11. 阶段九：Qt 客户端开发
 
+Qt5 桌面客户端通过 **WebSocket** 连接 GateSvr，使用 **Gate 的 ClientMessage/ServerMessage** 封装请求与响应，业务命令（如 `auth.login`、`chat.send_message`）由 Gate 转发至 ZoneSvr 的 HandleClientRequest，再按 cmd 分发到各后端服务。
+
 ### 11.1 项目结构
 
 ```
-client/desktop/
-├── src/
-│   ├── main.cpp              # 入口
-│   ├── ui/                   # UI 组件
-│   │   ├── loginwindow.*     # 登录窗口
-│   │   ├── mainwindow.*      # 主窗口
-│   │   ├── chatwidget.*      # 聊天组件
-│   │   └── contactwidget.*   # 联系人组件
-│   ├── network/              # 网络层
-│   │   ├── websocket_client.*
-│   │   └── protocol_handler.*
-│   ├── models/               # 数据模型
-│   │   ├── user.*
-│   │   ├── message.*
-│   │   └── conversation.*
-│   └── utils/                # 工具类
-└── resources/                # 资源文件
+client/
+├── CMakeLists.txt            # 根 CMake，包含 proto 与 desktop
+├── proto/
+│   └── CMakeLists.txt        # client_proto：从 backend 各服务 proto 生成 C++ 供客户端使用
+│                             # 含 common、gate、auth、friend、chat、group、file
+└── desktop/                  # SwiftChat 桌面应用
+    ├── CMakeLists.txt
+    ├── resources/
+    │   └── resources.qrc
+    └── src/
+        ├── main.cpp              # 入口（QApplication，当前为占位）
+        ├── ui/                    # UI 组件
+        │   ├── loginwindow.*     # 登录窗口
+        │   ├── mainwindow.*      # 主窗口
+        │   ├── chatwidget.*      # 聊天区域
+        │   ├── contactwidget.*   # 联系人/会话列表
+        │   └── messageitem.*     # 单条消息展示
+        ├── network/              # 网络层
+        │   ├── websocket_client.*  # Qt WebSockets 封装
+        │   └── protocol_handler.*  # 协议解析与 cmd 分发（request_id 匹配、推送通知）
+        ├── models/               # 数据模型
+        │   ├── user.*
+        │   ├── message.*
+        │   └── conversation.*
+        └── utils/                # 工具类
+            ├── settings.*       # 服务器 URL、登录信息持久化
+            └── image_utils.*    # 图片加载/缓存
 ```
 
-### 11.2 开发步骤
+**说明：** 根项目 `CMakeLists.txt` 中 client 子目录默认被注释，需取消注释 `add_subdirectory(client)` 并安装 Qt5 后再构建客户端。
 
-#### Step 1: WebSocket 连接
+### 11.2 构建与运行
 
-```cpp
-// network/websocket_client.cpp
-
-void WebSocketClient::connect(const QString& url) {
-    m_socket->open(QUrl(url));
-}
-
-void WebSocketClient::onConnected() {
-    LOG_INFO("WebSocket connected");
-    emit connected();
-}
-
-void WebSocketClient::onBinaryMessageReceived(const QByteArray& message) {
-    emit messageReceived(message);
-}
-
-void WebSocketClient::sendMessage(const QByteArray& data) {
-    m_socket->sendBinaryMessage(data);
-}
-```
-
-#### Step 2: 协议处理
-
-```cpp
-// network/protocol_handler.cpp
-
-void ProtocolHandler::sendRequest(const QString& cmd, const QByteArray& payload,
-                                   ResponseCallback callback) {
-    QString requestId = generateRequestId();
-    
-    if (callback) {
-        m_pendingRequests[requestId] = callback;
-    }
-    
-    // 构造 ClientMessage
-    swift::gate::ClientMessage msg;
-    msg.set_cmd(cmd.toStdString());
-    msg.set_payload(payload.data(), payload.size());
-    msg.set_request_id(requestId.toStdString());
-    
-    std::string serialized;
-    msg.SerializeToString(&serialized);
-    
-    emit dataToSend(QByteArray::fromStdString(serialized));
-}
-
-void ProtocolHandler::handleMessage(const QByteArray& data) {
-    swift::gate::ServerMessage msg;
-    msg.ParseFromArray(data.data(), data.size());
-    
-    QString cmd = QString::fromStdString(msg.cmd());
-    QString requestId = QString::fromStdString(msg.request_id());
-    
-    // 如果是响应
-    if (!requestId.isEmpty() && m_pendingRequests.count(requestId)) {
-        auto callback = m_pendingRequests[requestId];
-        m_pendingRequests.erase(requestId);
-        callback(msg.code(), QByteArray(msg.payload().data(), msg.payload().size()));
-        return;
-    }
-    
-    // 如果是推送通知
-    if (cmd == "chat.new_message") {
-        swift::gate::NewMessageNotify notify;
-        notify.ParseFromString(msg.payload());
-        emit newMessageNotify(notify);
-    } else if (cmd == "chat.recall") {
-        // ...
-    }
-}
-```
-
-#### Step 3: 登录界面
-
-```cpp
-// ui/loginwindow.cpp
-
-void LoginWindow::onLoginClicked() {
-    QString username = ui->usernameEdit->text();
-    QString password = ui->passwordEdit->text();
-    
-    if (username.isEmpty() || password.isEmpty()) {
-        QMessageBox::warning(this, "Error", "Please enter username and password");
-        return;
-    }
-    
-    // 先连接 WebSocket
-    m_wsClient->connect(Settings::instance().serverUrl());
-}
-
-void LoginWindow::onWebSocketConnected() {
-    // 发送登录请求
-    swift::auth::LoginRequest req;
-    req.set_username(ui->usernameEdit->text().toStdString());
-    req.set_password(ui->passwordEdit->text().toStdString());
-    
-    std::string payload;
-    req.SerializeToString(&payload);
-    
-    m_protocol->sendRequest("auth.login", QByteArray::fromStdString(payload),
-        [this](int code, const QByteArray& payload) {
-            if (code == 0) {
-                swift::auth::LoginResponse resp;
-                resp.ParseFromArray(payload.data(), payload.size());
-                
-                // 保存登录信息
-                Settings::instance().saveLoginInfo(
-                    QString::fromStdString(resp.user_id()),
-                    QString::fromStdString(resp.token())
-                );
-                
-                // 跳转到主界面
-                emit loginSuccess();
-            } else {
-                QMessageBox::warning(this, "Error", "Login failed");
-            }
-        }
-    );
-}
-```
-
-#### Step 4: 聊天界面
-
-```cpp
-// ui/chatwidget.cpp
-
-void ChatWidget::onSendClicked() {
-    QString content = ui->inputEdit->toPlainText().trimmed();
-    if (content.isEmpty()) return;
-    
-    // 构造发送消息请求
-    swift::chat::SendMessageRequest req;
-    req.set_from_user_id(m_currentUserId.toStdString());
-    req.set_to_id(m_chatId.toStdString());
-    req.set_chat_type(m_chatType);
-    req.set_content(content.toStdString());
-    req.set_media_type("text");
-    
-    std::string payload;
-    req.SerializeToString(&payload);
-    
-    m_protocol->sendRequest("chat.send", QByteArray::fromStdString(payload),
-        [this, content](int code, const QByteArray& payload) {
-            if (code == 0) {
-                // 添加到消息列表
-                addMessage(content, true);
-                ui->inputEdit->clear();
-            }
-        }
-    );
-}
-
-void ChatWidget::onNewMessageReceived(const swift::gate::NewMessageNotify& notify) {
-    // 检查是否是当前会话的消息
-    if (QString::fromStdString(notify.chat_id()) == m_chatId) {
-        addMessage(QString::fromStdString(notify.content()), false,
-                   QString::fromStdString(notify.from_nickname()));
-    }
-}
-```
-
-### 11.3 打包发布
+**依赖：** Qt5（Core、Gui、Widgets、Network、WebSockets），见 1.2 节。
 
 ```bash
-# Windows
+# 1. 在项目根 CMakeLists.txt 中取消注释
+#    add_subdirectory(client)
+
+# 2. 配置与构建
 cd build
+cmake .. -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
+         -DCMAKE_BUILD_TYPE=Debug
+make -j$(nproc)
+
+# 3. 运行桌面客户端（生成在 build/client/desktop/）
+./client/desktop/SwiftChat
+```
+
+**Windows：** 使用 Qt5 的 CMake 配置（如 `Qt5_DIR`）并构建 Release，运行前可用 `windeployqt SwiftChat.exe` 收集 Qt 依赖。
+
+### 11.3 客户端与网关协议
+
+- **连接：** WebSocket，地址由配置/设置提供（如 `ws://host:9090/ws`），与 GateSvr 的 WebSocket 端口一致。
+- **消息格式：** 见 `backend/gatesvr/proto/gate.proto`。
+  - **上行（客户端 → Gate）：** `ClientMessage`：`cmd`（字符串）、`payload`（bytes）、`request_id`（字符串，用于匹配响应）。
+  - **下行（Gate → 客户端）：** `ServerMessage`：`cmd`、`payload`、`request_id`、`code`（0 成功）、`message`（错误信息）。
+- **请求流程：** Gate 收到 ClientMessage 后，按业务转发至 ZoneSvr 的 **HandleClientRequest**（gRPC），Zone 根据 `cmd` 前缀（auth/chat/friend/group/file）分发到对应 System，再调各后端 gRPC；响应经 Gate 原路返回为 ServerMessage。
+- **常用 cmd 与 payload 约定（与 Zone HandleClientRequest 一致）：**
+
+| cmd | 说明 | 请求 payload（序列化） | 响应 payload（code=0 时） |
+|-----|------|------------------------|----------------------------|
+| `auth.login` | 登录 | Zone: AuthLoginPayload（username, password, device_id, device_type） | AuthLoginResponsePayload（success, user_id, token, expire_at, error） |
+| `auth.logout` | 登出 | AuthLogoutPayload（user_id, token） | 无 |
+| `auth.validate_token` | 校验 Token | AuthValidateTokenPayload（token） | AuthValidateTokenResponsePayload（user_id） |
+| `chat.send_message` | 发消息 | ChatSendMessagePayload（from_user_id, to_id, chat_type, content, …） | ChatSendMessageResponsePayload（success, msg_id, timestamp, error） |
+| `chat.recall_message` | 撤回 | ChatRecallMessagePayload（msg_id, user_id） | 无 |
+| `friend.add` / `friend.remove` / … | 好友 | 对应 Friend*Payload | 视接口 |
+| `group.create` / `group.leave` / … | 群组 | 对应 Group*Payload | 视接口 |
+| `file.get_upload_token` / `file.get_file_url` / … | 文件 | 对应 File*Payload | 对应 File*ResponsePayload |
+
+- **服务端推送（cmd 为通知类型）：** 如 `chat.new_message`、`chat.recall`、`friend.request`、`user.status` 等，payload 为 gate.proto 中对应 Notify 消息的序列化（如 `NewMessageNotify`、`RecallNotify`）。客户端根据 `cmd` 解析 payload 并更新 UI。
+
+以上 Payload 定义见 `backend/zonesvr/proto/zone.proto`（以及 gate.proto 中的 Notify）；客户端若引用 zone.proto 可复用同一结构，否则需与后端约定字段一致。
+
+### 11.4 开发步骤
+
+#### Step 1：WebSocket 连接
+
+在 `network/websocket_client.cpp` 中连接 Gate 的 WebSocket 地址（来自 `Settings::serverUrl()`），连接成功后发出 `connected()`，收到二进制帧时发出 `messageReceived(QByteArray)`，发送时调用 `sendBinaryMessage`。与 Gate 的 WebSocket 服务端约定一致即可（通常为二进制 Protobuf）。
+
+#### Step 2：协议处理（protocol_handler）
+
+- **发送请求：** 使用 `swift::gate::ClientMessage`：设置 `cmd`、`payload`（bytes）、`request_id`（如 `req_1`、`req_2`），序列化后通过 `dataToSend` 交给 WebSocket 发送。
+- **接收：** 解析为 `swift::gate::ServerMessage`。若 `request_id` 非空且在待处理表中，则视为某次请求的响应：调用对应 callback(code, payload) 并移除；否则按推送处理（如 `cmd == "chat.new_message"` 解析为 `NewMessageNotify` 并 emit `newMessageNotify`，同理 `chat.recall`、`friend.request` 等）。
+
+这样与 gate.proto 及 Gate/Zone 的请求-响应、推送约定一致。
+
+#### Step 3：登录界面（auth.login）
+
+- 用户输入账号密码后，先建立 WebSocket 连接（Step 1），连接成功后再发登录。
+- 构造 **auth.login** 请求：cmd 为 `"auth.login"`，payload 为 Zone 的 **AuthLoginPayload** 序列化（username、password、device_id、device_type；可与 zone.proto 或后端约定一致）。
+- 在 `sendRequest` 的回调中：若 `code == 0`，解析 payload 为 **AuthLoginResponsePayload**，取 `user_id`、`token`、`expire_at`，写入 `Settings::saveLoginInfo`，再 emit `loginSuccess()` 进入主界面；否则提示 `message` 或“登录失败”。
+
+#### Step 4：聊天界面（chat.send_message 与推送）
+
+- **发送：** 构造 **chat.send_message**：cmd 为 `"chat.send_message"`，payload 为 **ChatSendMessagePayload**（from_user_id、to_id、chat_type、content、media_url/media_type 等），通过 `sendRequest` 发送；回调中若成功可将本地消息加入列表并清空输入框。
+- **接收：** 在 ProtocolHandler 的推送分支中，对 `cmd == "chat.new_message"` 解析 `NewMessageNotify`，若 `chat_id` 为当前会话则更新消息列表（如 `addMessage(content, false, from_nickname)`）；对 `chat.recall` 解析 `RecallNotify` 并更新或移除对应消息项。
+
+#### Step 5：主界面与联系人
+
+- **MainWindow：** 左侧为联系人/会话列表（ContactWidget），右侧为当前会话的 ChatWidget；登录后从 Settings 读取 user_id/token，可选发 `friend.*` 拉取好友列表、`conversation` 相关 cmd 拉取会话列表（具体 cmd 与后端约定）。
+- **设置：** 使用 `Settings::serverUrl()` 作为 WebSocket 地址，保证与 Gate 的 WebSocket 端口一致；Token 在后续需鉴权请求中可通过 Gate 与 Zone 的 metadata/约定带给后端（若 Gate 在转发时注入 token，则客户端只需在登录后保存并维持连接）。
+
+### 11.5 打包发布
+
+```bash
+# Linux
+cd build && make -j$(nproc)
+# 可执行文件：client/desktop/SwiftChat；依赖 Qt5 运行库，需目标环境安装 Qt5 或打包时带上库。
+
+# Windows（Release）
 cmake --build . --config Release
+windeployqt client/desktop/Release/SwiftChat.exe
+# 将 windeployqt 生成的目录与 exe 一起分发；可选 NSIS/Inno Setup 制作安装包。
 
-# 使用 windeployqt 收集依赖
-windeployqt SwiftChat.exe
-
-# 使用 NSIS 制作安装包
-makensis installer.nsi
+# macOS
+# 使用 Qt 安装目录下的 macdeployqt 打包为 .app 并可选生成 dmg。
 ```
 
 ---

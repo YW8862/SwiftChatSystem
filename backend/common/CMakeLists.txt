@@ -14,10 +14,8 @@ add_subdirectory(proto)
 # 源文件
 set(SOURCES
     src/utils.cpp
-    src/config.cpp
     src/config_loader.cpp
     src/jwt_helper.cpp
-    src/async_write.cpp
 )
 
 # 公共库
