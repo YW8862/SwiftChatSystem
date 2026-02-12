@@ -1966,6 +1966,8 @@ client/
             └── image_utils.*    # 图片加载/缓存
 ```
 
+**模块依赖：** network（WebSocket、ProtocolHandler）不依赖 ui；protocol 依赖 proto 生成类；models 可为纯数据结构供 ui 使用；ui 依赖 network + models + utils。开发顺序建议：network → protocol → utils → models → ui（见 11.4 阶段 A～D）。
+
 **说明：** 根项目 `CMakeLists.txt` 中 client 子目录默认被注释，需取消注释 `add_subdirectory(client)` 并安装 Qt5 后再构建客户端。
 
 ### 11.2 构建与运行
@@ -1990,56 +1992,145 @@ make -j$(nproc)
 
 ### 11.3 客户端与网关协议
 
-- **连接：** WebSocket，地址由配置/设置提供（如 `ws://host:9090/ws`），与 GateSvr 的 WebSocket 端口一致。
+- **连接：** WebSocket，地址由配置/设置提供（如 `ws://host:9090/ws`），与 GateSvr 的 WebSocket 端口一致；**二进制帧**，内容为 Protobuf 序列化。
 - **消息格式：** 见 `backend/gatesvr/proto/gate.proto`。
   - **上行（客户端 → Gate）：** `ClientMessage`：`cmd`（字符串）、`payload`（bytes）、`request_id`（字符串，用于匹配响应）。
   - **下行（Gate → 客户端）：** `ServerMessage`：`cmd`、`payload`、`request_id`、`code`（0 成功）、`message`（错误信息）。
-- **请求流程：** Gate 收到 ClientMessage 后，按业务转发至 ZoneSvr 的 **HandleClientRequest**（gRPC），Zone 根据 `cmd` 前缀（auth/chat/friend/group/file）分发到对应 System，再调各后端 gRPC；响应经 Gate 原路返回为 ServerMessage。
-- **常用 cmd 与 payload 约定（与 Zone HandleClientRequest 一致）：**
+- **请求流程：** Gate 收到 ClientMessage 后，转发至 ZoneSvr 的 **HandleClientRequest**（gRPC）；Zone 根据 `cmd` 前缀分发到对应 System，再调各后端 gRPC；响应经 Gate 原路返回为 ServerMessage。**鉴权**：登录后 Gate/Zone 通过连接绑定 user_id 与 token，后续业务请求无需在 payload 中重复带 token（除 auth.logout / auth.validate_token）。
 
-| cmd | 说明 | 请求 payload（序列化） | 响应 payload（code=0 时） |
-|-----|------|------------------------|----------------------------|
-| `auth.login` | 登录 | Zone: AuthLoginPayload（username, password, device_id, device_type） | AuthLoginResponsePayload（success, user_id, token, expire_at, error） |
-| `auth.logout` | 登出 | AuthLogoutPayload（user_id, token） | 无 |
-| `auth.validate_token` | 校验 Token | AuthValidateTokenPayload（token） | AuthValidateTokenResponsePayload（user_id） |
-| `chat.send_message` | 发消息 | ChatSendMessagePayload（from_user_id, to_id, chat_type, content, …） | ChatSendMessageResponsePayload（success, msg_id, timestamp, error） |
-| `chat.recall_message` | 撤回 | ChatRecallMessagePayload（msg_id, user_id） | 无 |
-| `friend.add` / `friend.remove` / … | 好友 | 对应 Friend*Payload | 视接口 |
-| `group.create` / `group.leave` / … | 群组 | 对应 Group*Payload | 视接口 |
-| `file.get_upload_token` / `file.get_file_url` / … | 文件 | 对应 File*Payload | 对应 File*ResponsePayload |
+#### 11.3.1 请求 cmd 与 payload 一览（zone.proto）
 
-- **服务端推送（cmd 为通知类型）：** 如 `chat.new_message`、`chat.recall`、`friend.request`、`user.status` 等，payload 为 gate.proto 中对应 Notify 消息的序列化（如 `NewMessageNotify`、`RecallNotify`）。客户端根据 `cmd` 解析 payload 并更新 UI。
+Payload 定义见 `backend/zonesvr/proto/zone.proto`，客户端需引用 **common.proto + gate.proto + zone.proto** 生成 C++ 以保持字段一致。
 
-以上 Payload 定义见 `backend/zonesvr/proto/zone.proto`（以及 gate.proto 中的 Notify）；客户端若引用 zone.proto 可复用同一结构，否则需与后端约定字段一致。
+| cmd | 请求 payload | 响应 payload（code=0） |
+|-----|---------------|------------------------|
+| **auth.*** | | |
+| `auth.login` | AuthLoginPayload（username, password, device_id, device_type） | AuthLoginResponsePayload（success, user_id, token, expire_at, error） |
+| `auth.logout` | AuthLogoutPayload（user_id, token） | 无（code/message 在 ServerMessage） |
+| `auth.validate_token` | AuthValidateTokenPayload（token） | AuthValidateTokenResponsePayload（user_id） |
+| **chat.*** | | |
+| `chat.send_message` | ChatSendMessagePayload（from_user_id, to_id, chat_type, content, media_url, media_type, client_msg_id, file_size, mentions, reply_to_msg_id） | ChatSendMessageResponsePayload（success, msg_id, timestamp, error） |
+| `chat.mark_read` | ChatMarkReadPayload（chat_id, chat_type, last_msg_id） | 无 |
+| `chat.pull_offline` | ChatPullOfflinePayload（limit, cursor） | ChatPullOfflineResponsePayload（messages, next_cursor, has_more） |
+| `chat.recall_message` | ChatRecallMessagePayload（msg_id, user_id） | 无 |
+| `chat.get_history` | ChatGetHistoryPayload（chat_id, chat_type, before_msg_id, limit） | ChatGetHistoryResponsePayload（messages, has_more） |
+| `chat.sync_conversations` | ChatSyncConversationsPayload（last_sync_time） | ChatSyncConversationsResponsePayload（conversations） |
+| `chat.delete_conversation` | ChatDeleteConversationPayload（chat_id, chat_type） | 无 |
+| **friend.*** | | |
+| `friend.add` | FriendAddPayload（user_id, friend_id, remark） | 无 |
+| `friend.handle_request` | FriendHandleRequestPayload（user_id, request_id, accept） | 无 |
+| `friend.remove` | FriendRemovePayload（user_id, friend_id） | 无 |
+| `friend.block` | FriendBlockPayload（user_id, target_id） | 无 |
+| `friend.get_friends` | FriendGetFriendsPayload（group_id 可选） | FriendGetFriendsResponsePayload（friends） |
+| `friend.get_requests` | FriendGetRequestsPayload（type） | FriendGetRequestsResponsePayload（requests） |
+| **group.*** | | |
+| `group.create` | GroupCreatePayload（creator_id, group_name, member_ids） | GroupCreateResponsePayload（success, group_id, error） |
+| `group.dismiss` | GroupDismissPayload（group_id, operator_id） | 无 |
+| `group.invite_members` | GroupInviteMembersPayload（group_id, inviter_id, member_ids） | 无 |
+| `group.remove_member` | GroupRemoveMemberPayload（group_id, operator_id, member_id） | 无 |
+| `group.leave` | GroupLeavePayload（group_id, user_id） | 无 |
+| `group.get_info` | GroupGetInfoPayload（group_id） | GroupGetInfoResponsePayload（group） |
+| `group.get_members` | GroupGetMembersPayload（group_id, page, page_size） | GroupGetMembersResponsePayload（members, total） |
+| `group.get_user_groups` | GroupGetUserGroupsPayload（空） | GroupGetUserGroupsResponsePayload（groups） |
+| **file.*** | | |
+| `file.get_upload_token` | FileGetUploadTokenPayload（user_id, file_name, file_size） | FileGetUploadTokenResponsePayload（success, upload_token, upload_url, expire_at, error） |
+| `file.get_file_url` | FileGetFileUrlPayload（file_id, user_id） | FileGetFileUrlResponsePayload（success, file_url, file_name, file_size, content_type, expire_at, error） |
+| `file.delete` | FileDeletePayload（file_id, user_id） | 无 |
 
-### 11.4 开发步骤
+**说明：** 部分接口的 `user_id` 由 Zone 从连接绑定的 token 解析，请求 payload 可省略（如 friend.get_friends、chat.get_history）；若 proto 未省略则按当前登录用户填即可。
 
-#### Step 1：WebSocket 连接
+#### 11.3.2 服务端推送（gate.proto Notify）
 
-在 `network/websocket_client.cpp` 中连接 Gate 的 WebSocket 地址（来自 `Settings::serverUrl()`），连接成功后发出 `connected()`，收到二进制帧时发出 `messageReceived(QByteArray)`，发送时调用 `sendBinaryMessage`。与 Gate 的 WebSocket 服务端约定一致即可（通常为二进制 Protobuf）。
+以下 cmd 为**服务端主动推送**，无 request_id 或 request_id 为空，payload 为对应 Notify 的序列化，客户端根据 cmd 解析并更新 UI/状态。
 
-#### Step 2：协议处理（protocol_handler）
+| cmd | payload 类型（gate.proto） | 说明 |
+|-----|---------------------------|------|
+| `chat.new_message` | NewMessageNotify | 新消息（msg_id, from_user_id, from_nickname, chat_id, chat_type, content, media_url, media_type, timestamp 等） |
+| `chat.recall` | RecallNotify | 消息撤回（msg_id, chat_id, chat_type, operator_id, recall_at） |
+| `chat.read_receipt` | ReadReceiptNotify | 已读回执（chat_id, user_id, last_read_msg_id） |
+| `friend.request` | FriendRequestNotify | 好友申请（request_id, from_user_id, from_nickname, remark, timestamp） |
+| `friend.accepted` | FriendAcceptedNotify | 好友通过（friend_id, nickname, avatar） |
+| `user.status_change` | UserStatusChangeNotify | 用户上下线（user_id, online, timestamp） |
+| `system.kicked` | KickedNotify | 被踢下线（reason） |
 
-- **发送请求：** 使用 `swift::gate::ClientMessage`：设置 `cmd`、`payload`（bytes）、`request_id`（如 `req_1`、`req_2`），序列化后通过 `dataToSend` 交给 WebSocket 发送。
-- **接收：** 解析为 `swift::gate::ServerMessage`。若 `request_id` 非空且在待处理表中，则视为某次请求的响应：调用对应 callback(code, payload) 并移除；否则按推送处理（如 `cmd == "chat.new_message"` 解析为 `NewMessageNotify` 并 emit `newMessageNotify`，同理 `chat.recall`、`friend.request` 等）。
+**心跳：** 客户端可定时发送 `heartbeat`（HeartbeatRequest：client_time），服务端返回在 ServerMessage.payload 中为 HeartbeatResponse（server_time），用于保活与时钟同步。
 
-这样与 gate.proto 及 Gate/Zone 的请求-响应、推送约定一致。
+---
 
-#### Step 3：登录界面（auth.login）
+### 11.4 细化开发流程
 
-- 用户输入账号密码后，先建立 WebSocket 连接（Step 1），连接成功后再发登录。
-- 构造 **auth.login** 请求：cmd 为 `"auth.login"`，payload 为 Zone 的 **AuthLoginPayload** 序列化（username、password、device_id、device_type；可与 zone.proto 或后端约定一致）。
-- 在 `sendRequest` 的回调中：若 `code == 0`，解析 payload 为 **AuthLoginResponsePayload**，取 `user_id`、`token`、`expire_at`，写入 `Settings::saveLoginInfo`，再 emit `loginSuccess()` 进入主界面；否则提示 `message` 或“登录失败”。
+建议按 **阶段 A → B → C → D** 顺序实现，每阶段可独立联调；依赖关系为 **network → protocol → models → ui**。
 
-#### Step 4：聊天界面（chat.send_message 与推送）
+#### 阶段 A：连接与协议基础
 
-- **发送：** 构造 **chat.send_message**：cmd 为 `"chat.send_message"`，payload 为 **ChatSendMessagePayload**（from_user_id、to_id、chat_type、content、media_url/media_type 等），通过 `sendRequest` 发送；回调中若成功可将本地消息加入列表并清空输入框。
-- **接收：** 在 ProtocolHandler 的推送分支中，对 `cmd == "chat.new_message"` 解析 `NewMessageNotify`，若 `chat_id` 为当前会话则更新消息列表（如 `addMessage(content, false, from_nickname)`）；对 `chat.recall` 解析 `RecallNotify` 并更新或移除对应消息项。
+**目标：** 能连上 Gate、收发二进制 Protobuf、区分请求响应与推送。
 
-#### Step 5：主界面与联系人
+| 步骤 | 内容 | 实现要点 |
+|------|------|----------|
+| **A.1** | **Settings**（utils/settings） | 持久化 `serverUrl`（如 `ws://127.0.0.1:9090/ws`）、`savedUserId`/`savedToken`、`saveLoginInfo`/`clearLoginInfo`；可为 QSettings 或 JSON 文件。 |
+| **A.2** | **WebSocket 客户端**（network/websocket_client） | 使用 `QWebSocket`，`connect(url)` → 成功后 emit `connected()`；`onBinaryMessageReceived` 时 emit `messageReceived(QByteArray)`；`sendMessage(QByteArray)` 内部 `sendBinaryMessage`；断开/错误时 emit `disconnected()`/`errorOccurred`。 |
+| **A.3** | **ProtocolHandler 发送**（network/protocol_handler） | `sendRequest(cmd, payload, callback)`：生成唯一 `request_id`（如 `req_` + 递增序号），构造 `ClientMessage`（cmd, payload, request_id），序列化后 emit `dataToSend(data)`；将 `(request_id, callback)` 存入 `m_pendingRequests`。 |
+| **A.4** | **ProtocolHandler 接收**（handleMessage） | 解析 `ServerMessage`。若 `request_id` 非空且在 `m_pendingRequests` 中存在：调用对应 callback(code, payload) 并移除；**否则**按推送处理：根据 `cmd` 分支，解析 payload 并 emit 对应 signal（如 `newMessageNotify(payload)`、`recallNotify(payload)`、`kickedNotify(reason)` 等）。 |
+| **A.5** | **串联** | main 或占位 UI 中：创建 WebSocketClient、ProtocolHandler；`ProtocolHandler::dataToSend` 连到 `WebSocketClient::sendMessage`；`WebSocketClient::messageReceived` 连到 `ProtocolHandler::handleMessage`。用 `auth.validate_token` 或占位请求验证往返是否正常。 |
 
-- **MainWindow：** 左侧为联系人/会话列表（ContactWidget），右侧为当前会话的 ChatWidget；登录后从 Settings 读取 user_id/token，可选发 `friend.*` 拉取好友列表、`conversation` 相关 cmd 拉取会话列表（具体 cmd 与后端约定）。
-- **设置：** 使用 `Settings::serverUrl()` 作为 WebSocket 地址，保证与 Gate 的 WebSocket 端口一致；Token 在后续需鉴权请求中可通过 Gate 与 Zone 的 metadata/约定带给后端（若 Gate 在转发时注入 token，则客户端只需在登录后保存并维持连接）。
+**可选：** 断线重连：在 `disconnected` 时若已登录则启动定时器，若干秒后用 `Settings::serverUrl()` 再次 `connect`；重连成功后可根据需要重发 `auth.validate_token` 或直接认为会话有效（Gate 会校验 token）。
+
+---
+
+#### 阶段 B：登录与主框架
+
+**目标：** 登录窗口、auth.login、主窗口骨架、心跳与连接状态。
+
+| 步骤 | 内容 | 实现要点 |
+|------|------|----------|
+| **B.1** | **登录窗口**（ui/loginwindow） | 输入框：服务器地址（默认 Settings::serverUrl()）、用户名、密码；按钮「登录」「注册」。点击登录时：若未连接则先 `WebSocketClient::connect(url)`，在 `connected()` 后再发登录请求。 |
+| **B.2** | **auth.login 请求** | 构造 `AuthLoginPayload`（username, password, device_id, device_type），device_id 可用本机唯一标识，device_type 固定如 `"desktop"`。`sendRequest("auth.login", payload, callback)`。 |
+| **B.3** | **登录响应处理** | 回调中若 `code != 0`：提示 `message` 或「登录失败」。若 `code == 0`：解析 payload 为 `AuthLoginResponsePayload`；若 `!success` 提示 `error`；否则 `Settings::saveLoginInfo(user_id, token)`，emit `loginSuccess(userId, token)`，关闭登录窗口并打开主窗口。 |
+| **B.4** | **主窗口骨架**（ui/mainwindow） | 左侧：联系人/会话列表（ContactWidget）；右侧：当前会话聊天区（ChatWidget）。登录后从 Settings 取 user_id/token 显示或用于后续请求。可增加「设置」入口修改 serverUrl。 |
+| **B.5** | **心跳** | 定时器（如 30s）发送 `heartbeat`（HeartbeatRequest 序列化），cmd=`"heartbeat"`；收到响应可更新状态栏「已连接」。若长时间无响应或断线，可提示「连接已断开」并触发重连（阶段 A 可选）。 |
+
+---
+
+#### 阶段 C：会话与聊天
+
+**目标：** 会话列表、选会话拉历史、发消息、收推送并刷新列表与消息区。
+
+| 步骤 | 内容 | 实现要点 |
+|------|------|----------|
+| **C.1** | **同步会话列表** | 登录后或主窗口显示时：`sendRequest("chat.sync_conversations", ChatSyncConversationsPayload{last_sync_time}, callback)`。回调中解析 `ChatSyncConversationsResponsePayload`，得到 `repeated ChatConversationPayload`，刷新 ContactWidget 的会话列表（chat_id, chat_type, peer_name, unread_count, last_content, last_timestamp 等）。 |
+| **C.2** | **选会话与历史** | 用户点击某会话时：设置当前 chat_id/chat_type，调用 `chat.get_history`（ChatGetHistoryPayload：chat_id, chat_type, before_msg_id 空, limit 如 50）。回调解析 `ChatGetHistoryResponsePayload`，在 ChatWidget 中展示 messages；可支持上拉加载更多（before_msg_id 取当前最早 msg_id）。 |
+| **C.3** | **发送消息** | 输入框发送：构造 `ChatSendMessagePayload`（from_user_id=当前用户, to_id=私聊对方 user_id 或群 group_id, chat_type, content, media_type 等），`sendRequest("chat.send_message", payload, callback)`。成功回调：将本条消息以「已发送」状态插入 ChatWidget（msg_id, timestamp）；失败则提示并保留可重发。 |
+| **C.4** | **新消息推送** | ProtocolHandler 收到 `cmd == "chat.new_message"`：解析 `NewMessageNotify`。若 chat_id 为当前会话：ChatWidget 追加一条消息（来自对方或自己多端）。若为其他会话：更新 ContactWidget 中该会话的未读数与 last_content；可选红点或 badge。 |
+| **C.5** | **撤回与已读** | 撤回：`chat.recall_message`（msg_id, user_id），成功后本地将对应消息改为「已撤回」或移除。推送 `chat.recall`：根据 msg_id 更新/移除对应气泡。已读：进入会话或滚动到底部时发 `chat.mark_read`（chat_id, chat_type, last_msg_id）；收到 `chat.read_receipt` 可更新对方已读位置（若 UI 需要）。 |
+| **C.6** | **离线消息** | 登录后或会话切换时可选发 `chat.pull_offline`（limit, cursor），将返回的 messages 按会话合并展示或插入历史；cursor 用于分页。 |
+
+---
+
+#### 阶段 D：好友、群组与文件
+
+**目标：** 好友列表与申请、群列表与群聊、文件上传/下载入口。
+
+| 步骤 | 内容 | 实现要点 |
+|------|------|----------|
+| **D.1** | **好友列表** | `friend.get_friends`（可选 group_id）→ `FriendGetFriendsResponsePayload`，在 ContactWidget 或独立「好友」页展示；`friend.get_requests` 展示申请列表，可接受/拒绝（`friend.handle_request`）。 |
+| **D.2** | **好友推送** | `friend.request` → 弹窗或列表项「某人请求加好友」；`friend.accepted` → 刷新好友列表。 |
+| **D.3** | **群组** | `group.get_user_groups` 拉取当前用户群列表；选群后 chat_id=group_id、chat_type=2，发消息/拉历史同私聊。创建群：`group.create`；邀请/踢人/退群：对应 `group.*` cmd。 |
+| **D.4** | **文件** | 发文件：先 `file.get_upload_token` 拿到 upload_url/token，再按 FileSvr 约定做 HTTP 或 gRPC 上传；上传完成后在聊天中发一条 `chat.send_message`（media_type=file, content=文件名, media_url 等）。下载：`file.get_file_url` 得 file_url，用 HTTP GET（支持 Range）下载并保存或预览。 |
+
+---
+
+#### 11.4.1 实现顺序小结
+
+```
+A.1 Settings → A.2 WebSocket → A.3/A.4 ProtocolHandler → A.5 串联
+    → B.1 登录窗口 → B.2/B.3 auth.login → B.4 主窗口 → B.5 心跳
+    → C.1 会话列表 → C.2 历史 → C.3 发消息 → C.4 新消息推送 → C.5 撤回/已读 → C.6 离线
+    → D.1 好友 → D.2 好友推送 → D.3 群组 → D.4 文件
+```
+
+**Proto 引用：** 客户端 CMake 需编译 `common.proto`、`gate.proto`、`zone.proto`（与 backend 共用或复制到 client/proto），生成 C++ 供 WebSocketClient、ProtocolHandler、各 UI 使用；保证与 Gate/Zone 的 proto 版本一致，避免字段不匹配。
+
+**错误与超时：** `sendRequest` 可增加超时（如 15s）：定时器到期若 request_id 仍在 pending 则 callback(code=超时, payload 空) 并移除；断线时可将所有 pending 回调为「网络错误」并清空。
 
 ### 11.5 打包发布
 
