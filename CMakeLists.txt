@@ -18,4 +18,4 @@ add_subdirectory(component/asynclogger)
 # 子项目
 # ============================================================================
 add_subdirectory(backend)
-# add_subdirectory(client)  # Qt 客户端，需安装 Qt5 后取消注释
+add_subdirectory(client)  # Qt 客户端，需安装 Qt5 后取消注释
