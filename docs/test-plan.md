@@ -3,6 +3,7 @@
 ### 1. 文档概述
 
 - **目标**：对 SwiftChatSystem 进行系统级验证，覆盖基础功能验收、安全测试及压力/性能测试，给出可直接执行的测试脚本示例与关键指标。
+- **单测入口**：在项目根目录执行 `make test`，会依次运行配置加载、AuthSvr、ZoneSvr、GateSvr 的验收（详见 `scripts/run-tests.sh`）。
 - **范围**：
   - 后端服务：`GateSvr`、`ZoneSvr`、`AuthSvr`、`OnlineSvr`、`FriendSvr`、`ChatSvr`、`FileSvr`
   - 客户端：Windows 桌面客户端（Qt）

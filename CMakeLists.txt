@@ -17,5 +17,15 @@ add_subdirectory(component/asynclogger)
 # ============================================================================
 # 子项目
 # ============================================================================
-add_subdirectory(backend)
-add_subdirectory(client)  # Qt 客户端，需安装 Qt5 后取消注释
+# 仅构建客户端（适用于 Windows 平台，无需后端依赖）
+option(SWIFT_BUILD_CLIENT_ONLY "Build only Qt client (no backend, for Windows)" OFF)
+
+if(NOT SWIFT_BUILD_CLIENT_ONLY)
+    add_subdirectory(backend)
+endif()
+
+# Qt 客户端（可选，需安装 Qt5 后启用）
+option(SWIFT_BUILD_CLIENT "Build Qt desktop client" OFF)
+if(SWIFT_BUILD_CLIENT OR SWIFT_BUILD_CLIENT_ONLY)
+    add_subdirectory(client)
+endif()

@@ -1,0 +1,35 @@
+# SwiftChat Windows 客户端交叉编译镜像
+# 基于 MXE + Qt5，在 Linux 下生成 Windows 可执行程序
+# 用法: docker build -f deploy/docker/Dockerfile.win-client -t swiftchat-win-builder .
+#       docker run --rm -v $(pwd):/src -w /src swiftchat-win-builder ./scripts/run-win-build.sh
+# 国内环境使用 docker.1ms.run 镜像避免 Docker Hub 超时（可覆写：--build-arg BASE_IMAGE=...）
+ARG BASE_IMAGE=docker.1ms.run/library/ubuntu:22.04
+FROM ${BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    ninja-build \
+    pkg-config \
+    python3 \
+    wget \
+    ca-certificates \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装 MXE 并构建 qtbase + qtwebsockets（约 30-60 分钟）
+# 国内环境：优先 Gitee 镜像，失败则用 GitHub 或代理
+ENV MXE_TARGETS=x86_64-w64-mingw32.static
+ENV MXE_DIR=/opt/mxe
+
+RUN git clone --depth 1 https://gitee.com/mirrors/mxe.git $MXE_DIR \
+    || git clone --depth 1 https://ghproxy.com/https://github.com/mxe/mxe.git $MXE_DIR \
+    || git clone --depth 1 https://github.com/mxe/mxe.git $MXE_DIR \
+    && cd $MXE_DIR \
+    && make -j$(nproc) qtbase qtwebsockets protobuf
+
+ENV PATH="$MXE_DIR/usr/bin:$PATH"
+
+WORKDIR /src

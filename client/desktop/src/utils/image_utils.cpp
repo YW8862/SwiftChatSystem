@@ -1,6 +1,7 @@
 #include "image_utils.h"
 #include <QImage>
 #include <QPainter>
+#include <QPainterPath>
 #include <QFileInfo>
 
 namespace ImageUtils {
