@@ -4,6 +4,47 @@
 
 ---
 
+## 路径与目录说明（项目放哪儿、依赖放哪儿）
+
+- **项目仓库（你的代码）**  
+  **放哪里都行**，不要求固定盘符。例如可以放在：
+  - `D:\SwiftChatSystem`
+  - `E:\dev\SwiftChatSystem`
+  - `C:\Users\你的用户名\Projects\SwiftChatSystem`  
+  只要保证仓库根目录下有 **`scripts`** 文件夹（里面有 `setup-env-windows.ps1`、`build-client-windows.ps1` 等），双击运行 **`scripts\build-client-windows.bat`** 或 **`scripts\setup-env-windows.bat`** 时，脚本会自动把当前目录识别为项目根目录。
+
+- **依赖（由准备脚本安装，全部在 E 盘）**
+  - **vcpkg**：`E:\vcpkg`（内含 Protobuf 等）
+  - **Qt**：`E:\Qt\5.15.2\mingw81_64`（及 `E:\Qt\Tools\mingw810_64` 等）
+
+- **构建输出**  
+  在**项目根目录**下生成 **`build-windows`**，可执行文件在：  
+  `build-windows\client\desktop\SwiftChat.exe`
+
+**目录关系示意：**
+
+```
+E:\
+├── vcpkg\                    ← 环境准备脚本安装
+│   └── installed\x64-mingw-dynamic\...
+└── Qt\
+    ├── 5.15.2\mingw81_64\   ← Qt 库（环境准备脚本或手动安装）
+    └── Tools\mingw810_64\    ← MinGW 编译器（随 Qt 安装）
+
+D:\SwiftChatSystem\           ← 项目仓库（路径可自选，不必在 E 盘）
+├── scripts\
+│   ├── setup-env-windows.ps1
+│   ├── setup-env-windows.bat
+│   ├── build-client-windows.ps1
+│   └── build-client-windows.bat
+├── client\
+├── backend\
+└── build-windows\            ← 构建后生成
+    └── client\desktop\SwiftChat.exe
+```
+
+---
+
 ## 一、构建机上需要准备的环境
 
 ### 1. 系统与权限

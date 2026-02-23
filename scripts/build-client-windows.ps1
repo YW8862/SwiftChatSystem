@@ -28,8 +28,9 @@ foreach ($d in $QtDirs) {
     }
 }
 if (-not $QtPath) {
-    Write-Host "未找到 Qt5，请设置 Qt5_DIR 或安装 Qt 到 E:\Qt\" -ForegroundColor Yellow
-    Write-Host "示例: `$env:Qt5_DIR='E:\Qt\5.15.2\mingw81_64'" -ForegroundColor Cyan
+    Write-Host "未找到 Qt5，请先安装 Qt 或设置 Qt5_DIR。" -ForegroundColor Yellow
+    Write-Host "  1) 若尚未准备环境，请先运行: scripts\setup-env-windows.bat （右键以管理员身份运行）" -ForegroundColor Cyan
+    Write-Host "  2) 或手动安装 Qt 5.15.2 MinGW 到 E:\Qt ，或设置: `$env:Qt5_DIR='E:\Qt\5.15.2\mingw81_64'" -ForegroundColor Cyan
     exit 1
 }
 
