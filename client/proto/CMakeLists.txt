@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(client_proto)
 
-# Prefer CONFIG mode (vcpkg) so we link to protobuf::libprotobuf (.lib), not the .dll
-find_package(Protobuf CONFIG REQUIRED)
+# Prefer CONFIG mode (vcpkg), fallback to MODULE (FindProtobuf) for system install
+find_package(Protobuf CONFIG QUIET)
 if(NOT TARGET protobuf::libprotobuf)
   find_package(Protobuf REQUIRED)
 endif()

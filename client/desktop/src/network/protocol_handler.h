@@ -25,6 +25,9 @@ public:
     
     // 处理收到的消息
     void handleMessage(const QByteArray& data);
+
+    // 断线时调用：将所有 pending 回调为网络错误并清空
+    void clearPendingRequests();
     
 signals:
     // 服务端推送的通知
@@ -32,6 +35,7 @@ signals:
     void recallNotify(const QByteArray& payload);
     void readReceiptNotify(const QByteArray& payload);
     void friendRequestNotify(const QByteArray& payload);
+    void friendAcceptedNotify(const QByteArray& payload);
     void userStatusChangeNotify(const QByteArray& payload);
     void kickedNotify(const QString& reason);
     
