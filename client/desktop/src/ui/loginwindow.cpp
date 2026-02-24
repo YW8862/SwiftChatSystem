@@ -5,6 +5,7 @@
 #include "gate.pb.h"
 
 #include <QDateTime>
+#include <QMessageBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLineEdit>
@@ -45,6 +46,7 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
     if (m_wsClient) {
         connect(m_wsClient, &WebSocketClient::connected, this, &LoginWindow::onConnected);
         connect(m_wsClient, &WebSocketClient::disconnected, this, &LoginWindow::onDisconnected);
+        connect(m_wsClient, &WebSocketClient::errorOccurred, this, &LoginWindow::onConnectionError);
         // 延迟连接，确保窗口与事件循环就绪
         QMetaObject::invokeMethod(this, "doConnect", Qt::QueuedConnection);
     }
@@ -104,9 +106,9 @@ void LoginWindow::onHeartbeatResponse(int code, const QByteArray& payload) {
 }
 
 void LoginWindow::onLoginClicked() {
-    // TODO: 实现 auth.login
+    QMessageBox::information(this, "登录", "登录功能开发中，请稍后。\n确保已连接服务器后再试。");
 }
 
 void LoginWindow::onRegisterClicked() {
-    // TODO: 实现注册
+    QMessageBox::information(this, "注册", "注册功能开发中，请稍后。");
 }

@@ -23,6 +23,7 @@ private slots:
     void doConnect();
     void onConnected();
     void onDisconnected();
+    void onConnectionError(const QString& error);
     void onHeartbeatResponse(int code, const QByteArray& payload);
     void onLoginClicked();
     void onRegisterClicked();
