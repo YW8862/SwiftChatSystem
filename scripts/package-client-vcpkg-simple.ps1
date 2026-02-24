@@ -37,6 +37,12 @@ if (-not (Test-Path $toolchain)) {
     exit 1
 }
 
+$vcpkgInstalled = Join-Path (Join-Path $vcpkgRoot 'installed') $triplet
+if (-not (Test-Path $vcpkgInstalled)) {
+    Write-Host ('vcpkg installed dir not found: ' + $vcpkgInstalled) -ForegroundColor Red
+    exit 1
+}
+
 Write-Host ('Project root : ' + $projectRoot) -ForegroundColor Cyan
 Write-Host ('VCPKG_ROOT  : ' + $vcpkgRoot) -ForegroundColor Cyan
 Write-Host ('Triplet     : ' + $triplet) -ForegroundColor Cyan
@@ -67,6 +73,7 @@ if ($gen -ne '') {
         '-G', $gen,
         '-DCMAKE_BUILD_TYPE=Release',
         ('-DCMAKE_TOOLCHAIN_FILE=' + $toolchain),
+        ('-DCMAKE_PREFIX_PATH=' + $vcpkgInstalled),
         ('-DVCPKG_TARGET_TRIPLET=' + $triplet),
         '-DSWIFT_BUILD_CLIENT_ONLY=ON',
         '-DSWIFT_BUILD_CLIENT=ON'
@@ -77,6 +84,7 @@ if ($gen -ne '') {
         '..',
         '-DCMAKE_BUILD_TYPE=Release',
         ('-DCMAKE_TOOLCHAIN_FILE=' + $toolchain),
+        ('-DCMAKE_PREFIX_PATH=' + $vcpkgInstalled),
         ('-DVCPKG_TARGET_TRIPLET=' + $triplet),
         '-DSWIFT_BUILD_CLIENT_ONLY=ON',
         '-DSWIFT_BUILD_CLIENT=ON'
