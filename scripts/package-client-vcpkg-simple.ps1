@@ -135,23 +135,23 @@ if (-not (Test-Path $distRoot)) {
 $distDirName = 'SwiftChat-' + $triplet
 $distDir = Join-Path $distRoot $distDirName
 if (Test-Path $distDir) {
-    # 若 SwiftChat 正在运行，会占用 dist 中的 DLL，导致无法删除
     Get-Process -Name 'SwiftChat' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 1
     $maxRetries = 3
+    $lastRetry = $maxRetries - 1
     for ($i = 0; $i -lt $maxRetries; $i++) {
         try {
             Remove-Item -Recurse -Force $distDir -ErrorAction Stop
             break
         } catch {
-            if ($i -eq $maxRetries - 1) {
+            if ($i -eq $lastRetry) {
                 Write-Host ''
-                Write-Host 'ERROR: 无法删除 dist 目录，文件可能被占用。' -ForegroundColor Red
-                Write-Host '  请关闭：1) 正在运行的 SwiftChat.exe  2) 打开该目录的资源管理器窗口' -ForegroundColor Yellow
-                Write-Host ('  目录: ' + $distDir) -ForegroundColor Yellow
+                Write-Host 'ERROR: Cannot remove dist folder, files may be in use.' -ForegroundColor Red
+                Write-Host '  Close: 1) SwiftChat.exe if running  2) Explorer windows showing this folder' -ForegroundColor Yellow
+                Write-Host ('  Path: ' + $distDir) -ForegroundColor Yellow
                 exit 1
             }
-            Write-Host ('  删除失败，2 秒后重试... (' + ($i + 1) + '/' + $maxRetries + ')') -ForegroundColor Yellow
+            Write-Host ('  Retry in 2s... (' + ($i + 1) + '/' + $maxRetries + ')') -ForegroundColor Yellow
             Start-Sleep -Seconds 2
         }
     }
