@@ -105,12 +105,24 @@ if ($gen -eq 'Ninja') {
 }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-if (-not (Test-Path $exeRelPath)) {
-    Write-Host ('Executable not found: ' + $exeRelPath) -ForegroundColor Red
+# Resolve exe path (VS puts it in Release\ or RelWithDebInfo\, Ninja puts it in client\desktop\)
+$exeFullPath = $null
+$exeCandidates = @(
+    (Join-Path (Get-Location) $exeRelPath),
+    (Join-Path (Get-Location) ('client\desktop\Release\' + [IO.Path]::GetFileName($exeRelPath))),
+    (Join-Path (Get-Location) ('client\desktop\RelWithDebInfo\' + [IO.Path]::GetFileName($exeRelPath))),
+    (Join-Path (Get-Location) ('client\desktop\MinSizeRel\' + [IO.Path]::GetFileName($exeRelPath)))
+)
+foreach ($p in $exeCandidates) {
+    if (Test-Path $p) {
+        $exeFullPath = $p
+        break
+    }
+}
+if (-not $exeFullPath) {
+    Write-Host ('Executable not found. Tried: ' + ($exeCandidates -join '; ')) -ForegroundColor Red
     exit 1
 }
-
-$exeFullPath = Join-Path (Get-Location) $exeRelPath
 Write-Host ('Build succeeded: ' + $exeFullPath) -ForegroundColor Green
 
 # ----- package to one folder: dist\SwiftChat-<triplet>\ -----
@@ -153,18 +165,21 @@ if ($windeployqt) {
     Write-Host '  - windeployqt not found; copying vcpkg bin DLLs' -ForegroundColor Yellow
 }
 
-# 3) Copy all DLLs from vcpkg installed bin into the same folder (Qt, protobuf, etc.)
+# 3) Copy ALL DLLs from vcpkg installed (bin + tools subdirs like Qt) into the same folder
 $vcpkgBin = Join-Path $vcpkgInstalled 'bin'
 if (Test-Path $vcpkgBin) {
-    $count = 0
-    Get-ChildItem -Path $vcpkgBin -Filter '*.dll' -ErrorAction SilentlyContinue | ForEach-Object {
-        Copy-Item $_.FullName $distDir -Force -ErrorAction SilentlyContinue
-        $count++
-    }
-    Write-Host ('  - Copied ' + $count + ' DLL(s) from vcpkg installed\...\bin') -ForegroundColor Gray
+    $dlls = Get-ChildItem -Path $vcpkgBin -Filter '*.dll' -ErrorAction SilentlyContinue
+    $dlls | ForEach-Object { Copy-Item $_.FullName $distDir -Force -ErrorAction SilentlyContinue }
+    Write-Host ('  - Copied ' + $dlls.Count + ' DLL(s) from vcpkg installed\...\bin') -ForegroundColor Gray
+}
+$vcpkgTools = Join-Path $vcpkgInstalled 'tools'
+if (Test-Path $vcpkgTools) {
+    $dlls = Get-ChildItem -Path $vcpkgTools -Recurse -Filter '*.dll' -ErrorAction SilentlyContinue
+    $dlls | ForEach-Object { Copy-Item $_.FullName $distDir -Force -ErrorAction SilentlyContinue }
+    Write-Host ('  - Copied ' + $dlls.Count + ' DLL(s) from vcpkg installed\...\tools') -ForegroundColor Gray
 }
 
-# 4) Copy DLLs from build vcpkg_installed bin (e.g. libprotobuf.dll) into the same folder
+# 4) Copy DLLs from build vcpkg_installed bin into the same folder
 $buildVcpkgBin = Join-Path (Join-Path $projectRoot $buildDir) ('vcpkg_installed\' + $triplet + '\bin')
 if (Test-Path $buildVcpkgBin) {
     $count = 0
@@ -175,8 +190,15 @@ if (Test-Path $buildVcpkgBin) {
     Write-Host ('  - Copied ' + $count + ' DLL(s) from build vcpkg_installed\...\bin') -ForegroundColor Gray
 }
 
+$fileCount = (Get-ChildItem -Path $distDir -File -ErrorAction SilentlyContinue).Count
+$dirCount = (Get-ChildItem -Path $distDir -Directory -ErrorAction SilentlyContinue).Count
 Write-Host '' -ForegroundColor Green
-Write-Host 'Packaging completed. All files are in one folder:' -ForegroundColor Green
+Write-Host 'Packaging completed. All files are in ONE folder:' -ForegroundColor Green
 Write-Host ('  ' + $distDir) -ForegroundColor White
-Write-Host 'You can zip this folder and run SwiftChat.exe directly on any Windows x64 machine.' -ForegroundColor Green
+Write-Host ('  (' + $fileCount + ' files, ' + $dirCount + ' subdirs e.g. platforms)') -ForegroundColor Gray
+Write-Host '' -ForegroundColor Yellow
+Write-Host '  >>> Run SwiftChat.exe from the folder above (dist\...).' -ForegroundColor Yellow
+Write-Host '  >>> Do NOT run from build\...\Release - that folder has no DLLs.' -ForegroundColor Yellow
+Write-Host '' -ForegroundColor Green
+Write-Host 'You can zip this folder and run SwiftChat.exe on any Windows x64 machine.' -ForegroundColor Green
 
