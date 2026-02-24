@@ -119,7 +119,8 @@ if (Test-Path $DistDir) {
 }
 New-Item -ItemType Directory -Path $DistDir | Out-Null
 
-Write-Host "`n[3/3] 打包到: $DistDir" -ForegroundColor Green
+Write-Host '' -ForegroundColor Green
+Write-Host ('[3/3] 打包到: ' + $DistDir) -ForegroundColor Green
 Copy-Item $ExeFullPath $DistDir
 
 # ---- 查找 windeployqt（若使用 Qt MSVC 版，vcpkg 通常会提供） ----
@@ -130,11 +131,11 @@ if (Test-Path $ToolsDir) {
 }
 
 if ($Windeployqt) {
-    Write-Host "Found windeployqt: $($Windeployqt.FullName)" -ForegroundColor Cyan
-    Write-Host "Running windeployqt to deploy Qt runtime..." -ForegroundColor Cyan
-    & $Windeployqt.FullName (Join-Path $DistDir "SwiftChat.exe")
+    Write-Host ('Found windeployqt: ' + $Windeployqt.FullName) -ForegroundColor Cyan
+    Write-Host 'Running windeployqt to deploy Qt runtime...' -ForegroundColor Cyan
+    & $Windeployqt.FullName (Join-Path $DistDir 'SwiftChat.exe')
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "windeployqt failed; will still copy DLLs from vcpkg bin." -ForegroundColor Yellow
+        Write-Host 'windeployqt failed; will still copy DLLs from vcpkg bin.' -ForegroundColor Yellow
     }
 } else {
     Write-Host 'windeployqt.exe not found; will copy DLLs from vcpkg bin.' -ForegroundColor Yellow
