@@ -143,10 +143,10 @@ if ($Windeployqt) {
 # ---- 从 vcpkg bin 目录复制 DLL（无论是否有 windeployqt，都执行一次，兜底） ----
 $BinDir = Join-Path $ToolsDir "bin"
 if (Test-Path $BinDir) {
-    Write-Host "Copying DLLs from vcpkg bin: $BinDir" -ForegroundColor Cyan
+    Write-Host ('Copying DLLs from vcpkg bin: ' + $BinDir) -ForegroundColor Cyan
     Copy-Item (Join-Path $BinDir "*.dll") $DistDir -ErrorAction SilentlyContinue
 } else {
-    Write-Host "vcpkg bin directory not found: $BinDir . Please verify triplet and VCPKG_ROOT." -ForegroundColor Yellow
+    Write-Host ('vcpkg bin directory not found: ' + $BinDir + ' . Please verify triplet and VCPKG_ROOT.') -ForegroundColor Yellow
 }
 
 Write-Host "" -ForegroundColor Green
