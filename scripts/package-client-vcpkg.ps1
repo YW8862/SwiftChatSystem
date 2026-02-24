@@ -137,14 +137,16 @@ if ($Windeployqt) {
         Write-Host "windeployqt failed; will still copy DLLs from vcpkg bin." -ForegroundColor Yellow
     }
 } else {
-    Write-Host "windeployqt.exe not found; will copy DLLs from vcpkg bin." -ForegroundColor Yellow
+    Write-Host 'windeployqt.exe not found; will copy DLLs from vcpkg bin.' -ForegroundColor Yellow
 }
 
 # ---- 从 vcpkg bin 目录复制 DLL（无论是否有 windeployqt，都执行一次，兜底） ----
-$BinDir = Join-Path $ToolsDir "bin"
+$BinDir = Join-Path $ToolsDir 'bin'
 if (Test-Path $BinDir) {
     Write-Host ('Copying DLLs from vcpkg bin: ' + $BinDir) -ForegroundColor Cyan
-    Copy-Item (Join-Path $BinDir "*.dll") $DistDir -ErrorAction SilentlyContinue
+    Get-ChildItem -Path $BinDir -Filter '*.dll' -ErrorAction SilentlyContinue | ForEach-Object {
+        Copy-Item $_.FullName $DistDir -ErrorAction SilentlyContinue
+    }
 } else {
     Write-Host ('vcpkg bin directory not found: ' + $BinDir + ' . Please verify triplet and VCPKG_ROOT.') -ForegroundColor Yellow
 }
