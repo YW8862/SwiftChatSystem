@@ -19,18 +19,7 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
 
     auto *layout = new QVBoxLayout(this);
 
-    // 服务器地址
-    auto *urlLayout = new QHBoxLayout();
-    urlLayout->addWidget(new QLabel("服务器:"));
-    auto *urlEdit = new QLineEdit(Settings::instance().serverUrl());
-    urlEdit->setPlaceholderText("ws://host:9090/ws");
-    urlLayout->addWidget(urlEdit, 1);
-
-    auto *connectBtn = new QPushButton("连接");
-    urlLayout->addWidget(connectBtn);
-    layout->addLayout(urlLayout);
-
-    auto *statusLabel = new QLabel("未连接");
+    auto *statusLabel = new QLabel("连接中...");
     statusLabel->setObjectName("statusLabel");
     layout->addWidget(statusLabel);
 
@@ -50,29 +39,14 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
     btnLayout->addWidget(regBtn);
     layout->addLayout(btnLayout);
 
-    // 保存 urlEdit/statusLabel 供槽函数使用
-    setProperty("urlEdit", QVariant::fromValue(urlEdit));
-    setProperty("statusLabel", QVariant::fromValue(statusLabel));
-
-    connect(connectBtn, &QPushButton::clicked, this, [this, urlEdit, statusLabel]() {
-        QString url = urlEdit->text().trimmed();
-        if (url.isEmpty()) {
-            statusLabel->setText("请输入服务器地址");
-            return;
-        }
-        Settings::instance().setServerUrl(url);
-        statusLabel->setText("连接中...");
-        if (m_wsClient) {
-            m_wsClient->connect(url);
-        }
-    });
-
     connect(loginBtn, &QPushButton::clicked, this, &LoginWindow::onLoginClicked);
     connect(regBtn, &QPushButton::clicked, this, &LoginWindow::onRegisterClicked);
 
     if (m_wsClient) {
         connect(m_wsClient, &WebSocketClient::connected, this, &LoginWindow::onConnected);
         connect(m_wsClient, &WebSocketClient::disconnected, this, &LoginWindow::onDisconnected);
+        // 固定连接 minikube 集群
+        m_wsClient->connect("ws://117.72.44.96:9090/ws");
     }
 }
 
