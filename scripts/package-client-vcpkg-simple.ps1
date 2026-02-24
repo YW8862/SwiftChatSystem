@@ -51,35 +51,37 @@ if (-not (Test-Path $buildDir)) {
 Set-Location $buildDir
 
 function Get-Generator {
+    # Prefer Ninja if available; otherwise fall back to a generic generator.
     if (Get-Command ninja -ErrorAction SilentlyContinue) {
         return 'Ninja'
     }
-    $candidates = @(
-        'Visual Studio 17 2022',
-        'Visual Studio 16 2019'
-    )
-    foreach ($g in $candidates) {
-        cmake -G $g .. 1>$null 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            return $g
-        }
-    }
-    Write-Host 'No suitable CMake generator found. Please install Ninja or Visual Studio 2019/2022.' -ForegroundColor Red
-    exit 1
+    # Fallback: let CMake pick a default generator (usually VS) by not specifying -G explicitly.
+    return ''
 }
 
 $gen = Get-Generator
-Write-Host ('Using CMake generator: ' + $gen) -ForegroundColor Green
-
-$cmakeArgs = @(
-    '..',
-    '-G', $gen,
-    '-DCMAKE_BUILD_TYPE=Release',
-    ('-DCMAKE_TOOLCHAIN_FILE=' + $toolchain),
-    ('-DVCPKG_TARGET_TRIPLET=' + $triplet),
-    '-DSWIFT_BUILD_CLIENT_ONLY=ON',
-    '-DSWIFT_BUILD_CLIENT=ON'
-)
+if ($gen -ne '') {
+    Write-Host ('Using CMake generator: ' + $gen) -ForegroundColor Green
+    $cmakeArgs = @(
+        '..',
+        '-G', $gen,
+        '-DCMAKE_BUILD_TYPE=Release',
+        ('-DCMAKE_TOOLCHAIN_FILE=' + $toolchain),
+        ('-DVCPKG_TARGET_TRIPLET=' + $triplet),
+        '-DSWIFT_BUILD_CLIENT_ONLY=ON',
+        '-DSWIFT_BUILD_CLIENT=ON'
+    )
+} else {
+    Write-Host 'Using CMake default generator (no -G specified).' -ForegroundColor Green
+    $cmakeArgs = @(
+        '..',
+        '-DCMAKE_BUILD_TYPE=Release',
+        ('-DCMAKE_TOOLCHAIN_FILE=' + $toolchain),
+        ('-DVCPKG_TARGET_TRIPLET=' + $triplet),
+        '-DSWIFT_BUILD_CLIENT_ONLY=ON',
+        '-DSWIFT_BUILD_CLIENT=ON'
+    )
+}
 
 Write-Host '' -ForegroundColor Green
 Write-Host '[1/3] Configure CMake (Release)...' -ForegroundColor Green
