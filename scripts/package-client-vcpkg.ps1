@@ -130,26 +130,26 @@ if (Test-Path $ToolsDir) {
 }
 
 if ($Windeployqt) {
-    Write-Host "发现 windeployqt: $($Windeployqt.FullName)" -ForegroundColor Cyan
-    Write-Host "运行 windeployqt 以补齐 Qt 依赖..." -ForegroundColor Cyan
+    Write-Host "Found windeployqt: $($Windeployqt.FullName)" -ForegroundColor Cyan
+    Write-Host "Running windeployqt to deploy Qt runtime..." -ForegroundColor Cyan
     & $Windeployqt.FullName (Join-Path $DistDir "SwiftChat.exe")
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "windeployqt 执行失败，继续使用 vcpkg bin 目录复制 DLL。" -ForegroundColor Yellow
+        Write-Host "windeployqt failed; will still copy DLLs from vcpkg bin." -ForegroundColor Yellow
     }
 } else {
-    Write-Host "未找到 windeployqt.exe，将从 vcpkg bin 目录复制所有 DLL。" -ForegroundColor Yellow
+    Write-Host "windeployqt.exe not found; will copy DLLs from vcpkg bin." -ForegroundColor Yellow
 }
 
 # ---- 从 vcpkg bin 目录复制 DLL（无论是否有 windeployqt，都执行一次，兜底） ----
 $BinDir = Join-Path $ToolsDir "bin"
 if (Test-Path $BinDir) {
-    Write-Host "从 vcpkg bin 目录复制 DLL: $BinDir" -ForegroundColor Cyan
+    Write-Host "Copying DLLs from vcpkg bin: $BinDir" -ForegroundColor Cyan
     Copy-Item (Join-Path $BinDir "*.dll") $DistDir -ErrorAction SilentlyContinue
 } else {
-    Write-Host "未找到 vcpkg bin 目录：$BinDir，请确认 triplet 与 VCPKG_ROOT 设置正确。" -ForegroundColor Yellow
+    Write-Host "vcpkg bin directory not found: $BinDir . Please verify triplet and VCPKG_ROOT." -ForegroundColor Yellow
 }
 
-Write-Host "`n打包完成。" -ForegroundColor Green
-Write-Host "最终目录: $DistDir" -ForegroundColor Green
-Write-Host "你可以把整个 $DistDir 目录打包压缩后发给用户，直接运行其中的 SwiftChat.exe 即可。" -ForegroundColor Green
+Write-Host "`nPackaging completed." -ForegroundColor Green
+Write-Host "Output directory: $DistDir" -ForegroundColor Green
+Write-Host "You can zip the whole folder and run SwiftChat.exe directly on target machines." -ForegroundColor Green
 
