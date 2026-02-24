@@ -1,7 +1,20 @@
 cmake_minimum_required(VERSION 3.16)
 project(client_proto)
 
-find_package(Protobuf REQUIRED)
+# Prefer CONFIG mode (vcpkg) so we link to protobuf::libprotobuf (.lib), not the .dll
+find_package(Protobuf CONFIG REQUIRED)
+if(NOT TARGET protobuf::libprotobuf)
+  find_package(Protobuf REQUIRED)
+endif()
+
+# Resolve protoc executable (CONFIG provides protobuf::protoc, MODULE provides Protobuf_PROTOC_EXECUTABLE)
+set(PROTOBUF_PROTOC_EXE "${Protobuf_PROTOC_EXECUTABLE}")
+if(TARGET protobuf::protoc)
+  get_target_property(PROTOBUF_PROTOC_EXE protobuf::protoc IMPORTED_LOCATION)
+  if(NOT PROTOBUF_PROTOC_EXE)
+    get_target_property(PROTOBUF_PROTOC_EXE protobuf::protoc IMPORTED_LOCATION_RELEASE)
+  endif()
+endif()
 
 # 客户端需要的 proto 文件（从各服务目录引用）
 set(PROTO_FILES
@@ -31,7 +44,7 @@ foreach(PROTO_FILE ${PROTO_FILES})
     
     add_custom_command(
         OUTPUT ${PROTO_SRC} ${PROTO_HDR}
-        COMMAND ${Protobuf_PROTOC_EXECUTABLE}
+        COMMAND ${PROTOBUF_PROTOC_EXE}
         ARGS --cpp_out=${PROTO_GEN_DIR}
              -I${CMAKE_SOURCE_DIR}/backend/common/proto
              -I${CMAKE_SOURCE_DIR}/backend/gatesvr/proto
@@ -49,9 +62,14 @@ add_library(${PROJECT_NAME} STATIC ${PROTO_SRCS} ${PROTO_HDRS})
 
 target_include_directories(${PROJECT_NAME} PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${Protobuf_INCLUDE_DIRS}
 )
+if(NOT TARGET protobuf::libprotobuf)
+  target_include_directories(${PROJECT_NAME} PUBLIC ${Protobuf_INCLUDE_DIRS})
+endif()
 
-target_link_libraries(${PROJECT_NAME} PUBLIC
-    ${Protobuf_LIBRARIES}
-)
+# Link to the import library (.lib), not the DLL, to avoid LNK1107 on Windows/vcpkg
+if(TARGET protobuf::libprotobuf)
+  target_link_libraries(${PROJECT_NAME} PUBLIC protobuf::libprotobuf)
+else()
+  target_link_libraries(${PROJECT_NAME} PUBLIC ${Protobuf_LIBRARIES})
+endif()
