@@ -19,7 +19,7 @@ if not exist "%PROJECT_ROOT%\client" (
 cd /d "%PROJECT_ROOT%"
 echo 项目根目录: %CD%
 echo.
-powershell -ExecutionPolicy Bypass -File "%SCRIPT_DIR%package-client-vcpkg.ps1"
+powershell -ExecutionPolicy Bypass -File "%SCRIPT_DIR%package-client-vcpkg-simple.ps1"
 echo.
 pause
 exit /b %ERRORLEVEL%
