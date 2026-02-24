@@ -113,7 +113,7 @@ if (-not (Test-Path $exeRelPath)) {
 $exeFullPath = Join-Path (Get-Location) $exeRelPath
 Write-Host ('Build succeeded: ' + $exeFullPath) -ForegroundColor Green
 
-# ----- package to dist -----
+# ----- package to one folder: dist\SwiftChat-<triplet>\ -----
 Set-Location $projectRoot
 $distRoot = 'dist'
 if (-not (Test-Path $distRoot)) {
@@ -128,40 +128,55 @@ if (Test-Path $distDir) {
 New-Item -ItemType Directory -Path $distDir | Out-Null
 
 Write-Host '' -ForegroundColor Green
-Write-Host ('[3/3] Copy executable to: ' + $distDir) -ForegroundColor Green
-Copy-Item $exeFullPath $distDir
+Write-Host '[3/3] Packaging: all files into one folder' -ForegroundColor Green
+Write-Host ('  Folder: ' + $distDir) -ForegroundColor Cyan
 
-# ----- try windeployqt from vcpkg -----
-$windeployqt = $null
+# 1) Copy executable
+Copy-Item $exeFullPath $distDir
+Write-Host '  - SwiftChat.exe copied' -ForegroundColor Gray
+
+# 2) Run windeployqt so Qt DLLs and plugins (e.g. platforms\) go into this same folder
 $toolsDir = Join-Path (Join-Path $vcpkgRoot 'installed') $triplet
+$windeployqt = $null
 if (Test-Path $toolsDir) {
     $windeployqt = Get-ChildItem -Path $toolsDir -Recurse -Filter 'windeployqt.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
 }
-
 if ($windeployqt) {
-    Write-Host ('Found windeployqt: ' + $windeployqt.FullName) -ForegroundColor Cyan
-    Write-Host 'Running windeployqt to deploy Qt runtime...' -ForegroundColor Cyan
+    Write-Host ('  - Running windeployqt (Qt runtime into same folder)...') -ForegroundColor Gray
     & $windeployqt.FullName (Join-Path $distDir 'SwiftChat.exe')
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host 'windeployqt failed; will still copy DLLs from vcpkg bin.' -ForegroundColor Yellow
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host '    windeployqt done' -ForegroundColor Gray
+    } else {
+        Write-Host '    windeployqt failed; will copy DLLs from vcpkg bin' -ForegroundColor Yellow
     }
 } else {
-    Write-Host 'windeployqt.exe not found; will copy DLLs from vcpkg bin only.' -ForegroundColor Yellow
+    Write-Host '  - windeployqt not found; copying vcpkg bin DLLs' -ForegroundColor Yellow
 }
 
-# ----- copy DLLs from vcpkg bin (fallback) -----
-$binDir = Join-Path $toolsDir 'bin'
-if (Test-Path $binDir) {
-    Write-Host ('Copying DLLs from vcpkg bin: ' + $binDir) -ForegroundColor Cyan
-    Get-ChildItem -Path $binDir -Filter '*.dll' -ErrorAction SilentlyContinue | ForEach-Object {
-        Copy-Item $_.FullName $distDir -ErrorAction SilentlyContinue
+# 3) Copy all DLLs from vcpkg installed bin into the same folder (Qt, protobuf, etc.)
+$vcpkgBin = Join-Path $vcpkgInstalled 'bin'
+if (Test-Path $vcpkgBin) {
+    $count = 0
+    Get-ChildItem -Path $vcpkgBin -Filter '*.dll' -ErrorAction SilentlyContinue | ForEach-Object {
+        Copy-Item $_.FullName $distDir -Force -ErrorAction SilentlyContinue
+        $count++
     }
-} else {
-    Write-Host ('vcpkg bin directory not found: ' + $binDir + ' . Please verify triplet and VCPKG_ROOT.') -ForegroundColor Yellow
+    Write-Host ('  - Copied ' + $count + ' DLL(s) from vcpkg installed\...\bin') -ForegroundColor Gray
+}
+
+# 4) Copy DLLs from build vcpkg_installed bin (e.g. libprotobuf.dll) into the same folder
+$buildVcpkgBin = Join-Path (Join-Path $projectRoot $buildDir) ('vcpkg_installed\' + $triplet + '\bin')
+if (Test-Path $buildVcpkgBin) {
+    $count = 0
+    Get-ChildItem -Path $buildVcpkgBin -Filter '*.dll' -ErrorAction SilentlyContinue | ForEach-Object {
+        Copy-Item $_.FullName $distDir -Force -ErrorAction SilentlyContinue
+        $count++
+    }
+    Write-Host ('  - Copied ' + $count + ' DLL(s) from build vcpkg_installed\...\bin') -ForegroundColor Gray
 }
 
 Write-Host '' -ForegroundColor Green
-Write-Host 'Packaging completed.' -ForegroundColor Green
-Write-Host ('Output directory: ' + $distDir) -ForegroundColor Green
-Write-Host 'You can zip the whole folder and run SwiftChat.exe directly on target machines.' -ForegroundColor Green
+Write-Host 'Packaging completed. All files are in one folder:' -ForegroundColor Green
+Write-Host ('  ' + $distDir) -ForegroundColor White
+Write-Host 'You can zip this folder and run SwiftChat.exe directly on any Windows x64 machine.' -ForegroundColor Green
 
