@@ -127,7 +127,7 @@ Copy-Item $ExeFullPath $DistDir
 $Windeployqt = $null
 $ToolsDir = Join-Path (Join-Path $VcpkgRoot "installed") $Triplet
 if (Test-Path $ToolsDir) {
-    $Windeployqt = Get-ChildItem -Path $ToolsDir -Recurse -Filter "windeployqt.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+    $Windeployqt = Get-ChildItem -Path $ToolsDir -Recurse -Filter 'windeployqt.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
 }
 
 if ($Windeployqt) {
