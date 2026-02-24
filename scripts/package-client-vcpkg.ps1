@@ -149,7 +149,8 @@ if (Test-Path $BinDir) {
     Write-Host "vcpkg bin directory not found: $BinDir . Please verify triplet and VCPKG_ROOT." -ForegroundColor Yellow
 }
 
-Write-Host "`nPackaging completed." -ForegroundColor Green
-Write-Host "Output directory: $DistDir" -ForegroundColor Green
-Write-Host "You can zip the whole folder and run SwiftChat.exe directly on target machines." -ForegroundColor Green
+Write-Host "" -ForegroundColor Green
+Write-Host 'Packaging completed.' -ForegroundColor Green
+Write-Host ('Output directory: ' + $DistDir) -ForegroundColor Green
+Write-Host 'You can zip the whole folder and run SwiftChat.exe directly on target machines.' -ForegroundColor Green
 
