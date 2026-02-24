@@ -14,12 +14,11 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
 
-# ----- vcpkg config -----
+# ----- vcpkg config (defaults: E:\vcpkg, x64-windows; override with env if needed) -----
 $vcpkgRoot = $env:VCPKG_ROOT
 if (-not $vcpkgRoot) {
-    Write-Host 'VCPKG_ROOT is not set. Please set it first, for example:' -ForegroundColor Red
-    Write-Host '  $env:VCPKG_ROOT = ''E:\vcpkg''' -ForegroundColor Yellow
-    exit 1
+    $vcpkgRoot = 'E:\vcpkg'
+    Write-Host ('VCPKG_ROOT not set, using default: ' + $vcpkgRoot) -ForegroundColor Gray
 }
 
 $triplet = $env:VCPKG_TRIPLET
@@ -29,6 +28,7 @@ if (-not $triplet) {
     } else {
         $triplet = 'x64-windows'
     }
+    Write-Host ('VCPKG_TRIPLET not set, using default: ' + $triplet) -ForegroundColor Gray
 }
 
 $toolchain = Join-Path $vcpkgRoot 'scripts\buildsystems\vcpkg.cmake'
