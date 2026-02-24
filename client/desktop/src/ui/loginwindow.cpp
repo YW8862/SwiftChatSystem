@@ -73,6 +73,14 @@ void LoginWindow::onDisconnected() {
     }
 }
 
+void LoginWindow::onConnectionError(const QString& error) {
+    QLabel *label = findChild<QLabel*>("statusLabel");
+    if (label) {
+        label->setText("连接失败: " + error);
+    }
+    QMessageBox::warning(this, "连接失败", "无法连接到服务器 ws://117.72.44.96:9090/ws\n\n" + error);
+}
+
 void LoginWindow::sendHeartbeat() {
     if (!m_protocol) return;
 
