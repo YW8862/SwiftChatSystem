@@ -190,6 +190,30 @@ if (Test-Path $buildVcpkgBin) {
     Write-Host ('  - Copied ' + $count + ' DLL(s) from build vcpkg_installed\...\bin') -ForegroundColor Gray
 }
 
+# 5) Ensure Qt platform plugin (platforms\qwindows.dll) exists - required to start Qt GUI
+$distPlatforms = Join-Path $distDir 'platforms'
+$qwindows = Join-Path $distPlatforms 'qwindows.dll'
+if (-not (Test-Path $qwindows)) {
+    $srcPlatforms = $null
+    foreach ($base in @($vcpkgInstalled, (Join-Path $vcpkgInstalled 'tools'))) {
+        if (-not (Test-Path $base)) { continue }
+        $plug = Get-ChildItem -Path $base -Recurse -Filter 'qwindows.dll' -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($plug) {
+            $srcPlatforms = $plug.DirectoryName
+            break
+        }
+    }
+    if ($srcPlatforms) {
+    if (-not (Test-Path $distPlatforms)) { New-Item -ItemType Directory -Path $distPlatforms -Force | Out-Null }
+        Get-ChildItem -Path $srcPlatforms -Filter '*.dll' -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName $distPlatforms -Force -ErrorAction SilentlyContinue
+        }
+        Write-Host ('  - Copied Qt platform plugin (platforms\qwindows.dll) from ' + $srcPlatforms) -ForegroundColor Gray
+    } else {
+        Write-Host '  - WARNING: qwindows.dll not found; app may show "no Qt platform plugin" error.' -ForegroundColor Yellow
+    }
+}
+
 $fileCount = (Get-ChildItem -Path $distDir -File -ErrorAction SilentlyContinue).Count
 $dirCount = (Get-ChildItem -Path $distDir -Directory -ErrorAction SilentlyContinue).Count
 Write-Host '' -ForegroundColor Green
