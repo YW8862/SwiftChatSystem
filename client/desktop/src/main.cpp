@@ -7,12 +7,23 @@
  */
 
 #include <QApplication>
+#include <QDebug>
+#include <cstdlib>
 #include "ui/loginwindow.h"
 #include "network/websocket_client.h"
 #include "network/protocol_handler.h"
 #include "utils/settings.h"
 
 int main(int argc, char *argv[]) {
+    // 若无可视化显示，提前提示
+    const char *display = std::getenv("DISPLAY");
+    if (!display || !*display) {
+        qWarning("SwiftChat: DISPLAY 未设置，Qt 需要图形环境才能显示窗口。");
+        qWarning("  本机桌面：通常自动有 DISPLAY。");
+        qWarning("  SSH 远程：请用 ssh -X 或 ssh -Y 启用 X11 转发，或使用 VNC/xvfb。");
+        qWarning("  xvfb 示例: Xvfb :99 -screen 0 1024x768x24 & DISPLAY=:99 ./SwiftChat");
+    }
+
     QApplication app(argc, argv);
 
     app.setApplicationName("SwiftChat");
@@ -37,6 +48,8 @@ int main(int argc, char *argv[]) {
 
     LoginWindow loginWindow(wsClient, protocol);
     loginWindow.show();
+    loginWindow.raise();
+    loginWindow.activateWindow();
 
     return app.exec();
 }

@@ -45,12 +45,18 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
     if (m_wsClient) {
         connect(m_wsClient, &WebSocketClient::connected, this, &LoginWindow::onConnected);
         connect(m_wsClient, &WebSocketClient::disconnected, this, &LoginWindow::onDisconnected);
-        // 固定连接 minikube 集群
-        m_wsClient->connect("ws://117.72.44.96:9090/ws");
+        // 延迟连接，确保窗口与事件循环就绪
+        QMetaObject::invokeMethod(this, "doConnect", Qt::QueuedConnection);
     }
 }
 
 LoginWindow::~LoginWindow() = default;
+
+void LoginWindow::doConnect() {
+    if (m_wsClient) {
+        m_wsClient->connect("ws://117.72.44.96:9090/ws");
+    }
+}
 
 void LoginWindow::onConnected() {
     if (findChild<QLabel*>("statusLabel")) {

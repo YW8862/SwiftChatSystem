@@ -20,6 +20,7 @@ signals:
     void loginSuccess(const QString& userId, const QString& token);
 
 private slots:
+    void doConnect();
     void onConnected();
     void onDisconnected();
     void onHeartbeatResponse(int code, const QByteArray& payload);
