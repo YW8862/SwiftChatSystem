@@ -11,34 +11,93 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QLabel>
+#include <QFont>
 
 LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
                          QWidget *parent)
     : QWidget(parent), m_wsClient(wsClient), m_protocol(protocol) {
     setWindowTitle("SwiftChat - 登录");
-    setFixedSize(400, 320);
+    setFixedSize(420, 400);
+    setMinimumWidth(380);
 
-    auto *layout = new QVBoxLayout(this);
+    const int margin = 32;
+    const int spacing = 14;
+
+    auto *mainLayout = new QVBoxLayout(this);
+    mainLayout->setContentsMargins(margin, margin, margin, margin);
+    mainLayout->setSpacing(spacing);
+
+    // 标题区
+    auto *titleLabel = new QLabel("SwiftChat");
+    QFont titleFont = titleLabel->font();
+    titleFont.setPointSize(22);
+    titleFont.setWeight(QFont::DemiBold);
+    titleLabel->setFont(titleFont);
+    titleLabel->setAlignment(Qt::AlignCenter);
+    mainLayout->addWidget(titleLabel);
 
     auto *statusLabel = new QLabel("连接中...");
     statusLabel->setObjectName("statusLabel");
-    layout->addWidget(statusLabel);
+    statusLabel->setAlignment(Qt::AlignCenter);
+    statusLabel->setStyleSheet("color: #666; font-size: 13px;");
+    mainLayout->addWidget(statusLabel);
 
-    // 登录区（占位）
-    layout->addWidget(new QLabel("用户名:"));
+    mainLayout->addSpacing(8);
+
+    // 表单区
+    auto *userLabel = new QLabel("用户名");
+    userLabel->setStyleSheet("color: #333; font-weight: 500;");
+    mainLayout->addWidget(userLabel);
     auto *userEdit = new QLineEdit();
-    layout->addWidget(userEdit);
-    layout->addWidget(new QLabel("密码:"));
+    userEdit->setPlaceholderText("请输入用户名");
+    userEdit->setMinimumHeight(40);
+    userEdit->setStyleSheet(
+        "QLineEdit { padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }"
+        "QLineEdit:focus { border-color: #1a73e8; }"
+    );
+    mainLayout->addWidget(userEdit);
+
+    mainLayout->addSpacing(4);
+
+    auto *passLabel = new QLabel("密码");
+    passLabel->setStyleSheet("color: #333; font-weight: 500;");
+    mainLayout->addWidget(passLabel);
     auto *passEdit = new QLineEdit();
     passEdit->setEchoMode(QLineEdit::Password);
-    layout->addWidget(passEdit);
+    passEdit->setPlaceholderText("请输入密码");
+    passEdit->setMinimumHeight(40);
+    passEdit->setStyleSheet(
+        "QLineEdit { padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }"
+        "QLineEdit:focus { border-color: #1a73e8; }"
+    );
+    mainLayout->addWidget(passEdit);
 
+    mainLayout->addSpacing(16);
+
+    // 按钮区
     auto *btnLayout = new QHBoxLayout();
+    btnLayout->setSpacing(12);
     auto *loginBtn = new QPushButton("登录");
+    loginBtn->setMinimumHeight(44);
+    loginBtn->setMinimumWidth(120);
+    loginBtn->setStyleSheet(
+        "QPushButton { background-color: #1a73e8; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; }"
+        "QPushButton:hover { background-color: #1557b0; }"
+        "QPushButton:pressed { background-color: #0d47a1; }"
+    );
     auto *regBtn = new QPushButton("注册");
+    regBtn->setMinimumHeight(44);
+    regBtn->setMinimumWidth(100);
+    regBtn->setStyleSheet(
+        "QPushButton { background-color: #f1f3f4; color: #333; border: 1px solid #dadce0; border-radius: 8px; font-size: 14px; }"
+        "QPushButton:hover { background-color: #e8eaed; }"
+        "QPushButton:pressed { background-color: #dadce0; }"
+    );
+    btnLayout->addStretch();
     btnLayout->addWidget(loginBtn);
     btnLayout->addWidget(regBtn);
-    layout->addLayout(btnLayout);
+    btnLayout->addStretch();
+    mainLayout->addLayout(btnLayout);
 
     connect(loginBtn, &QPushButton::clicked, this, &LoginWindow::onLoginClicked);
     connect(regBtn, &QPushButton::clicked, this, &LoginWindow::onRegisterClicked);
