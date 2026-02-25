@@ -137,7 +137,15 @@ void LoginWindow::onConnectionError(const QString& error) {
     if (label) {
         label->setText("连接失败: " + error);
     }
-    QMessageBox::warning(this, "连接失败", "无法连接到服务器 ws://117.72.44.96:9090/ws\n\n" + error);
+    QString detail = error;
+    if (error.contains("ConnectionRefused", Qt::CaseInsensitive) || error.contains("请求被拒绝")) {
+        detail += "\n\n常见原因：\n"
+                  "• 服务(GateSvr)未启动或未监听 9090\n"
+                  "• 防火墙拒绝该端口\n"
+                  "• 网关/路由器需开放 9090\n"
+                  "• Minikube：确认服务已暴露(NodePort/port-forward)";
+    }
+    QMessageBox::warning(this, "连接失败", "无法连接到服务器 ws://117.72.44.96:9090/ws\n\n" + detail);
 }
 
 void LoginWindow::sendHeartbeat() {

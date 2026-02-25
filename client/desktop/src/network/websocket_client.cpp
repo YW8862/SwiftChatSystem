@@ -45,6 +45,13 @@ void WebSocketClient::onBinaryMessageReceived(const QByteArray& message) {
 }
 
 void WebSocketClient::onError(QAbstractSocket::SocketError error) {
-    Q_UNUSED(error);
-    emit errorOccurred(m_socket->errorString());
+    QString msg = m_socket->errorString();
+    if (error == QAbstractSocket::ConnectionRefusedError) {
+        msg = QString("ConnectionRefused: %1").arg(msg);
+    } else if (error == QAbstractSocket::HostNotFoundError) {
+        msg = QString("HostNotFound: %1").arg(msg);
+    } else if (error == QAbstractSocket::SocketTimeoutError) {
+        msg = QString("Timeout: %1").arg(msg);
+    }
+    emit errorOccurred(msg);
 }
