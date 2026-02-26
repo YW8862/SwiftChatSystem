@@ -7,9 +7,7 @@
 
 ## 构建镜像
 
-依赖（gRPC、Protobuf、RocksDB 等）通过 vcpkg 在镜像内安装，**构建上下文必须为仓库根目录**。
-
-### 方式一：统一 Dockerfile（推荐）
+依赖（gRPC、Protobuf、RocksDB 等）在镜像内通过 apt 安装，**构建上下文必须为仓库根目录**。使用统一 Dockerfile，通过 `BUILD_TARGET` 指定要构建的服务。
 
 ```bash
 # 在仓库根目录执行
@@ -23,19 +21,7 @@ chmod +x deploy/docker/build-all.sh
 ./deploy/docker/build-all.sh
 ```
 
-可选环境变量：`REGISTRY`（默认 `swift`）、`TAG`（默认 `latest`）。
-
-### 方式二：各服务独立 Dockerfile
-
-```bash
-docker build -f backend/authsvr/Dockerfile -t swift/authsvr:latest .
-docker build -f backend/onlinesvr/Dockerfile -t swift/onlinesvr:latest .
-docker build -f backend/friendsvr/Dockerfile -t swift/friendsvr:latest .
-docker build -f backend/chatsvr/Dockerfile -t swift/chatsvr:latest .
-docker build -f backend/filesvr/Dockerfile -t swift/filesvr:latest .
-docker build -f backend/zonesvr/Dockerfile -t swift/zonesvr:latest .
-docker build -f backend/gatesvr/Dockerfile -t swift/gatesvr:latest .
-```
+可选环境变量：`REGISTRY`（默认 `swift`）、`TAG`（默认 `latest`）。国内镜像加速可设置 `BASE_IMAGE=docker.1ms.run/library/ubuntu:22.04`。
 
 ## Kubernetes 部署
 

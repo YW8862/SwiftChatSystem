@@ -3,6 +3,7 @@
 # 支持: authsvr, onlinesvr, friendsvr, chatsvr, filesvr, zonesvr, gatesvr
 
 ARG BUILD_TARGET=authsvr
+# 默认国内镜像（避免 Docker Hub 超时）；若 not found 可改 ubuntu:22.04 或其它镜像
 ARG BASE_IMAGE=docker.1ms.run/library/ubuntu:22.04
 
 # ========== 构建阶段 ==========

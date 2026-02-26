@@ -6,6 +6,7 @@
 # 构建目录 (Build directories)
 # ============================================================================
 /build/
+/build-ckeck/
 /cmake-build-*/
 /out/
 /.build/

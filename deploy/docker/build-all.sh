@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 在仓库根目录执行，构建所有后端镜像
-# 默认使用国内镜像源，避免 Docker Hub 超时；海外环境可: export BASE_IMAGE=ubuntu:22.04
+# 默认国内镜像，避免 Docker Hub 超时
+# 若 not found 可试: BASE_IMAGE=registry.cn-hangzhou.aliyuncs.com/library/ubuntu:22.04 或 ubuntu:22.04
 set -e
 cd "$(dirname "$0")/../.."
 
