@@ -1,15 +1,23 @@
 # 使用 build 目录的 compile_commands.json（与真实编译一致）
-# 以下 Add 作为后备，保证编辑器能解析头文件（编译正常但 IDE 报错时生效）
+# 以下 Add 作为后备：compile_commands 里没有的（如 backend）用这些路径解析，保证跳转可用
 CompileFlags:
   CompilationDatabase: build
   Add:
     - -I/usr/include
     - -I/usr/include/rocksdb
     - -I/usr/include/nlohmann
-    # common 头（swift/utils.h、swift/error_code.h 等）
+    # common 头（swift/utils.h、swift/error_code.h、swift/log_helper.h 等）
     - -Ibackend/common/include
     # proto 生成头（auth.grpc.pb.h 等），build 一次后存在
     - -Ibuild/backend/common/proto/generated
+    # 各后端服务的 internal 头（config、handler、service、store 等）
+    - -Ibackend/chatsvr/internal
+    - -Ibackend/authsvr/internal
+    - -Ibackend/gatesvr/internal
+    - -Ibackend/friendsvr/internal
+    - -Ibackend/filesvr/internal
+    - -Ibackend/onlinesvr/internal
+    - -Ibackend/zonesvr/internal
   Remove:
     - -W*
 

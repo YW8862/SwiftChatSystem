@@ -2,6 +2,12 @@ cmake_minimum_required(VERSION 3.16)
 project(swift_proto)
 
 # 查找 Protobuf 和 gRPC
+# CMake 4.x 的 FindProtobuf 有时不设置 Protobuf_LIBRARIES（或缓存为 NOTFOUND），导致 REQUIRED 报错；先清缓存再 find，确保有值
+unset(Protobuf_LIBRARIES CACHE)
+find_library(Protobuf_LIBRARIES NAMES protobuf)
+if(Protobuf_LIBRARIES)
+  set(Protobuf_LIBRARIES "${Protobuf_LIBRARIES}" CACHE STRING "Protobuf library" FORCE)
+endif()
 find_package(Protobuf REQUIRED)
 
 # 查找 gRPC 插件
@@ -10,7 +16,11 @@ find_library(GRPC_LIBRARY grpc++ REQUIRED)
 find_library(GRPC_LIBRARY_GRPC grpc REQUIRED)
 
 message(STATUS "Protobuf version: ${Protobuf_VERSION}")
-message(STATUS "Protobuf include: ${Protobuf_INCLUDE_DIRS}")
+if(Protobuf_INCLUDE_DIRS)
+  message(STATUS "Protobuf include: ${Protobuf_INCLUDE_DIRS}")
+elseif(TARGET protobuf::libprotobuf)
+  message(STATUS "Protobuf: using target protobuf::libprotobuf")
+endif()
 message(STATUS "gRPC plugin: ${GRPC_CPP_PLUGIN}")
 
 # Proto 文件目录 - 使用绝对路径
@@ -92,14 +102,13 @@ add_library(swift_proto STATIC
 
 target_include_directories(swift_proto PUBLIC
     ${PROTO_OUTPUT_DIR}
-    ${Protobuf_INCLUDE_DIRS}
 )
-
-target_link_libraries(swift_proto PUBLIC
-    ${Protobuf_LIBRARIES}
-    ${GRPC_LIBRARY}
-    ${GRPC_LIBRARY_GRPC}
-)
+if(TARGET protobuf::libprotobuf)
+  target_link_libraries(swift_proto PUBLIC protobuf::libprotobuf ${GRPC_LIBRARY} ${GRPC_LIBRARY_GRPC})
+else()
+  target_include_directories(swift_proto PUBLIC ${Protobuf_INCLUDE_DIRS})
+  target_link_libraries(swift_proto PUBLIC ${Protobuf_LIBRARIES} ${GRPC_LIBRARY} ${GRPC_LIBRARY_GRPC})
+endif()
 
 # 导出头文件目录
 set(SWIFT_PROTO_INCLUDE_DIR ${PROTO_OUTPUT_DIR} PARENT_SCOPE)
