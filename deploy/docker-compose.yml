@@ -124,7 +124,8 @@ services:
       - ZONESVR_CHAT_SVR_ADDR=chatsvr:9098
       - ZONESVR_FILE_SVR_ADDR=filesvr:9100
       - ZONESVR_GATE_SVR_ADDR=gatesvr:9091
-      - ZONESVR_SESSION_STORE_TYPE=memory
+      - ZONESVR_SESSION_STORE_TYPE=redis
+      - ZONESVR_REDIS_URL=redis://redis:6379
       - ZONESVR_SESSION_EXPIRE_SECONDS=3600
       - ZONESVR_LOG_DIR=/data/logs
       - ZONESVR_LOG_LEVEL=INFO
@@ -136,6 +137,13 @@ services:
       - friendsvr
       - chatsvr
       - filesvr
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
     restart: unless-stopped
 
   gatesvr:

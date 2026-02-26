@@ -13,7 +13,15 @@ RUN cd /app && /vcpkg/vcpkg install --triplet x64-linux \
     && make gatesvr -j$(nproc)
 
 FROM ubuntu:22.04
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libstdc++6 && rm -rf /var/lib/apt/lists/*
+# 运行时 + 轻量调试工具（容器内 kubectl exec 排障用）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libstdc++6 \
+    curl \
+    iproute2 \
+    procps \
+    netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/build/backend/gatesvr/gatesvr .
 RUN mkdir -p /data/logs && chmod +x /app/gatesvr

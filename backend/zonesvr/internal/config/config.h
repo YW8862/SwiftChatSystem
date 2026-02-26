@@ -17,7 +17,7 @@ struct ZoneConfig {
     std::string gate_svr_addr = "localhost:9091";  // 推送消息到 Gate 时用
 
     // 会话存储配置
-    std::string session_store_type = "memory";  // memory / redis
+    std::string session_store_type = "redis";  // memory / redis
     std::string redis_url = "redis://localhost:6379";
 
     // 会话过期时间（秒）

@@ -61,9 +61,14 @@ ARG BASE_IMAGE=docker.1ms.run/library/ubuntu:22.04
 FROM ${BASE_IMAGE}
 
 # 运行时依赖（与构建阶段使用的系统库一致，确保 RocksDB 等动态库存在）
+# 并安装轻量调试工具，便于 kubectl exec 进容器排障：curl/ss/ps/nc
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libstdc++6 \
+    curl \
+    iproute2 \
+    procps \
+    netcat-openbsd \
     libgrpc++-dev \
     libprotobuf-dev \
     librocksdb-dev \
