@@ -111,6 +111,11 @@ int main(int argc, char* argv[]) {
         config_file = env ? env : "gatesvr.conf";
     }
 
+    if (!swift::log::InitFromEnv("gatesvr")) {
+        std::cerr << "Failed to initialize logger!" << std::endl;
+        return 1;
+    }
+
     swift::gate::GateConfig config = swift::gate::LoadConfig(config_file);
 
     // GateService 与 Handler
@@ -189,5 +194,6 @@ int main(int argc, char* argv[]) {
     if (heartbeat_thread.joinable())
         heartbeat_thread.join();
 
+    swift::log::Shutdown();
     return 0;
 }

@@ -13,7 +13,9 @@
 #include <grpcpp/security/server_credentials.h>
 #include <grpcpp/server.h>
 #include <grpcpp/server_builder.h>
+#include <swift/log_helper.h>
 
+#include "async_logger/async_logger.h"
 #include "config/config.h"
 #include "handler/zone_handler.h"
 #include "interceptor/internal_secret_processor.h"
@@ -23,8 +25,14 @@
 int main(int argc, char* argv[]) {
     std::string config_file = (argc > 1) ? argv[1] : "";
     if (config_file.empty()) {
+        LogInfo("ZoneSvr Using config file: " << config_file);
         const char* env = std::getenv("ZONESVR_CONFIG");
         config_file = env ? env : "zonesvr.conf";
+    }
+
+    if (!swift::log::InitFromEnv("zonesvr")) {
+        LogError("ZoneSvr Failed to initialize logger!");
+        return 1;
     }
 
     swift::zone::ZoneConfig config = swift::zone::LoadConfig(config_file);
@@ -32,7 +40,7 @@ int main(int argc, char* argv[]) {
     // Step 13：先 SystemManager Init，再组装 ZoneService / Handler，最后 ServerBuilder 先认证再 RegisterService
     swift::zone::SystemManager manager;
     if (!manager.Init(config)) {
-        std::cerr << "ZoneSvr SystemManager Init failed" << std::endl;
+        LogError("ZoneSvr SystemManager Init failed");
         return 1;
     }
 
@@ -44,23 +52,27 @@ int main(int argc, char* argv[]) {
     std::string addr = config.host + ":" + std::to_string(config.port);
     auto creds = grpc::InsecureServerCredentials();
     if (!config.internal_secret.empty()) {
+        LogInfo("ZoneSvr Using internal secret");
         creds->SetAuthMetadataProcessor(
             std::make_shared<swift::zone::InternalSecretProcessor>(config.internal_secret));
     }
 
     grpc::ServerBuilder builder;
     builder.AddListeningPort(addr, creds);
+    LogInfo("ZoneSvr Listening on " << addr);
     // 先认证（已通过 SetAuthMetadataProcessor 注入），再注册服务
     builder.RegisterService(handler.get());
     auto server = builder.BuildAndStart();
     if (!server) {
-        std::cerr << "ZoneSvr failed to start on " << addr << std::endl;
+        LogError("ZoneSvr failed to start on " << addr);
+        swift::log::Shutdown();
         return 1;
     }
-    std::cout << "ZoneSvr listening on " << addr
+    LogInfo("ZoneSvr listening on " << addr
               << (config.internal_secret.empty() ? " (no internal auth)" : " (internal secret required)")
-              << std::endl;
+              );
     server->Wait();
     manager.Shutdown();
+    swift::log::Shutdown();
     return 0;
 }

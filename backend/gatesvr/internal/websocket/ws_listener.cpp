@@ -33,6 +33,21 @@ void fail(beast::error_code ec, const char* what) {
     std::cerr << "GateSvr ws: " << what << ": " << ec.message() << std::endl;
 }
 
+std::string HttpVersionToString(unsigned version) {
+    std::ostringstream os;
+    os << "HTTP/" << (version / 10) << "." << (version % 10);
+    return os.str();
+}
+
+std::string RemoteEndpointString(const websocket::stream<beast::tcp_stream>& ws) {
+    beast::error_code ec;
+    auto ep = ws.next_layer().socket().remote_endpoint(ec);
+    if (ec) return "unknown";
+    std::ostringstream os;
+    os << ep.address().to_string() << ":" << ep.port();
+    return os.str();
+}
+
 class WsSession : public std::enable_shared_from_this<WsSession> {
 public:
     WsSession(tcp::socket&& socket,
@@ -60,12 +75,50 @@ public:
 private:
     void OnRun() {
         ws_.set_option(websocket::stream_base::timeout::suggested(beast::role_type::server));
-        ws_.async_accept(beast::bind_front_handler(&WsSession::OnAccept, shared_from_this()));
+        DoReadHandshake();
+    }
+
+    void DoReadHandshake() {
+        http::async_read(ws_.next_layer(), handshake_buffer_, handshake_req_,
+            beast::bind_front_handler(&WsSession::OnReadHandshake, shared_from_this()));
+    }
+
+    void OnReadHandshake(beast::error_code ec, std::size_t bytes_transferred) {
+        (void)bytes_transferred;
+        if (ec) {
+            std::cerr << "GateSvr ws: handshake-read: " << ec.message()
+                      << ", remote=" << RemoteEndpointString(ws_) << std::endl;
+            return;
+        }
+
+        const std::string request_line = std::string(handshake_req_.method_string())
+            + " " + std::string(handshake_req_.target())
+            + " " + HttpVersionToString(handshake_req_.version());
+
+        if (!websocket::is_upgrade(handshake_req_)) {
+            std::cerr << "GateSvr ws: handshake-invalid: not websocket upgrade"
+                      << ", remote=" << RemoteEndpointString(ws_)
+                      << ", request_line=\"" << request_line << "\""
+                      << std::endl;
+            beast::error_code ignored_ec;
+            ws_.next_layer().socket().shutdown(tcp::socket::shutdown_both, ignored_ec);
+            ws_.next_layer().socket().close(ignored_ec);
+            return;
+        }
+
+        ws_.async_accept(handshake_req_,
+            beast::bind_front_handler(&WsSession::OnAccept, shared_from_this()));
     }
 
     void OnAccept(beast::error_code ec) {
         if (ec) {
-            fail(ec, "accept");
+            const std::string request_line = std::string(handshake_req_.method_string())
+                + " " + std::string(handshake_req_.target())
+                + " " + HttpVersionToString(handshake_req_.version());
+            std::cerr << "GateSvr ws: accept: " << ec.message()
+                      << ", remote=" << RemoteEndpointString(ws_)
+                      << ", request_line=\"" << request_line << "\""
+                      << std::endl;
             return;
         }
         service_->AddConnection(conn_id_);
@@ -142,6 +195,8 @@ private:
     }
 
     websocket::stream<beast::tcp_stream> ws_;
+    beast::flat_buffer handshake_buffer_;
+    http::request<http::string_body> handshake_req_;
     beast::flat_buffer buffer_;
     std::shared_ptr<GateService> service_;
     std::shared_ptr<WebSocketHandler> ws_handler_;

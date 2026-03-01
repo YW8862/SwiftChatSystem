@@ -4,7 +4,7 @@ metadata:
   name: swift-config
 data:
   # ---------- 通用 ----------
-  LOG_LEVEL: "INFO"
+  LOG_LEVEL: "DEBUG"
   LOG_DIR: "/data/logs"
 
   # ---------- ZoneSvr（路由与会话） ----------
