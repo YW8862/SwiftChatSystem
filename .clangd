@@ -6,6 +6,13 @@ CompileFlags:
     - -I/usr/include
     - -I/usr/include/rocksdb
     - -I/usr/include/nlohmann
+    # Qt5 桌面客户端（QApplication、QDebug 等）
+    - -I/usr/include/x86_64-linux-gnu/qt5
+    - -I/usr/include/x86_64-linux-gnu/qt5/QtCore
+    - -I/usr/include/x86_64-linux-gnu/qt5/QtGui
+    - -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets
+    - -I/usr/include/x86_64-linux-gnu/qt5/QtNetwork
+    - -I/usr/include/x86_64-linux-gnu/qt5/QtWebSockets
     # common 头（swift/utils.h、swift/error_code.h、swift/log_helper.h 等）
     - -Ibackend/common/include
     # proto 生成头（auth.grpc.pb.h 等），build 一次后存在

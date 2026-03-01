@@ -141,6 +141,26 @@ kubectl -n swift-chat patch deployment gatesvr -p '{"spec":{"template":{"spec":{
 
 ### 6.1 WebSocket（客户端连接 Gate）
 
+**方式一：将本机 9090 端口转发到 gatesvr（推荐）**
+
+若希望在本机直接使用 `ws://127.0.0.1:9090/ws` 连接（与 docker-compose 一致），可用 `kubectl port-forward` 将宿主机 9090 转发到集群内 gatesvr 的 9090：
+
+```bash
+# 在项目 deploy/k8s 目录或任意处执行（需已部署且 gatesvr Pod 正常）
+./deploy/k8s/port-forward-gatesvr.sh
+# 或直接：
+kubectl port-forward -n swift-chat svc/gatesvr 9090:9090
+```
+
+保持该终端运行；客户端连接 `ws://127.0.0.1:9090/ws` 即可。若需允许其他机器访问本机 9090，可：
+
+```bash
+./deploy/k8s/port-forward-gatesvr.sh --all
+# 或：kubectl port-forward --address 0.0.0.0 -n swift-chat svc/gatesvr 9090:9090
+```
+
+**方式二：通过 NodePort 访问**
+
 Gate 的 Service 已配置为 NodePort，端口 30090：
 
 ```bash
@@ -148,15 +168,15 @@ minikube service -n swift-chat gatesvr --url
 # 会输出类似 http://192.168.49.2:30090；WebSocket 实际为 ws://<该 IP>:30090
 ```
 
-或使用隧道（在宿主机直接访问 localhost:9090）：
+浏览器或客户端连接：`ws://<minikube ip>:30090`（NodePort 为 30090 时）。
+
+**方式三：minikube tunnel（LoadBalancer）**
 
 ```bash
 minikube tunnel
 # 另开终端
 kubectl -n swift-chat get svc gatesvr   # 查看 NodePort 或 LoadBalancer
 ```
-
-浏览器或客户端连接：`ws://<minikube ip>:30090`（NodePort 为 30090 时）。
 
 ### 6.2 查看日志与排错
 
@@ -242,9 +262,9 @@ for s in authsvr onlinesvr friendsvr chatsvr filesvr zonesvr gatesvr; do minikub
 # 4. 部署
 kubectl apply -k deploy/k8s
 
-# 5. 等待 Pod 就绪后，获取 Gate 的访问地址
+# 5. 等待 Pod 就绪后，将本机 9090 转发到 gatesvr（可选，便于客户端用 ws://127.0.0.1:9090/ws）
 kubectl -n swift-chat get pods
-minikube service -n swift-chat gatesvr --url
+./deploy/k8s/port-forward-gatesvr.sh   # 或：minikube service -n swift-chat gatesvr --url 用 NodePort
 ```
 
-客户端将 WebSocket 地址配置为上述输出的 `ws://<host>:30090` 即可连接。
+客户端使用 port-forward 时连接 `ws://127.0.0.1:9090/ws`；使用 NodePort 时连接 `ws://<minikube service --url 输出的 host>:30090`。
