@@ -1,4 +1,5 @@
 @echo off
+$env:VCPKG_ROOT="E:\vcpkg"
 chcp 65001 >nul
 REM SwiftChatSystem Windows client build launcher
 REM Usage: double-click, or run from scripts folder
