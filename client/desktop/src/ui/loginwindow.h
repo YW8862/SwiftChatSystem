@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QWidget>
+#include <QPixmap>
 #include <memory>
 
 class WebSocketClient;
@@ -8,6 +9,9 @@ class ProtocolHandler;
 class QLineEdit;
 class QLabel;
 class QPushButton;
+class QToolButton;
+class QStackedWidget;
+class QTimer;
 class MainWindow;
 
 /**
@@ -36,9 +40,21 @@ private slots:
 private:
     void sendHeartbeat();
     void setLoginUiEnabled(bool enabled);
+    void showDisconnectedState(const QString& reason);
+    void showLoginState();
+    void startRefreshAnimation();
+    void stopRefreshAnimation();
 
     WebSocketClient *m_wsClient = nullptr;
     ProtocolHandler *m_protocol = nullptr;
+    QStackedWidget* m_stacked = nullptr;
+    QWidget* m_disconnectedPage = nullptr;
+    QLabel* m_disconnectedReasonLabel = nullptr;
+    QToolButton* m_refreshBtn = nullptr;
+    QTimer* m_refreshSpinTimer = nullptr;
+    QPixmap m_refreshIcon;
+    int m_refreshAngle = 0;
+    QWidget* m_loginPage = nullptr;
     QLineEdit* m_userEdit = nullptr;
     QLineEdit* m_passEdit = nullptr;
     QLabel* m_statusLabel = nullptr;

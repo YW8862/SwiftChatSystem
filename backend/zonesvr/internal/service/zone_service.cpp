@@ -276,7 +276,7 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleAuth(
         return result;
     }
     if (cmd == "auth.register") {
-        AuthRegisterPayload req;
+        swift::zone::AuthRegisterPayload req;
         if (!req.ParseFromString(payload)) {
             SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
             return result;
@@ -284,7 +284,7 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleAuth(
         AuthRegisterResult reg = auth->Register(req.username(), req.password(),
                                                 req.nickname(), req.email(),
                                                 req.avatar_url());
-        AuthRegisterResponsePayload resp_pb;
+        swift::zone::AuthRegisterResponsePayload resp_pb;
         resp_pb.set_success(reg.success);
         resp_pb.set_user_id(reg.user_id);
         resp_pb.set_error(reg.error);

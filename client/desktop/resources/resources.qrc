@@ -3,5 +3,6 @@
     <qresource prefix="/">
         <!-- 图标与图片：将文件放入 icons/、images/ 后在此添加 -->
         <!-- 例如：<file>icons/app.png</file> -->
+        <file>icons/reflash.png</file>
     </qresource>
 </RCC>

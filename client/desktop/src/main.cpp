@@ -8,6 +8,7 @@
 
 #include <QApplication>
 #include <QDebug>
+#include <QStyleFactory>
 #include <cstdlib>
 #include <iostream>
 #include "ui/loginwindow.h"
@@ -18,10 +19,23 @@
 
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
+    app.setStyle(QStyleFactory::create("Fusion"));
 
     app.setApplicationName("SwiftChat");
     app.setApplicationVersion("0.1.0");
     app.setOrganizationName("Swift");
+    app.setStyleSheet(
+        "QWidget { background: #f3f6fb; color: #1f2430; font-family: 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif; }"
+        "QToolTip { background: #1f2430; color: #ffffff; border: none; padding: 6px; border-radius: 6px; }"
+        "QScrollBar:vertical { background: transparent; width: 8px; margin: 4px 0 4px 0; }"
+        "QScrollBar::handle:vertical { background: #c5cede; border-radius: 4px; min-height: 24px; }"
+        "QScrollBar::handle:vertical:hover { background: #a7b4c9; }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }"
+        "QScrollBar:horizontal { background: transparent; height: 8px; margin: 0 4px 0 4px; }"
+        "QScrollBar::handle:horizontal { background: #c5cede; border-radius: 4px; min-width: 24px; }"
+        "QScrollBar::handle:horizontal:hover { background: #a7b4c9; }"
+        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }"
+    );
 
     if (!client::logger::Init()) {
         std::cerr << "Failed to initialize client logger." << std::endl;

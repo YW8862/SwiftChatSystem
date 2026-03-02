@@ -28,6 +28,7 @@ signals:
 
 private:
     void refreshList();
+    QWidget* buildConversationItemWidget(const Conversation& conversation) const;
     void onItemClicked(QListWidgetItem* item);
 
     QListWidget* m_listWidget = nullptr;

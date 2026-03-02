@@ -44,10 +44,16 @@ private slots:
     
 private:
     void refreshMessageList();
+    void addMessageItem(const Message& message);
+    QWidget* buildMessageItemWidget(const Message& message) const;
+    void updateHeader();
+    QString buildChatTitle() const;
 
     QString m_chatId;
     int m_chatType = 1;  // 1=私聊, 2=群聊
     QString m_currentUserId;
+    QLabel* m_titleLabel = nullptr;
+    QLabel* m_subtitleLabel = nullptr;
     QListWidget* m_messageList = nullptr;
     QLineEdit* m_input = nullptr;
     QPushButton* m_sendBtn = nullptr;

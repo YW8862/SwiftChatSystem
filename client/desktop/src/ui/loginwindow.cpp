@@ -7,14 +7,20 @@
 #include "zone.pb.h"
 
 #include <QDateTime>
+#include <QFrame>
 #include <QHostInfo>
+#include <QIcon>
 #include <QMessageBox>
+#include <QTimer>
+#include <QTransform>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QLabel>
 #include <QFont>
+#include <QStackedWidget>
+#include <QToolButton>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -24,90 +30,180 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
                          QWidget *parent)
     : QWidget(parent), m_wsClient(wsClient), m_protocol(protocol) {
     setWindowTitle("SwiftChat - 登录");
-    setFixedSize(420, 400);
-    setMinimumWidth(380);
-
-    const int margin = 32;
-    const int spacing = 14;
+    setFixedSize(460, 540);
+    setMinimumWidth(420);
 
     auto *mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(margin, margin, margin, margin);
-    mainLayout->setSpacing(spacing);
+    mainLayout->setContentsMargins(22, 22, 22, 22);
+    mainLayout->setSpacing(0);
 
-    // 标题区
-    auto *titleLabel = new QLabel("SwiftChat");
+    m_stacked = new QStackedWidget(this);
+    mainLayout->addWidget(m_stacked);
+
+    m_disconnectedPage = new QWidget(m_stacked);
+    auto* disconnectedLayout = new QVBoxLayout(m_disconnectedPage);
+    disconnectedLayout->setContentsMargins(12, 16, 12, 16);
+    disconnectedLayout->setSpacing(14);
+    disconnectedLayout->addStretch();
+
+    auto* disconnectedCard = new QFrame(m_disconnectedPage);
+    disconnectedCard->setObjectName("disconnectCard");
+    auto* disconnectedCardLayout = new QVBoxLayout(disconnectedCard);
+    disconnectedCardLayout->setContentsMargins(28, 26, 28, 24);
+    disconnectedCardLayout->setSpacing(12);
+
+    auto* disconnectedTitle = new QLabel("服务器连接已断开", disconnectedCard);
+    disconnectedTitle->setObjectName("disconnectTitle");
+    disconnectedTitle->setAlignment(Qt::AlignCenter);
+    disconnectedCardLayout->addWidget(disconnectedTitle);
+
+    m_disconnectedReasonLabel = new QLabel("当前无法连接到服务器", disconnectedCard);
+    m_disconnectedReasonLabel->setObjectName("disconnectReason");
+    m_disconnectedReasonLabel->setAlignment(Qt::AlignCenter);
+    m_disconnectedReasonLabel->setWordWrap(true);
+    disconnectedCardLayout->addWidget(m_disconnectedReasonLabel);
+
+    m_refreshBtn = new QToolButton(disconnectedCard);
+    m_refreshBtn->setObjectName("refreshButton");
+    m_refreshIcon = QPixmap(":/icons/reflash.png");
+    m_refreshBtn->setIcon(QIcon(m_refreshIcon));
+    m_refreshBtn->setIconSize(QSize(54, 54));
+    m_refreshBtn->setToolTip("刷新并重连");
+    m_refreshBtn->setCursor(Qt::PointingHandCursor);
+    m_refreshBtn->setMinimumSize(96, 96);
+    disconnectedCardLayout->addWidget(m_refreshBtn, 0, Qt::AlignHCenter);
+
+    auto* disconnectedHint = new QLabel("点击图标尝试重新连接", disconnectedCard);
+    disconnectedHint->setObjectName("disconnectHint");
+    disconnectedHint->setAlignment(Qt::AlignCenter);
+    disconnectedCardLayout->addWidget(disconnectedHint);
+
+    disconnectedLayout->addWidget(disconnectedCard);
+    disconnectedLayout->addStretch();
+
+    m_loginPage = new QWidget(m_stacked);
+    auto* loginPageLayout = new QVBoxLayout(m_loginPage);
+    loginPageLayout->setContentsMargins(0, 0, 0, 0);
+    loginPageLayout->setSpacing(0);
+    loginPageLayout->addStretch();
+
+    auto *card = new QFrame(m_loginPage);
+    card->setObjectName("loginCard");
+    auto *cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(28, 26, 28, 24);
+    cardLayout->setSpacing(12);
+
+    auto *titleLabel = new QLabel("SwiftChat", card);
+    titleLabel->setObjectName("loginTitle");
     QFont titleFont = titleLabel->font();
-    titleFont.setPointSize(22);
-    titleFont.setWeight(QFont::DemiBold);
+    titleFont.setPointSize(24);
+    titleFont.setWeight(QFont::Bold);
     titleLabel->setFont(titleFont);
     titleLabel->setAlignment(Qt::AlignCenter);
-    mainLayout->addWidget(titleLabel);
+    cardLayout->addWidget(titleLabel);
 
-    m_statusLabel = new QLabel("连接中...");
+    auto *subtitleLabel = new QLabel("欢迎回来，登录后即可开始聊天", card);
+    subtitleLabel->setObjectName("loginSubtitle");
+    subtitleLabel->setAlignment(Qt::AlignCenter);
+    cardLayout->addWidget(subtitleLabel);
+
+    cardLayout->addSpacing(6);
+
+    m_statusLabel = new QLabel("连接中...", card);
     m_statusLabel->setObjectName("statusLabel");
     m_statusLabel->setAlignment(Qt::AlignCenter);
-    m_statusLabel->setStyleSheet("color: #666; font-size: 13px;");
-    mainLayout->addWidget(m_statusLabel);
+    cardLayout->addWidget(m_statusLabel);
 
-    mainLayout->addSpacing(8);
+    cardLayout->addSpacing(10);
 
-    // 表单区
-    auto *userLabel = new QLabel("用户名");
-    userLabel->setStyleSheet("color: #333; font-weight: 500;");
-    mainLayout->addWidget(userLabel);
-    m_userEdit = new QLineEdit();
+    auto *userLabel = new QLabel("用户名", card);
+    userLabel->setObjectName("fieldLabel");
+    cardLayout->addWidget(userLabel);
+    m_userEdit = new QLineEdit(card);
     m_userEdit->setPlaceholderText("请输入用户名");
-    m_userEdit->setMinimumHeight(40);
-    m_userEdit->setStyleSheet(
-        "QLineEdit { padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }"
-        "QLineEdit:focus { border-color: #1a73e8; }"
-    );
-    mainLayout->addWidget(m_userEdit);
+    m_userEdit->setMinimumHeight(42);
+    cardLayout->addWidget(m_userEdit);
 
-    mainLayout->addSpacing(4);
+    cardLayout->addSpacing(2);
 
-    auto *passLabel = new QLabel("密码");
-    passLabel->setStyleSheet("color: #333; font-weight: 500;");
-    mainLayout->addWidget(passLabel);
-    m_passEdit = new QLineEdit();
+    auto *passLabel = new QLabel("密码", card);
+    passLabel->setObjectName("fieldLabel");
+    cardLayout->addWidget(passLabel);
+    m_passEdit = new QLineEdit(card);
     m_passEdit->setEchoMode(QLineEdit::Password);
     m_passEdit->setPlaceholderText("请输入密码");
-    m_passEdit->setMinimumHeight(40);
-    m_passEdit->setStyleSheet(
-        "QLineEdit { padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }"
-        "QLineEdit:focus { border-color: #1a73e8; }"
-    );
-    mainLayout->addWidget(m_passEdit);
+    m_passEdit->setMinimumHeight(42);
+    cardLayout->addWidget(m_passEdit);
 
-    mainLayout->addSpacing(16);
+    cardLayout->addSpacing(16);
 
-    // 按钮区
     auto *btnLayout = new QHBoxLayout();
-    btnLayout->setSpacing(12);
-    m_loginBtn = new QPushButton("登录");
+    btnLayout->setSpacing(10);
+    m_loginBtn = new QPushButton("登录", card);
+    m_loginBtn->setObjectName("primaryBtn");
     m_loginBtn->setMinimumHeight(44);
-    m_loginBtn->setMinimumWidth(120);
-    m_loginBtn->setStyleSheet(
-        "QPushButton { background-color: #1a73e8; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; }"
-        "QPushButton:hover { background-color: #1557b0; }"
-        "QPushButton:pressed { background-color: #0d47a1; }"
-    );
-    m_registerBtn = new QPushButton("注册");
+    m_loginBtn->setMinimumWidth(140);
+    m_registerBtn = new QPushButton("注册", card);
+    m_registerBtn->setObjectName("secondaryBtn");
     m_registerBtn->setMinimumHeight(44);
-    m_registerBtn->setMinimumWidth(100);
-    m_registerBtn->setStyleSheet(
-        "QPushButton { background-color: #f1f3f4; color: #333; border: 1px solid #dadce0; border-radius: 8px; font-size: 14px; }"
-        "QPushButton:hover { background-color: #e8eaed; }"
-        "QPushButton:pressed { background-color: #dadce0; }"
-    );
-    btnLayout->addStretch();
+    m_registerBtn->setMinimumWidth(108);
     btnLayout->addWidget(m_loginBtn);
     btnLayout->addWidget(m_registerBtn);
-    btnLayout->addStretch();
-    mainLayout->addLayout(btnLayout);
+    cardLayout->addLayout(btnLayout);
+
+    cardLayout->addSpacing(4);
+
+    auto *tipLabel = new QLabel("首次使用请先注册账号", card);
+    tipLabel->setObjectName("tipLabel");
+    tipLabel->setAlignment(Qt::AlignCenter);
+    cardLayout->addWidget(tipLabel);
+
+    loginPageLayout->addWidget(card);
+    loginPageLayout->addStretch();
+
+    m_stacked->addWidget(m_disconnectedPage);
+    m_stacked->addWidget(m_loginPage);
+
+    setStyleSheet(
+        "LoginWindow { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #edf3ff, stop:1 #d8e7ff); }"
+        "QFrame#loginCard { background: #ffffff; border: 1px solid #dbe5f5; border-radius: 18px; }"
+        "QLabel#loginTitle { color: #1f2f4a; }"
+        "QLabel#loginSubtitle { color: #6b7790; font-size: 13px; }"
+        "QLabel#statusLabel { color: #4f6ea8; font-size: 13px; background: #eef4ff; border: 1px solid #d5e4ff; border-radius: 10px; padding: 6px 8px; }"
+        "QLabel#fieldLabel { color: #2f3b50; font-size: 13px; font-weight: 600; }"
+        "QLabel#tipLabel { color: #8a95ab; font-size: 12px; }"
+        "QLineEdit { background: #f9fbff; border: 1px solid #d4ddee; border-radius: 10px; padding: 0 12px; font-size: 14px; }"
+        "QLineEdit:focus { border-color: #6d9fff; background: #ffffff; }"
+        "QPushButton#primaryBtn { background: #3f8cff; color: white; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; }"
+        "QPushButton#primaryBtn:hover { background: #2f7df7; }"
+        "QPushButton#primaryBtn:pressed { background: #1f6cdf; }"
+        "QPushButton#primaryBtn:disabled { background: #a9c7f7; color: #ecf4ff; }"
+        "QPushButton#secondaryBtn { background: #ffffff; color: #31558f; border: 1px solid #c8d7f3; border-radius: 10px; font-size: 14px; font-weight: 600; }"
+        "QPushButton#secondaryBtn:hover { background: #f5f9ff; border-color: #9ebcf0; }"
+        "QPushButton#secondaryBtn:pressed { background: #eaf1ff; }"
+        "QPushButton#secondaryBtn:disabled { color: #9caac2; border-color: #d3dbe8; }"
+        "QFrame#disconnectCard { background: #ffffff; border: 1px solid #dbe5f5; border-radius: 18px; }"
+        "QLabel#disconnectTitle { color: #2b3d5d; font-size: 20px; font-weight: 700; }"
+        "QLabel#disconnectReason { color: #60718f; font-size: 13px; line-height: 1.4; background: #f3f7ff; border: 1px solid #dde9ff; border-radius: 10px; padding: 10px 12px; }"
+        "QLabel#disconnectHint { color: #8192ad; font-size: 12px; }"
+        "QToolButton#refreshButton { background: #ebf3ff; border: 1px solid #c9ddff; border-radius: 48px; padding: 10px; }"
+        "QToolButton#refreshButton:hover { background: #dcecff; border-color: #9fc2ff; }"
+        "QToolButton#refreshButton:pressed { background: #cadfff; }"
+        "QToolButton#refreshButton:disabled { background: #eef2f8; border-color: #d8e0eb; }"
+    );
 
     connect(m_loginBtn, &QPushButton::clicked, this, &LoginWindow::onLoginClicked);
     connect(m_registerBtn, &QPushButton::clicked, this, &LoginWindow::onRegisterClicked);
+    connect(m_passEdit, &QLineEdit::returnPressed, this, &LoginWindow::onLoginClicked);
+    connect(m_refreshBtn, &QToolButton::clicked, this, &LoginWindow::doConnect);
+    m_refreshSpinTimer = new QTimer(this);
+    m_refreshSpinTimer->setInterval(45);
+    connect(m_refreshSpinTimer, &QTimer::timeout, this, [this]() {
+        if (!m_refreshBtn || m_refreshIcon.isNull()) return;
+        m_refreshAngle = (m_refreshAngle + 18) % 360;
+        const QPixmap rotated = m_refreshIcon.transformed(QTransform().rotate(m_refreshAngle), Qt::SmoothTransformation);
+        m_refreshBtn->setIcon(QIcon(rotated));
+    });
 
     if (m_wsClient) {
         connect(m_wsClient, &WebSocketClient::connected, this, &LoginWindow::onConnected);
@@ -116,29 +212,40 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
         // 延迟连接，确保窗口与事件循环就绪
         QMetaObject::invokeMethod(this, "doConnect", Qt::QueuedConnection);
     }
+
+    showDisconnectedState("正在连接服务器...");
 }
 
 LoginWindow::~LoginWindow() = default;
 
 void LoginWindow::doConnect() {
     if (m_wsClient) {
+        showDisconnectedState("正在尝试连接服务器...");
+        if (m_refreshBtn) m_refreshBtn->setEnabled(false);
+        startRefreshAnimation();
         m_wsClient->connect(Settings::instance().serverUrl());
     }
 }
 
 void LoginWindow::onConnected() {
+    stopRefreshAnimation();
+    if (m_refreshBtn) m_refreshBtn->setEnabled(true);
+    showLoginState();
     if (m_statusLabel) m_statusLabel->setText("已连接");
     sendHeartbeat();
 }
 
 void LoginWindow::onDisconnected() {
-    if (m_statusLabel) m_statusLabel->setText("已断开");
-    setLoginUiEnabled(true);
+    stopRefreshAnimation();
     m_loginInFlight = false;
+    m_registerInFlight = false;
+    setLoginUiEnabled(true);
+    if (m_refreshBtn) m_refreshBtn->setEnabled(true);
+    showDisconnectedState("与服务器的连接已断开，请点击刷新图标重连。");
 }
 
 void LoginWindow::onConnectionError(const QString& error) {
-    if (m_statusLabel) m_statusLabel->setText("连接失败: " + error);
+    stopRefreshAnimation();
     QString detail = error;
     if (error.contains("ConnectionRefused", Qt::CaseInsensitive) || error.contains("请求被拒绝")) {
         detail += "\n\n常见原因：\n"
@@ -147,7 +254,11 @@ void LoginWindow::onConnectionError(const QString& error) {
                   "• 网关/路由器需开放 9090\n"
                   "• Minikube：确认服务已暴露(NodePort/port-forward)";
     }
-    QMessageBox::warning(this, "连接失败", "无法连接到服务器 " + Settings::instance().serverUrl() + "\n\n" + detail);
+    m_loginInFlight = false;
+    m_registerInFlight = false;
+    setLoginUiEnabled(true);
+    if (m_refreshBtn) m_refreshBtn->setEnabled(true);
+    showDisconnectedState("连接失败：\n" + detail);
 }
 
 void LoginWindow::sendHeartbeat() {
@@ -272,16 +383,21 @@ void LoginWindow::onRegisterClicked() {
 
     auto* usernameEdit = new QLineEdit(&dialog);
     usernameEdit->setPlaceholderText("3-32位，字母/数字/下划线");
+    usernameEdit->setMinimumHeight(38);
     auto* passwordEdit = new QLineEdit(&dialog);
     passwordEdit->setEchoMode(QLineEdit::Password);
     passwordEdit->setPlaceholderText("至少8位");
+    passwordEdit->setMinimumHeight(38);
     auto* confirmEdit = new QLineEdit(&dialog);
     confirmEdit->setEchoMode(QLineEdit::Password);
     confirmEdit->setPlaceholderText("再次输入密码");
+    confirmEdit->setMinimumHeight(38);
     auto* nicknameEdit = new QLineEdit(&dialog);
     nicknameEdit->setPlaceholderText("可选，默认同用户名");
+    nicknameEdit->setMinimumHeight(38);
     auto* emailEdit = new QLineEdit(&dialog);
     emailEdit->setPlaceholderText("可选");
+    emailEdit->setMinimumHeight(38);
 
     form->addRow("用户名", usernameEdit);
     form->addRow("密码", passwordEdit);
@@ -292,12 +408,24 @@ void LoginWindow::onRegisterClicked() {
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
     buttons->button(QDialogButtonBox::Ok)->setText("注册");
     buttons->button(QDialogButtonBox::Cancel)->setText("取消");
+    buttons->button(QDialogButtonBox::Ok)->setObjectName("registerOkBtn");
+    buttons->button(QDialogButtonBox::Cancel)->setObjectName("registerCancelBtn");
     form->addRow(buttons);
     QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
     usernameEdit->setText(m_userEdit ? m_userEdit->text().trimmed() : QString());
-    dialog.resize(360, 260);
+    dialog.resize(410, 330);
+    dialog.setStyleSheet(
+        "QDialog { background: #f8fbff; }"
+        "QLabel { color: #2c3a50; font-size: 13px; font-weight: 600; }"
+        "QLineEdit { background: #ffffff; border: 1px solid #d4ddee; border-radius: 9px; padding: 0 10px; font-size: 13px; }"
+        "QLineEdit:focus { border-color: #6d9fff; }"
+        "QPushButton#registerOkBtn { background: #3f8cff; color: white; border: none; border-radius: 9px; min-height: 34px; padding: 0 16px; font-weight: 600; }"
+        "QPushButton#registerOkBtn:hover { background: #2f7df7; }"
+        "QPushButton#registerCancelBtn { background: #ffffff; color: #30538d; border: 1px solid #cad8f2; border-radius: 9px; min-height: 34px; padding: 0 16px; font-weight: 600; }"
+        "QPushButton#registerCancelBtn:hover { background: #f3f8ff; }"
+    );
     if (dialog.exec() != QDialog::Accepted) return;
 
     const QString username = usernameEdit->text().trimmed();
@@ -373,4 +501,38 @@ void LoginWindow::setLoginUiEnabled(bool enabled) {
     if (m_passEdit) m_passEdit->setEnabled(enabled);
     if (m_loginBtn) m_loginBtn->setEnabled(enabled);
     if (m_registerBtn) m_registerBtn->setEnabled(enabled);
+}
+
+void LoginWindow::showDisconnectedState(const QString& reason) {
+    if (m_disconnectedReasonLabel) {
+        m_disconnectedReasonLabel->setText(
+            reason.isEmpty() ? QStringLiteral("当前无法连接到服务器。") : reason
+        );
+    }
+    if (m_stacked && m_disconnectedPage) {
+        m_stacked->setCurrentWidget(m_disconnectedPage);
+    }
+}
+
+void LoginWindow::showLoginState() {
+    if (m_stacked && m_loginPage) {
+        m_stacked->setCurrentWidget(m_loginPage);
+    }
+}
+
+void LoginWindow::startRefreshAnimation() {
+    if (!m_refreshSpinTimer || !m_refreshBtn || m_refreshIcon.isNull()) return;
+    if (!m_refreshSpinTimer->isActive()) {
+        m_refreshSpinTimer->start();
+    }
+}
+
+void LoginWindow::stopRefreshAnimation() {
+    if (m_refreshSpinTimer && m_refreshSpinTimer->isActive()) {
+        m_refreshSpinTimer->stop();
+    }
+    m_refreshAngle = 0;
+    if (m_refreshBtn && !m_refreshIcon.isNull()) {
+        m_refreshBtn->setIcon(QIcon(m_refreshIcon));
+    }
 }

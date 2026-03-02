@@ -29,17 +29,24 @@ MainWindow::~MainWindow() = default;
 
 void MainWindow::setupUi() {
     auto* central = new QWidget(this);
+    central->setObjectName("mainRoot");
     auto* layout = new QHBoxLayout(central);
     layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
 
     m_contactWidget = new ContactWidget(central);
     m_contactWidget->setMinimumWidth(280);
+    m_contactWidget->setMaximumWidth(360);
     m_chatWidget = new ChatWidget(central);
     m_chatWidget->setCurrentUserId(m_currentUserId);
 
     layout->addWidget(m_contactWidget);
     layout->addWidget(m_chatWidget, 1);
     setCentralWidget(central);
+
+    setStyleSheet(
+        "QWidget#mainRoot { background: #f3f6fb; }"
+    );
 }
 
 void MainWindow::wireSignals() {
