@@ -1,4 +1,5 @@
 #include "session_store.h"
+#include <swift/log_helper.h>
 #include <chrono>
 #include <mutex>
 #include <shared_mutex>
@@ -153,9 +154,27 @@ struct RedisSessionStore::Impl {
     std::mutex mutex;
 
     bool EnsureConnected() {
-        if (ctx != nullptr) return true;
+        if (ctx != nullptr && ctx->err == 0) return true;
+        if (ctx != nullptr && ctx->err != 0) {
+            LogWarning(TAG("service", "zonesvr"), "RedisSessionStore reconnecting after context error: "
+                       << ctx->errstr);
+            redisFree(ctx);
+            ctx = nullptr;
+        }
         ctx = redisConnect(host.c_str(), port);
-        return (ctx != nullptr && ctx->err == 0);
+        if (ctx == nullptr) {
+            LogError(TAG("service", "zonesvr"), "RedisSessionStore connect failed: host="
+                     << host << ", port=" << port << ", reason=null context");
+            return false;
+        }
+        if (ctx->err != 0) {
+            LogError(TAG("service", "zonesvr"), "RedisSessionStore connect failed: host="
+                     << host << ", port=" << port
+                     << ", err=" << ctx->errstr);
+            return false;
+        }
+        LogInfo(TAG("service", "zonesvr"), "RedisSessionStore connected: host=" << host << ", port=" << port);
+        return true;
     }
 
     redisReply* Command(const char* fmt, ...) {
@@ -273,22 +292,40 @@ bool RedisSessionStore::UpdateLastActive(const std::string& user_id, int64_t tim
 
 bool RedisSessionStore::RegisterGate(const GateNode& node) {
     std::lock_guard<std::mutex> lock(impl_->mutex);
-    if (!impl_->EnsureConnected()) return false;
+    if (!impl_->EnsureConnected()) {
+        LogError(TAG("service", "zonesvr"), "RegisterGate redis unavailable: gate_id=" << node.gate_id);
+        return false;
+    }
     std::string key = std::string(kGatePrefix) + node.gate_id;
     redisReply* r = impl_->Command("HMSET %s gate_id %s address %s current_connections %d registered_at %lld last_heartbeat %lld",
                                   key.c_str(), node.gate_id.c_str(), node.address.c_str(),
                                   node.current_connections,
                                   static_cast<long long>(node.registered_at),
                                   static_cast<long long>(node.last_heartbeat));
-    if (!r) return false;
+    if (!r) {
+        LogError(TAG("service", "zonesvr"), "RegisterGate HMSET failed: gate_id=" << node.gate_id
+                 << ", key=" << key);
+        return false;
+    }
     bool ok = (r->type == REDIS_REPLY_STATUS || r->type == REDIS_REPLY_STRING);
     freeReplyObject(r);
-    if (!ok) return false;
+    if (!ok) {
+        LogError(TAG("service", "zonesvr"), "RegisterGate HMSET unexpected reply: gate_id=" << node.gate_id);
+        return false;
+    }
     r = impl_->Command("EXPIRE %s %d", key.c_str(), kGateExpireSeconds);
     if (r) { ok = (r->type == REDIS_REPLY_INTEGER && r->integer == 1); freeReplyObject(r); }
-    if (!ok) return false;
+    if (!ok) {
+        LogError(TAG("service", "zonesvr"), "RegisterGate EXPIRE failed: gate_id=" << node.gate_id
+                 << ", key=" << key);
+        return false;
+    }
     r = impl_->Command("SADD %s %s", kGateListKey, node.gate_id.c_str());
     if (r) { ok = (r->type == REDIS_REPLY_INTEGER); freeReplyObject(r); }
+    if (!ok) {
+        LogError(TAG("service", "zonesvr"), "RegisterGate SADD failed: gate_id=" << node.gate_id
+                 << ", set_key=" << kGateListKey);
+    }
     return ok;
 }
 
@@ -369,6 +406,15 @@ std::vector<GateNode> RedisSessionStore::GetAllGates() {
 
 namespace {
 
+void LogHiredisMissingOnce() {
+    static std::once_flag once;
+    std::call_once(once, []() {
+        LogError(TAG("service", "zonesvr"),
+                 "RedisSessionStore unavailable: zonesvr built without hiredis "
+                 "(ZONESVR_USE_HIREDIS=0), redis mode will fail");
+    });
+}
+
 void ParseRedisUrl(const std::string&, std::string* host, int* port) {
     *host = "127.0.0.1";
     *port = 6379;
@@ -390,17 +436,17 @@ RedisSessionStore::RedisSessionStore(const std::string& redis_url)
 
 RedisSessionStore::~RedisSessionStore() = default;
 
-bool RedisSessionStore::SetOnline(const UserSession&) { (void)impl_; return false; }
-bool RedisSessionStore::SetOffline(const std::string&) { return false; }
-std::optional<UserSession> RedisSessionStore::GetSession(const std::string&) { return std::nullopt; }
-std::vector<UserSession> RedisSessionStore::GetSessions(const std::vector<std::string>&) { return {}; }
-bool RedisSessionStore::IsOnline(const std::string&) { return false; }
-bool RedisSessionStore::UpdateLastActive(const std::string&, int64_t) { return false; }
-bool RedisSessionStore::RegisterGate(const GateNode&) { return false; }
-bool RedisSessionStore::UnregisterGate(const std::string&) { return false; }
-bool RedisSessionStore::UpdateGateHeartbeat(const std::string&, int) { return false; }
-std::optional<GateNode> RedisSessionStore::GetGate(const std::string&) { return std::nullopt; }
-std::vector<GateNode> RedisSessionStore::GetAllGates() { return {}; }
+bool RedisSessionStore::SetOnline(const UserSession&) { LogHiredisMissingOnce(); (void)impl_; return false; }
+bool RedisSessionStore::SetOffline(const std::string&) { LogHiredisMissingOnce(); return false; }
+std::optional<UserSession> RedisSessionStore::GetSession(const std::string&) { LogHiredisMissingOnce(); return std::nullopt; }
+std::vector<UserSession> RedisSessionStore::GetSessions(const std::vector<std::string>&) { LogHiredisMissingOnce(); return {}; }
+bool RedisSessionStore::IsOnline(const std::string&) { LogHiredisMissingOnce(); return false; }
+bool RedisSessionStore::UpdateLastActive(const std::string&, int64_t) { LogHiredisMissingOnce(); return false; }
+bool RedisSessionStore::RegisterGate(const GateNode&) { LogHiredisMissingOnce(); return false; }
+bool RedisSessionStore::UnregisterGate(const std::string&) { LogHiredisMissingOnce(); return false; }
+bool RedisSessionStore::UpdateGateHeartbeat(const std::string&, int) { LogHiredisMissingOnce(); return false; }
+std::optional<GateNode> RedisSessionStore::GetGate(const std::string&) { LogHiredisMissingOnce(); return std::nullopt; }
+std::vector<GateNode> RedisSessionStore::GetAllGates() { LogHiredisMissingOnce(); return {}; }
 
 #endif  // ZONESVR_USE_HIREDIS
 

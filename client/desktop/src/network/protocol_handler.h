@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QByteArray>
+#include <QTimer>
 #include <functional>
 #include <map>
 
@@ -43,8 +44,16 @@ signals:
     void dataToSend(const QByteArray& data);
     
 private:
+    struct PendingRequest {
+        ResponseCallback callback;
+        QTimer* timeout_timer = nullptr;
+        QString cmd;
+        qint64 start_ms = 0;
+    };
+
     QString generateRequestId();
-    
-    std::map<QString, ResponseCallback> m_pendingRequests;
+
+    std::map<QString, PendingRequest> m_pendingRequests;
     int m_requestIdCounter = 0;
+    int m_requestTimeoutMs = 15000;
 };

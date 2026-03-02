@@ -123,6 +123,8 @@ void GateService::HandleClientMessage(const std::string& conn_id, const std::str
         HandleLogin(conn_id, payload, request_id);
     } else if (cmd == "heartbeat") {
         HandleHeartbeat(conn_id, request_id);
+    } else if (cmd == "auth.logout" || cmd == "auth.validate_token") {
+        ForwardToZone(conn_id, cmd, payload, request_id);
     } else if ((cmd.size() >= 5 && cmd.substr(0, 5) == "chat.") ||
                (cmd.size() >= 7 && cmd.substr(0, 7) == "friend.") ||
                (cmd.size() >= 6 && cmd.substr(0, 6) == "group.") ||
@@ -243,59 +245,58 @@ void GateService::UpdateHeartbeat(const std::string& conn_id) {
 
 void GateService::HandleLogin(const std::string& conn_id, const std::string& payload,
                               const std::string& request_id) {
-    swift::gate::ClientLoginRequest req;
-    if (!req.ParseFromString(payload)) {
-        SendResponse(conn_id, "auth.login", request_id,
-                     swift::ErrorCodeToInt(swift::ErrorCode::INVALID_PARAM),
-                     swift::ErrorCodeToString(swift::ErrorCode::INVALID_PARAM));
-        return;
-    }
     if (!zone_client_) {
         SendResponse(conn_id, "auth.login", request_id,
                      swift::ErrorCodeToInt(swift::ErrorCode::UPSTREAM_UNAVAILABLE),
                      swift::ErrorCodeToString(swift::ErrorCode::UPSTREAM_UNAVAILABLE));
         return;
     }
-    // 通过 ZoneSvr 转发到 OnlineSvr.ValidateToken
-    swift::zone::AuthValidateTokenPayload validate_req;
-    validate_req.set_token(req.token());
-    std::string validate_payload;
-    if (!validate_req.SerializeToString(&validate_payload)) {
+    // auth.login 统一为 zone::AuthLoginPayload（username/password/device）。
+    swift::zone::AuthLoginPayload account_login_req;
+    if (!account_login_req.ParseFromString(payload)) {
         SendResponse(conn_id, "auth.login", request_id,
                      swift::ErrorCodeToInt(swift::ErrorCode::INVALID_PARAM),
                      swift::ErrorCodeToString(swift::ErrorCode::INVALID_PARAM));
         return;
     }
-    HandleClientRequestResult result;
-    if (!zone_client_->HandleClientRequest(conn_id, "", "auth.validate_token",
-                                           validate_payload, request_id, "", &result)) {
-        int code = result.code < 0 ? swift::ErrorCodeToInt(swift::ErrorCode::RPC_FAILED) : result.code;
-        std::string msg = result.message.empty() ? swift::ErrorCodeToString(swift::ErrorCode::RPC_FAILED) : result.message;
+
+    HandleClientRequestResult login_result;
+    if (!zone_client_->HandleClientRequest(conn_id, "", "auth.login",
+                                           payload, request_id, "", &login_result)) {
+        int code = login_result.code < 0 ? swift::ErrorCodeToInt(swift::ErrorCode::RPC_FAILED) : login_result.code;
+        std::string msg = login_result.message.empty()
+            ? swift::ErrorCodeToString(swift::ErrorCode::RPC_FAILED)
+            : login_result.message;
         SendResponse(conn_id, "auth.login", request_id, code, msg);
         return;
     }
-    if (result.code != 0) {
-        SendResponse(conn_id, "auth.login", request_id, result.code, result.message);
+    if (login_result.code != swift::ErrorCodeToInt(swift::ErrorCode::OK)) {
+        SendResponse(conn_id, "auth.login", login_result.request_id,
+                     login_result.code, login_result.message, login_result.payload);
         return;
     }
-    swift::zone::AuthValidateTokenResponsePayload validate_resp;
-    if (!validate_resp.ParseFromString(result.payload) || validate_resp.user_id().empty()) {
-        SendResponse(conn_id, "auth.login", request_id,
-                     swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID),
-                     swift::ErrorCodeToString(swift::ErrorCode::TOKEN_INVALID));
-        return;
-    }
-    std::string user_id = validate_resp.user_id();
-    if (!BindUser(conn_id, user_id, req.token(), req.device_id(), req.device_type())) {
+
+    swift::zone::AuthLoginResponsePayload login_resp;
+    if (!login_resp.ParseFromString(login_result.payload) ||
+        login_resp.user_id().empty() || login_resp.token().empty()) {
         SendResponse(conn_id, "auth.login", request_id,
                      swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR),
                      swift::ErrorCodeToString(swift::ErrorCode::INTERNAL_ERROR));
         return;
     }
-    zone_client_->UserOnline(user_id, gate_id_, req.device_type(), req.device_id());
-    SendResponse(conn_id, "auth.login", request_id,
-                 swift::ErrorCodeToInt(swift::ErrorCode::OK),
-                 swift::ErrorCodeToString(swift::ErrorCode::OK));
+
+    if (!BindUser(conn_id, login_resp.user_id(), login_resp.token(),
+                  account_login_req.device_id(), account_login_req.device_type())) {
+        SendResponse(conn_id, "auth.login", request_id,
+                     swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR),
+                     swift::ErrorCodeToString(swift::ErrorCode::INTERNAL_ERROR));
+        return;
+    }
+
+    zone_client_->UserOnline(login_resp.user_id(), gate_id_,
+                             account_login_req.device_type(), account_login_req.device_id());
+    SendResponse(conn_id, "auth.login", login_result.request_id,
+                 login_result.code, login_result.message, login_result.payload);
 }
 
 void GateService::HandleHeartbeat(const std::string& conn_id,

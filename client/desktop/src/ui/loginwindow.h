@@ -1,9 +1,14 @@
 #pragma once
 
 #include <QWidget>
+#include <memory>
 
 class WebSocketClient;
 class ProtocolHandler;
+class QLineEdit;
+class QLabel;
+class QPushButton;
+class MainWindow;
 
 /**
  * 登录窗口
@@ -30,7 +35,14 @@ private slots:
 
 private:
     void sendHeartbeat();
+    void setLoginUiEnabled(bool enabled);
 
     WebSocketClient *m_wsClient = nullptr;
     ProtocolHandler *m_protocol = nullptr;
+    QLineEdit* m_userEdit = nullptr;
+    QLineEdit* m_passEdit = nullptr;
+    QLabel* m_statusLabel = nullptr;
+    QPushButton* m_loginBtn = nullptr;
+    bool m_loginInFlight = false;
+    std::unique_ptr<MainWindow> m_mainWindow;
 };

@@ -9,12 +9,24 @@
 #include <QApplication>
 #include <QDebug>
 #include <cstdlib>
+#include <iostream>
 #include "ui/loginwindow.h"
 #include "network/websocket_client.h"
 #include "network/protocol_handler.h"
 #include "utils/settings.h"
+#include "utils/client_logger.h"
 
 int main(int argc, char *argv[]) {
+    QApplication app(argc, argv);
+
+    app.setApplicationName("SwiftChat");
+    app.setApplicationVersion("0.1.0");
+    app.setOrganizationName("Swift");
+
+    if (!client::logger::Init()) {
+        std::cerr << "Failed to initialize client logger." << std::endl;
+    }
+
     // 若无可视化显示，提前提示
     const char *display = std::getenv("DISPLAY");
     if (!display || !*display) {
@@ -23,12 +35,6 @@ int main(int argc, char *argv[]) {
         qWarning("  SSH 远程：请用 ssh -X 或 ssh -Y 启用 X11 转发，或使用 VNC/xvfb。");
         qWarning("  xvfb 示例: Xvfb :99 -screen 0 1024x768x24 & DISPLAY=:99 ./SwiftChat");
     }
-
-    QApplication app(argc, argv);
-
-    app.setApplicationName("SwiftChat");
-    app.setApplicationVersion("0.1.0");
-    app.setOrganizationName("Swift");
 
     // 创建网络层组件
     WebSocketClient *wsClient = new WebSocketClient(&app);
@@ -51,5 +57,7 @@ int main(int argc, char *argv[]) {
     loginWindow.raise();
     loginWindow.activateWindow();
 
-    return app.exec();
+    const int exitCode = app.exec();
+    client::logger::Shutdown();
+    return exitCode;
 }

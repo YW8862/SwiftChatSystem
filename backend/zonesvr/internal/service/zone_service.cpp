@@ -10,6 +10,7 @@
 #include "system/file_system.h"
 #include "rpc/gate_rpc_client.h"
 #include <swift/error_code.h>
+#include <swift/log_helper.h>
 #include <chrono>
 #include <unordered_map>
 
@@ -43,7 +44,11 @@ void ZoneServiceImpl::BindChatPushToUser() {
 bool ZoneServiceImpl::UserOnline(const std::string& user_id, const std::string& gate_id,
                                  const std::string& device_type, const std::string& device_id) {
     auto gate = store_->GetGate(gate_id);
-    if (!gate) return false;
+    if (!gate) {
+        LogWarning(TAG("service", "zonesvr"), "UserOnline failed: gate not found, user_id=" << user_id
+                   << ", gate_id=" << gate_id);
+        return false;
+    }
     UserSession session;
     session.user_id = user_id;
     session.gate_id = gate_id;
@@ -53,12 +58,28 @@ bool ZoneServiceImpl::UserOnline(const std::string& user_id, const std::string& 
     session.online_at = session.last_active_at =
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
-    return store_->SetOnline(session);
+    bool ok = store_->SetOnline(session);
+    if (ok) {
+        LogInfo(TAG("service", "zonesvr"), "UserOnline success: user_id=" << user_id
+                << ", gate_id=" << gate_id
+                << ", device_type=" << device_type);
+    } else {
+        LogWarning(TAG("service", "zonesvr"), "UserOnline failed: store set online failed, user_id="
+                   << user_id << ", gate_id=" << gate_id);
+    }
+    return ok;
 }
 
 bool ZoneServiceImpl::UserOffline(const std::string& user_id, const std::string& gate_id) {
-    (void)gate_id;
-    return store_->SetOffline(user_id);
+    bool ok = store_->SetOffline(user_id);
+    if (ok) {
+        LogInfo(TAG("service", "zonesvr"), "UserOffline success: user_id=" << user_id
+                << ", gate_id=" << gate_id);
+    } else {
+        LogWarning(TAG("service", "zonesvr"), "UserOffline failed: user_id=" << user_id
+                   << ", gate_id=" << gate_id);
+    }
+    return ok;
 }
 
 std::optional<UserSession> ZoneServiceImpl::GetUserSession(const std::string& user_id) {
@@ -76,11 +97,24 @@ ZoneServiceImpl::RouteResult ZoneServiceImpl::RouteToUser(const std::string& use
     auto opt = store_->GetSession(user_id);
     if (!opt) {
         result.user_online = false;
+        LogDebug(TAG("service", "zonesvr"), "RouteToUser skipped: user offline, user_id=" << user_id
+                 << ", cmd=" << cmd);
         return result;
     }
     result.user_online = true;
     result.gate_id = opt->gate_id;
     result.delivered = PushToGate(opt->gate_addr, user_id, cmd, payload);
+    if (!result.delivered) {
+        LogWarning(TAG("service", "zonesvr"), "RouteToUser failed: push to gate failed, user_id=" << user_id
+                   << ", gate_id=" << result.gate_id
+                   << ", gate_addr=" << opt->gate_addr
+                   << ", cmd=" << cmd);
+    } else {
+        LogDebug(TAG("service", "zonesvr"), "RouteToUser delivered: user_id=" << user_id
+                 << ", gate_id=" << result.gate_id
+                 << ", cmd=" << cmd
+                 << ", payload_size=" << payload.size());
+    }
     return result;
 }
 
@@ -106,11 +140,25 @@ bool ZoneServiceImpl::RegisterGate(const std::string& gate_id, const std::string
     node.registered_at = node.last_heartbeat =
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
-    return store_->RegisterGate(node);
+    bool ok = store_->RegisterGate(node);
+    if (ok) {
+        LogInfo(TAG("service", "zonesvr"), "RegisterGate success: gate_id=" << gate_id
+                << ", address=" << address);
+    } else {
+        LogError(TAG("service", "zonesvr"), "RegisterGate failed: gate_id=" << gate_id
+                 << ", address=" << address
+                 << ", session_store_register_failed=true");
+    }
+    return ok;
 }
 
 bool ZoneServiceImpl::GateHeartbeat(const std::string& gate_id, int connections) {
-    return store_->UpdateGateHeartbeat(gate_id, connections);
+    bool ok = store_->UpdateGateHeartbeat(gate_id, connections);
+    if (!ok) {
+        LogWarning(TAG("service", "zonesvr"), "GateHeartbeat update failed: gate_id=" << gate_id
+                   << ", current_connections=" << connections);
+    }
+    return ok;
 }
 
 bool ZoneServiceImpl::KickUser(const std::string& user_id, const std::string& reason) {
@@ -175,8 +223,15 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleClientRequest(
     (void)conn_id;
     HandleClientRequestResult result;
     result.request_id = request_id;
+    LogDebug(TAG("service", "zonesvr"), "HandleClientRequest begin: request_id=" << request_id
+             << ", user_id=" << user_id
+             << ", cmd=" << cmd
+             << ", payload_size=" << payload.size()
+             << ", token_present=" << (!token.empty()));
     if (!manager_) {
         SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+        LogError(TAG("service", "zonesvr"), "HandleClientRequest failed: manager not ready, request_id="
+                 << request_id << ", cmd=" << cmd);
         return result;
     }
     std::string prefix;
@@ -186,8 +241,23 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleClientRequest(
     }
     const auto& handlers = GetPrefixHandlers();
     auto it = handlers.find(prefix);
-    if (it != handlers.end())
-        return (this->*it->second)(user_id, cmd, payload, request_id, token);
+    if (it != handlers.end()) {
+        auto handled = (this->*it->second)(user_id, cmd, payload, request_id, token);
+        if (handled.code != swift::ErrorCodeToInt(swift::ErrorCode::OK)) {
+            LogWarning(TAG("service", "zonesvr"), "HandleClientRequest done with error: request_id="
+                       << request_id << ", cmd=" << cmd
+                       << ", code=" << handled.code
+                       << ", message=" << handled.message);
+        } else {
+            LogDebug(TAG("service", "zonesvr"), "HandleClientRequest done: request_id=" << request_id
+                     << ", cmd=" << cmd
+                     << ", code=" << handled.code
+                     << ", response_payload_size=" << handled.payload.size());
+        }
+        return handled;
+    }
+    LogWarning(TAG("service", "zonesvr"), "HandleClientRequest unsupported cmd: request_id="
+               << request_id << ", cmd=" << cmd);
     return NotImplemented(cmd, request_id);
 }
 
@@ -634,7 +704,7 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleFriend(
         result.code = swift::ErrorCodeToInt(swift::ErrorCode::OK);
         return result;
     }
-    if (cmd == "friend.get_friend_requests") {
+    if (cmd == "friend.get_requests" || cmd == "friend.get_friend_requests") {
         FriendGetRequestsPayload req;
         if (!req.ParseFromString(payload)) {
             SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);

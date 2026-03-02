@@ -1,4 +1,5 @@
 #include "websocket_client.h"
+#include <QUrl>
 
 WebSocketClient::WebSocketClient(QObject *parent) 
     : QObject(parent)
@@ -10,6 +11,8 @@ WebSocketClient::WebSocketClient(QObject *parent)
                      this, &WebSocketClient::onDisconnected);
     QObject::connect(m_socket.get(), &QWebSocket::binaryMessageReceived, 
                      this, &WebSocketClient::onBinaryMessageReceived);
+    QObject::connect(m_socket.get(), &QWebSocket::textMessageReceived,
+                     this, &WebSocketClient::onTextMessageReceived);
     QObject::connect(m_socket.get(), QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error),
                      this, &WebSocketClient::onError);
 }
@@ -17,7 +20,12 @@ WebSocketClient::WebSocketClient(QObject *parent)
 WebSocketClient::~WebSocketClient() = default;
 
 void WebSocketClient::connect(const QString& url) {
-    m_socket->open(QUrl(url));
+    QUrl parsed = QUrl::fromUserInput(url.trimmed());
+    if (!parsed.isValid() || parsed.scheme().toLower() != "ws" || parsed.path() != "/ws") {
+        emit errorOccurred("Invalid WebSocket URL. Expected format: ws://host:port/ws");
+        return;
+    }
+    m_socket->open(parsed);
 }
 
 void WebSocketClient::disconnect() {
@@ -42,6 +50,12 @@ void WebSocketClient::onDisconnected() {
 
 void WebSocketClient::onBinaryMessageReceived(const QByteArray& message) {
     emit messageReceived(message);
+}
+
+void WebSocketClient::onTextMessageReceived(const QString& message) {
+    Q_UNUSED(message);
+    emit errorOccurred("Text frame is not supported, binary frame required.");
+    m_socket->close();
 }
 
 void WebSocketClient::onError(QAbstractSocket::SocketError error) {

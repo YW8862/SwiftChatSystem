@@ -32,6 +32,7 @@ private slots:
     void onConnected();
     void onDisconnected();
     void onBinaryMessageReceived(const QByteArray& message);
+    void onTextMessageReceived(const QString& message);
     void onError(QAbstractSocket::SocketError error);
     
 private:

@@ -1,6 +1,7 @@
 #include "protocol_handler.h"
 #include "gate.pb.h"
 
+#include <QDateTime>
 #include <QDebug>
 
 ProtocolHandler::ProtocolHandler(QObject *parent) : QObject(parent) {
@@ -11,10 +12,7 @@ ProtocolHandler::~ProtocolHandler() = default;
 void ProtocolHandler::sendRequest(const QString& cmd, const QByteArray& payload,
                                    ResponseCallback callback) {
     QString requestId = generateRequestId();
-
-    if (callback) {
-        m_pendingRequests[requestId] = callback;
-    }
+    const qint64 startMs = QDateTime::currentMSecsSinceEpoch();
 
     swift::gate::ClientMessage msg;
     msg.set_cmd(cmd.toStdString());
@@ -28,9 +26,48 @@ void ProtocolHandler::sendRequest(const QString& cmd, const QByteArray& payload,
         qWarning() << "ProtocolHandler: failed to serialize ClientMessage";
         if (callback) {
             callback(-1, QByteArray());
-            m_pendingRequests.erase(requestId);
         }
         return;
+    }
+
+    qDebug() << "ProtocolHandler request sent"
+             << "cmd=" << cmd
+             << "request_id=" << requestId
+             << "payload_size=" << payload.size();
+
+    if (callback) {
+        auto* timeoutTimer = new QTimer(this);
+        timeoutTimer->setSingleShot(true);
+        QObject::connect(timeoutTimer, &QTimer::timeout, this, [this, requestId]() {
+            auto it = m_pendingRequests.find(requestId);
+            if (it == m_pendingRequests.end()) {
+                return;
+            }
+            auto pending = std::move(it->second);
+            m_pendingRequests.erase(it);
+            if (pending.timeout_timer) {
+                pending.timeout_timer->deleteLater();
+            }
+            if (pending.callback) {
+                const int REQUEST_TIMEOUT_CODE = -2;
+                pending.callback(REQUEST_TIMEOUT_CODE, QByteArray());
+            }
+            const qint64 costMs = pending.start_ms > 0
+                ? (QDateTime::currentMSecsSinceEpoch() - pending.start_ms)
+                : -1;
+            qWarning() << "ProtocolHandler request timeout"
+                       << "cmd=" << pending.cmd
+                       << "request_id=" << requestId
+                       << "cost_ms=" << costMs;
+        });
+        timeoutTimer->start(m_requestTimeoutMs);
+
+        PendingRequest pending;
+        pending.callback = callback;
+        pending.timeout_timer = timeoutTimer;
+        pending.cmd = cmd;
+        pending.start_ms = startMs;
+        m_pendingRequests[requestId] = std::move(pending);
     }
 
     emit dataToSend(QByteArray(serialized.data(), static_cast<int>(serialized.size())));
@@ -54,16 +91,29 @@ void ProtocolHandler::handleMessage(const QByteArray& data) {
     // 请求响应：request_id 非空且在 m_pendingRequests 中存在
     if (!requestId.isEmpty() && m_pendingRequests.count(requestId)) {
         auto it = m_pendingRequests.find(requestId);
-        auto callback = it->second;
+        auto pending = std::move(it->second);
         m_pendingRequests.erase(it);
-        if (callback) {
-            callback(code, payload);
+        const qint64 costMs = pending.start_ms > 0
+            ? (QDateTime::currentMSecsSinceEpoch() - pending.start_ms)
+            : -1;
+        if (pending.timeout_timer) {
+            pending.timeout_timer->stop();
+            pending.timeout_timer->deleteLater();
+        }
+        qDebug() << "ProtocolHandler request done"
+                 << "cmd=" << pending.cmd
+                 << "request_id=" << requestId
+                 << "code=" << code
+                 << "cost_ms=" << costMs
+                 << "payload_size=" << payload.size();
+        if (pending.callback) {
+            pending.callback(code, payload);
         }
         return;
     }
 
     // 推送通知：按 cmd 分发
-    if (cmd == "chat.new_message") {
+    if (cmd == "chat.new_message" || cmd == "chat.message") {
         emit newMessageNotify(payload);
     } else if (cmd == "chat.recall") {
         emit recallNotify(payload);
@@ -97,9 +147,20 @@ void ProtocolHandler::clearPendingRequests() {
     const int NETWORK_ERROR_CODE = -1;
     auto pending = std::move(m_pendingRequests);
     m_pendingRequests.clear();
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
     for (auto& pair : pending) {
-        if (pair.second) {
-            pair.second(NETWORK_ERROR_CODE, QByteArray());
+        auto& request = pair.second;
+        const qint64 costMs = request.start_ms > 0 ? (nowMs - request.start_ms) : -1;
+        if (request.timeout_timer) {
+            request.timeout_timer->stop();
+            request.timeout_timer->deleteLater();
+        }
+        qWarning() << "ProtocolHandler request aborted by disconnect"
+                   << "cmd=" << request.cmd
+                   << "request_id=" << pair.first
+                   << "cost_ms=" << costMs;
+        if (request.callback) {
+            request.callback(NETWORK_ERROR_CODE, QByteArray());
         }
     }
 }

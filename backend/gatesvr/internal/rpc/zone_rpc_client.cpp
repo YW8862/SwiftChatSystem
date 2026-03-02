@@ -6,6 +6,7 @@
 
 #include "zone_rpc_client.h"
 #include "zone.pb.h"
+#include <swift/log_helper.h>
 #include <chrono>
 
 namespace swift::gate {
@@ -80,7 +81,24 @@ bool ZoneRpcClient::GateRegister(const std::string& gate_id,
     ctx.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(5));
     AddInternalSecret(&ctx, zonesvr_internal_secret_);
     grpc::Status status = stub_->GateRegister(&ctx, req, &resp);
-    return status.ok() && resp.code() == 0;
+    if (!status.ok()) {
+        LogError(TAG("service", "gatesvr"), "GateRegister rpc failed: gate_id=" << gate_id
+                 << ", address=" << address
+                 << ", grpc_code=" << static_cast<int>(status.error_code())
+                 << ", grpc_message=" << status.error_message());
+        return false;
+    }
+    if (resp.code() != 0) {
+        LogError(TAG("service", "gatesvr"), "GateRegister rejected by zonesvr: gate_id=" << gate_id
+                 << ", address=" << address
+                 << ", code=" << resp.code()
+                 << ", message=" << resp.message());
+        return false;
+    }
+    LogInfo(TAG("service", "gatesvr"), "GateRegister success: gate_id=" << gate_id
+            << ", address=" << address
+            << ", current_connections=" << current_connections);
+    return true;
 }
 
 bool ZoneRpcClient::GateHeartbeat(const std::string& gate_id,

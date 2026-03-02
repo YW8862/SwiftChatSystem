@@ -48,6 +48,10 @@ std::string RemoteEndpointString(const websocket::stream<beast::tcp_stream>& ws)
     return os.str();
 }
 
+bool IsExpectedWsPath(const http::request<http::string_body>& req) {
+    return req.target() == "/ws";
+}
+
 class WsSession : public std::enable_shared_from_this<WsSession> {
 public:
     WsSession(tcp::socket&& socket,
@@ -106,6 +110,18 @@ private:
             return;
         }
 
+        if (!IsExpectedWsPath(handshake_req_)) {
+            std::cerr << "GateSvr ws: handshake-invalid: unsupported path"
+                      << ", remote=" << RemoteEndpointString(ws_)
+                      << ", path=\"" << handshake_req_.target() << "\""
+                      << ", request_line=\"" << request_line << "\""
+                      << std::endl;
+            beast::error_code ignored_ec;
+            ws_.next_layer().socket().shutdown(tcp::socket::shutdown_both, ignored_ec);
+            ws_.next_layer().socket().close(ignored_ec);
+            return;
+        }
+
         ws_.async_accept(handshake_req_,
             beast::bind_front_handler(&WsSession::OnAccept, shared_from_this()));
     }
@@ -121,6 +137,8 @@ private:
                       << std::endl;
             return;
         }
+        // 强制使用二进制帧与客户端通信。
+        ws_.binary(true);
         service_->AddConnection(conn_id_);
         service_->SetSendCallback(conn_id_, [self = shared_from_this()](const std::string& d) {
             return self->Send(d);
@@ -145,6 +163,14 @@ private:
         }
         if (ec) {
             fail(ec, "read");
+            Close();
+            return;
+        }
+        if (ws_.got_text()) {
+            std::cerr << "GateSvr ws: text frame is not supported"
+                      << ", remote=" << RemoteEndpointString(ws_)
+                      << ", conn_id=" << conn_id_
+                      << std::endl;
             Close();
             return;
         }

@@ -32,6 +32,7 @@ set(SOURCES
     src/models/conversation.cpp
     src/utils/settings.cpp
     src/utils/image_utils.cpp
+    src/utils/client_logger.cpp
 )
 
 # 头文件
@@ -48,6 +49,8 @@ set(HEADERS
     src/models/conversation.h
     src/utils/settings.h
     src/utils/image_utils.h
+    src/utils/client_logger.h
+    src/swift/log_helper.h
 )
 
 # 资源文件
@@ -69,6 +72,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt5::Network
     Qt5::WebSockets
     client_proto
+    asynclogger::asynclogger
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE

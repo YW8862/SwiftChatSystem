@@ -102,6 +102,36 @@ bool WaitForZoneSvrReady(const std::string& zone_svr_addr, int timeout_sec, int 
     return false;
 }
 
+/**
+ * ZoneSvr 端口可连后，重试 GateRegister（指数退避）应对下游短暂抖动：
+ * 1s, 2s, 4s, 8s ...（上限 8s），总时长不超过 total_timeout_sec。
+ */
+bool RegisterGateWithRetry(const std::shared_ptr<swift::gate::GateService>& gate_svc,
+                           const std::string& grpc_addr,
+                           int total_timeout_sec) {
+    if (!gate_svc) return false;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(total_timeout_sec);
+    int attempt = 0;
+    int backoff_sec = 1;
+    while (std::chrono::steady_clock::now() < deadline) {
+        attempt++;
+        if (gate_svc->RegisterGate(grpc_addr)) {
+            LogInfo("GateSvr registered with ZoneSvr after " << attempt << " attempt(s)");
+            return true;
+        }
+
+        auto now = std::chrono::steady_clock::now();
+        auto remaining = std::chrono::duration_cast<std::chrono::seconds>(deadline - now).count();
+        if (remaining <= 0) break;
+        int sleep_sec = backoff_sec < remaining ? backoff_sec : static_cast<int>(remaining);
+        LogWarning("GateSvr GateRegister attempt " << attempt << " failed, retry in "
+                   << sleep_sec << "s");
+        std::this_thread::sleep_for(std::chrono::seconds(sleep_sec));
+        if (backoff_sec < 8) backoff_sec *= 2;
+    }
+    return false;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -139,14 +169,15 @@ int main(int argc, char* argv[]) {
     // 先等待 ZoneSvr 就绪（gRPC 端口可连），再注册；超时则报错
     const int zone_ready_timeout_sec = 30;
     const int zone_ready_poll_interval_sec = 2;
+    const int gate_register_retry_timeout_sec = 60;
     if (!config.zone_svr_addr.empty()) {
         LogInfo("GateSvr waiting for ZoneSvr at " << config.zone_svr_addr
                   << " (timeout " << zone_ready_timeout_sec << "s) ...");
         if (WaitForZoneSvrReady(config.zone_svr_addr, zone_ready_timeout_sec, zone_ready_poll_interval_sec)) {
-            if (gate_svc->RegisterGate(grpc_addr)) {
-                LogInfo("GateSvr registered with ZoneSvr");
+            if (RegisterGateWithRetry(gate_svc, grpc_addr, gate_register_retry_timeout_sec)) {
+                LogInfo("GateSvr registration flow completed");
             } else {
-                LogError("GateSvr ZoneSvr GateRegister failed (ZoneSvr ready but register RPC failed)");
+                LogError("GateSvr ZoneSvr GateRegister failed after retries (ZoneSvr ready but register RPC failed)");
             }
         } else {
             LogError("GateSvr ZoneSvr not ready within " << zone_ready_timeout_sec

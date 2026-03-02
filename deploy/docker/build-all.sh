@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 在仓库根目录执行，直接在 Minikube 内部 Docker 环境构建，彻底解决 latest 冲突和多余镜像问题。
-# 若 not found 可试: BASE_IMAGE=registry.cn-hangzhou.aliyuncs.com/library/ubuntu:22.04
+# 默认使用 DaoCloud 镜像（国内加速）；若失败可试: BASE_IMAGE=ubuntu:22.04
 set -e
 cd "$(dirname "$0")/../.."
 
@@ -19,7 +19,7 @@ fi
 
 REGISTRY="${REGISTRY:-swift}"
 TAG="latest" # 回归 latest，我们通过直接在 Minikube 内部覆盖并重启 Pod 来解决
-BASE_IMAGE="${BASE_IMAGE:-docker.1ms.run/library/ubuntu:22.04}"
+BASE_IMAGE="${BASE_IMAGE:-docker.m.daocloud.io/library/ubuntu:22.04}"
 
 for target in authsvr onlinesvr friendsvr chatsvr filesvr zonesvr gatesvr; do
   img="$REGISTRY/$target:$TAG"

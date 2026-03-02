@@ -1,10 +1,13 @@
 #include "loginwindow.h"
+#include "mainwindow.h"
 #include "network/websocket_client.h"
 #include "network/protocol_handler.h"
 #include "utils/settings.h"
 #include "gate.pb.h"
+#include "zone.pb.h"
 
 #include <QDateTime>
+#include <QHostInfo>
 #include <QMessageBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -12,6 +15,7 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QFont>
+#include <QSysInfo>
 
 LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
                          QWidget *parent)
@@ -36,11 +40,11 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
     titleLabel->setAlignment(Qt::AlignCenter);
     mainLayout->addWidget(titleLabel);
 
-    auto *statusLabel = new QLabel("连接中...");
-    statusLabel->setObjectName("statusLabel");
-    statusLabel->setAlignment(Qt::AlignCenter);
-    statusLabel->setStyleSheet("color: #666; font-size: 13px;");
-    mainLayout->addWidget(statusLabel);
+    m_statusLabel = new QLabel("连接中...");
+    m_statusLabel->setObjectName("statusLabel");
+    m_statusLabel->setAlignment(Qt::AlignCenter);
+    m_statusLabel->setStyleSheet("color: #666; font-size: 13px;");
+    mainLayout->addWidget(m_statusLabel);
 
     mainLayout->addSpacing(8);
 
@@ -48,39 +52,39 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
     auto *userLabel = new QLabel("用户名");
     userLabel->setStyleSheet("color: #333; font-weight: 500;");
     mainLayout->addWidget(userLabel);
-    auto *userEdit = new QLineEdit();
-    userEdit->setPlaceholderText("请输入用户名");
-    userEdit->setMinimumHeight(40);
-    userEdit->setStyleSheet(
+    m_userEdit = new QLineEdit();
+    m_userEdit->setPlaceholderText("请输入用户名");
+    m_userEdit->setMinimumHeight(40);
+    m_userEdit->setStyleSheet(
         "QLineEdit { padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }"
         "QLineEdit:focus { border-color: #1a73e8; }"
     );
-    mainLayout->addWidget(userEdit);
+    mainLayout->addWidget(m_userEdit);
 
     mainLayout->addSpacing(4);
 
     auto *passLabel = new QLabel("密码");
     passLabel->setStyleSheet("color: #333; font-weight: 500;");
     mainLayout->addWidget(passLabel);
-    auto *passEdit = new QLineEdit();
-    passEdit->setEchoMode(QLineEdit::Password);
-    passEdit->setPlaceholderText("请输入密码");
-    passEdit->setMinimumHeight(40);
-    passEdit->setStyleSheet(
+    m_passEdit = new QLineEdit();
+    m_passEdit->setEchoMode(QLineEdit::Password);
+    m_passEdit->setPlaceholderText("请输入密码");
+    m_passEdit->setMinimumHeight(40);
+    m_passEdit->setStyleSheet(
         "QLineEdit { padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }"
         "QLineEdit:focus { border-color: #1a73e8; }"
     );
-    mainLayout->addWidget(passEdit);
+    mainLayout->addWidget(m_passEdit);
 
     mainLayout->addSpacing(16);
 
     // 按钮区
     auto *btnLayout = new QHBoxLayout();
     btnLayout->setSpacing(12);
-    auto *loginBtn = new QPushButton("登录");
-    loginBtn->setMinimumHeight(44);
-    loginBtn->setMinimumWidth(120);
-    loginBtn->setStyleSheet(
+    m_loginBtn = new QPushButton("登录");
+    m_loginBtn->setMinimumHeight(44);
+    m_loginBtn->setMinimumWidth(120);
+    m_loginBtn->setStyleSheet(
         "QPushButton { background-color: #1a73e8; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; }"
         "QPushButton:hover { background-color: #1557b0; }"
         "QPushButton:pressed { background-color: #0d47a1; }"
@@ -94,12 +98,12 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
         "QPushButton:pressed { background-color: #dadce0; }"
     );
     btnLayout->addStretch();
-    btnLayout->addWidget(loginBtn);
+    btnLayout->addWidget(m_loginBtn);
     btnLayout->addWidget(regBtn);
     btnLayout->addStretch();
     mainLayout->addLayout(btnLayout);
 
-    connect(loginBtn, &QPushButton::clicked, this, &LoginWindow::onLoginClicked);
+    connect(m_loginBtn, &QPushButton::clicked, this, &LoginWindow::onLoginClicked);
     connect(regBtn, &QPushButton::clicked, this, &LoginWindow::onRegisterClicked);
 
     if (m_wsClient) {
@@ -115,28 +119,23 @@ LoginWindow::~LoginWindow() = default;
 
 void LoginWindow::doConnect() {
     if (m_wsClient) {
-        m_wsClient->connect("ws://117.72.44.96:9090/ws");
+        m_wsClient->connect(Settings::instance().serverUrl());
     }
 }
 
 void LoginWindow::onConnected() {
-    if (findChild<QLabel*>("statusLabel")) {
-        findChild<QLabel*>("statusLabel")->setText("已连接，验证中...");
-    }
+    if (m_statusLabel) m_statusLabel->setText("已连接");
     sendHeartbeat();
 }
 
 void LoginWindow::onDisconnected() {
-    if (findChild<QLabel*>("statusLabel")) {
-        findChild<QLabel*>("statusLabel")->setText("已断开");
-    }
+    if (m_statusLabel) m_statusLabel->setText("已断开");
+    setLoginUiEnabled(true);
+    m_loginInFlight = false;
 }
 
 void LoginWindow::onConnectionError(const QString& error) {
-    QLabel *label = findChild<QLabel*>("statusLabel");
-    if (label) {
-        label->setText("连接失败: " + error);
-    }
+    if (m_statusLabel) m_statusLabel->setText("连接失败: " + error);
     QString detail = error;
     if (error.contains("ConnectionRefused", Qt::CaseInsensitive) || error.contains("请求被拒绝")) {
         detail += "\n\n常见原因：\n"
@@ -145,7 +144,7 @@ void LoginWindow::onConnectionError(const QString& error) {
                   "• 网关/路由器需开放 9090\n"
                   "• Minikube：确认服务已暴露(NodePort/port-forward)";
     }
-    QMessageBox::warning(this, "连接失败", "无法连接到服务器 ws://117.72.44.96:9090/ws\n\n" + detail);
+    QMessageBox::warning(this, "连接失败", "无法连接到服务器 " + Settings::instance().serverUrl() + "\n\n" + detail);
 }
 
 void LoginWindow::sendHeartbeat() {
@@ -165,25 +164,102 @@ void LoginWindow::sendHeartbeat() {
 }
 
 void LoginWindow::onHeartbeatResponse(int code, const QByteArray& payload) {
-    auto *label = findChild<QLabel*>("statusLabel");
-    if (!label) return;
+    if (!m_statusLabel) return;
 
     if (code == 0) {
         swift::gate::HeartbeatResponse resp;
         if (resp.ParseFromArray(payload.data(), payload.size())) {
-            label->setText(QString("已连接 (server_time=%1)").arg(resp.server_time()));
+            m_statusLabel->setText(QString("已连接 (server_time=%1)").arg(resp.server_time()));
         } else {
-            label->setText("已连接");
+            m_statusLabel->setText("已连接");
         }
     } else {
-        label->setText(QString("请求失败 code=%1").arg(code));
+        m_statusLabel->setText(QString("请求失败 code=%1").arg(code));
     }
 }
 
 void LoginWindow::onLoginClicked() {
-    QMessageBox::information(this, "登录", "登录功能开发中，请稍后。\n确保已连接服务器后再试。");
+    if (!m_wsClient || !m_protocol || !m_userEdit || !m_passEdit) return;
+    if (m_loginInFlight) return;
+
+    const QString username = m_userEdit->text().trimmed();
+    const QString password = m_passEdit->text();
+    if (username.isEmpty() || password.isEmpty()) {
+        QMessageBox::warning(this, "登录失败", "用户名和密码不能为空。");
+        return;
+    }
+    if (!m_wsClient->isConnected()) {
+        QMessageBox::warning(this, "登录失败", "当前未连接到网关，请稍后重试。");
+        return;
+    }
+
+    swift::zone::AuthLoginPayload req;
+    req.set_username(username.toStdString());
+    req.set_password(password.toStdString());
+    QByteArray machineId = QSysInfo::machineUniqueId();
+    const QString deviceId = machineId.isEmpty()
+        ? QHostInfo::localHostName()
+        : QString::fromUtf8(machineId.toHex());
+    req.set_device_id(deviceId.toStdString());
+    req.set_device_type("desktop");
+
+    std::string payload;
+    if (!req.SerializeToString(&payload)) {
+        QMessageBox::warning(this, "登录失败", "请求序列化失败。");
+        return;
+    }
+
+    m_loginInFlight = true;
+    setLoginUiEnabled(false);
+    if (m_statusLabel) m_statusLabel->setText("登录中...");
+
+    m_protocol->sendRequest("auth.login",
+                            QByteArray(payload.data(), static_cast<int>(payload.size())),
+                            [this](int code, const QByteArray& data) {
+        m_loginInFlight = false;
+        setLoginUiEnabled(true);
+
+        if (code != 0) {
+            if (m_statusLabel) m_statusLabel->setText(QString("登录失败 code=%1").arg(code));
+            QMessageBox::warning(this, "登录失败", QString("服务器返回错误码：%1").arg(code));
+            return;
+        }
+
+        swift::zone::AuthLoginResponsePayload resp;
+        if (!resp.ParseFromArray(data.data(), data.size())) {
+            if (m_statusLabel) m_statusLabel->setText("登录失败：响应解析失败");
+            QMessageBox::warning(this, "登录失败", "登录响应解析失败。");
+            return;
+        }
+        if (!resp.success() || resp.user_id().empty() || resp.token().empty()) {
+            const QString err = resp.error().empty()
+                ? QStringLiteral("用户名或密码错误")
+                : QString::fromStdString(resp.error());
+            if (m_statusLabel) m_statusLabel->setText("登录失败");
+            QMessageBox::warning(this, "登录失败", err);
+            return;
+        }
+
+        const QString userId = QString::fromStdString(resp.user_id());
+        const QString token = QString::fromStdString(resp.token());
+        Settings::instance().saveLoginInfo(userId, token);
+        emit loginSuccess(userId, token);
+
+        if (m_statusLabel) m_statusLabel->setText("登录成功");
+        if (!m_mainWindow) {
+            m_mainWindow = std::make_unique<MainWindow>(m_protocol, userId);
+        }
+        m_mainWindow->show();
+        hide();
+    });
 }
 
 void LoginWindow::onRegisterClicked() {
     QMessageBox::information(this, "注册", "注册功能开发中，请稍后。");
+}
+
+void LoginWindow::setLoginUiEnabled(bool enabled) {
+    if (m_userEdit) m_userEdit->setEnabled(enabled);
+    if (m_passEdit) m_passEdit->setEnabled(enabled);
+    if (m_loginBtn) m_loginBtn->setEnabled(enabled);
 }

@@ -15,7 +15,6 @@
 #include <grpcpp/server_builder.h>
 #include <swift/log_helper.h>
 
-#include "async_logger/async_logger.h"
 #include "config/config.h"
 #include "handler/zone_handler.h"
 #include "interceptor/internal_secret_processor.h"

@@ -16,7 +16,7 @@ resources:
   - chatsvr-deployment.yaml
   - filesvr-deployment.yaml
 
-labels:
-  - pairs:
-      app.kubernetes.io/name: master
-      app.kubernetes.io/version: "0.1.0"
+# 保留 commonLabels：labels 会修改 selector 导致与已有 Deployment 冲突（field is immutable）
+commonLabels:
+  app.kubernetes.io/name: master
+  app.kubernetes.io/version: "0.1.0"

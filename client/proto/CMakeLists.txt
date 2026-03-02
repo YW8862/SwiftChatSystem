@@ -20,6 +20,7 @@ endif()
 set(PROTO_FILES
     ${CMAKE_SOURCE_DIR}/backend/common/proto/common.proto
     ${CMAKE_SOURCE_DIR}/backend/gatesvr/proto/gate.proto
+    ${CMAKE_SOURCE_DIR}/backend/zonesvr/proto/zone.proto
     ${CMAKE_SOURCE_DIR}/backend/authsvr/proto/auth.proto
     ${CMAKE_SOURCE_DIR}/backend/friendsvr/proto/friend.proto
     ${CMAKE_SOURCE_DIR}/backend/chatsvr/proto/chat.proto
@@ -48,6 +49,7 @@ foreach(PROTO_FILE ${PROTO_FILES})
         ARGS --cpp_out=${PROTO_GEN_DIR}
              -I${CMAKE_SOURCE_DIR}/backend/common/proto
              -I${CMAKE_SOURCE_DIR}/backend/gatesvr/proto
+             -I${CMAKE_SOURCE_DIR}/backend/zonesvr/proto
              -I${CMAKE_SOURCE_DIR}/backend/authsvr/proto
              -I${CMAKE_SOURCE_DIR}/backend/friendsvr/proto
              -I${CMAKE_SOURCE_DIR}/backend/chatsvr/proto
