@@ -92,13 +92,45 @@ if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
 New-Item -ItemType Directory -Path $BuildDir | Out-Null
 Set-Location $BuildDir
 
+# Select CMake generator automatically
+# - mingw triplet: prefer Ninja, fallback to MinGW Makefiles
+# - msvc triplet: use Visual Studio generator (no Ninja required)
+$Generator = $env:CMAKE_GENERATOR
+if (-not $Generator) {
+    if ($Triplet -like "*mingw*") {
+        if (Get-Command ninja -ErrorAction SilentlyContinue) {
+            $Generator = "Ninja"
+        } else {
+            $Generator = "MinGW Makefiles"
+        }
+    } else {
+        # MSVC path: detect VS 2022/2019 via vswhere if available
+        $Generator = "Visual Studio 17 2022"
+        $VsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (Test-Path $VsWhere) {
+            $VsInstall = & $VsWhere -latest -products * -requires Microsoft.Component.MSBuild -property installationVersion 2>$null
+            if ($LASTEXITCODE -eq 0 -and $VsInstall) {
+                if ($VsInstall.StartsWith("16.")) {
+                    $Generator = "Visual Studio 16 2019"
+                } else {
+                    $Generator = "Visual Studio 17 2022"
+                }
+            }
+        }
+    }
+}
+Write-Host "Using CMake generator: $Generator" -ForegroundColor Green
+
 $CmakeArgs = @(
     "..",
-    "-G", "Ninja",
-    "-DCMAKE_BUILD_TYPE=Release",
+    "-G", $Generator,
     "-DSWIFT_BUILD_CLIENT_ONLY=ON",
     "-DSWIFT_BUILD_CLIENT=ON"
 )
+# Single-config generators need CMAKE_BUILD_TYPE
+if ($Generator -notmatch "Visual Studio") {
+    $CmakeArgs += "-DCMAKE_BUILD_TYPE=Release"
+}
 if ($CmakePrefixPath) {
     $CmakeArgs += "-DCMAKE_PREFIX_PATH=$CmakePrefixPath"
 }
@@ -112,7 +144,13 @@ Write-Host "Configuring CMake..." -ForegroundColor Green
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "Building SwiftChat..." -ForegroundColor Green
-& ninja SwiftChat
+if ($Generator -eq "Ninja") {
+    & ninja SwiftChat
+} elseif ($Generator -match "Visual Studio") {
+    & cmake --build . --config Release --target SwiftChat
+} else {
+    & cmake --build . --target SwiftChat -- -j4
+}
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $ExePath = "client\desktop\SwiftChat.exe"
