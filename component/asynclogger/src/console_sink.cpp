@@ -3,6 +3,10 @@
 
 #ifdef _WIN32
 #include <windows.h>
+// windows.h defines ERROR macro, which conflicts with LogLevel::ERROR.
+#ifdef ERROR
+#undef ERROR
+#endif
 #endif
 
 namespace asynclog {

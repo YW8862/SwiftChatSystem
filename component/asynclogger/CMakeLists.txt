@@ -62,7 +62,7 @@ target_link_libraries(asynclogger PUBLIC Threads::Threads)
 target_compile_options(asynclogger PRIVATE
     $<$<CXX_COMPILER_ID:GNU>:-Wall -Wextra -Wpedantic>
     $<$<CXX_COMPILER_ID:Clang>:-Wall -Wextra -Wpedantic>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /utf-8>
 )
 
 # 导出符号（Windows DLL）
