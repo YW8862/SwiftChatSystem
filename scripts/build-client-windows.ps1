@@ -184,8 +184,21 @@ if ($ExePath) {
     # -------------------------------------------------------------------------
     $DistRoot = Join-Path $ProjectRoot "dist"
     if (-not (Test-Path $DistRoot)) { New-Item -ItemType Directory -Path $DistRoot | Out-Null }
-    $DistDir = Join-Path $DistRoot "SwiftChat-$Triplet"
-    if (Test-Path $DistDir) { Remove-Item -Recurse -Force $DistDir }
+    $DistBaseName = "SwiftChat-$Triplet"
+    $DistDir = Join-Path $DistRoot $DistBaseName
+
+    # If previous packaged app is still running, files like qwindows.dll may be locked.
+    Get-Process -Name "SwiftChat" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+    if (Test-Path $DistDir) {
+        try {
+            Remove-Item -Recurse -Force $DistDir -ErrorAction Stop
+        } catch {
+            $Suffix = Get-Date -Format "yyyyMMdd-HHmmss"
+            $DistDir = Join-Path $DistRoot "$DistBaseName-$Suffix"
+            Write-Host "Existing dist folder is locked, using new folder: $DistDir" -ForegroundColor Yellow
+        }
+    }
     New-Item -ItemType Directory -Path $DistDir | Out-Null
 
     Write-Host "Packaging runtime to: $DistDir" -ForegroundColor Green
@@ -210,17 +223,39 @@ if ($ExePath) {
         Write-Host "windeployqt not found; continue with vcpkg DLL copy fallback." -ForegroundColor Yellow
     }
 
-    # Copy all vcpkg runtime DLLs as fallback/supplement
-    if ($InstalledDir -and (Test-Path "$InstalledDir\bin")) {
-        Write-Host "Copying DLLs from: $InstalledDir\bin" -ForegroundColor Cyan
-        Get-ChildItem -Path "$InstalledDir\bin" -Filter "*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
+    # Copy ALL vcpkg runtime DLLs (Qt5, Qt5WebSockets, protobuf, abseil, etc.)
+    $VcpkgBin = if ($InstalledDir -and (Test-Path "$InstalledDir\bin")) { "$InstalledDir\bin" } else { $null }
+    if ($VcpkgBin) {
+        Write-Host "Copying all DLLs from: $VcpkgBin" -ForegroundColor Cyan
+        Get-ChildItem -Path $VcpkgBin -Filter "*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
             Copy-Item $_.FullName $DistDir -Force -ErrorAction SilentlyContinue
         }
     }
 
-    # Also copy plugins tree from vcpkg when present (e.g. platforms/qwindows.dll)
-    if ($InstalledDir -and (Test-Path "$InstalledDir\plugins")) {
-        Copy-Item -Recurse -Force "$InstalledDir\plugins" $DistDir -ErrorAction SilentlyContinue
+    # Copy plugins (platforms/qwindows.dll, imageformats, etc.)
+    foreach ($PlugDir in @("$InstalledDir\plugins", "$InstalledDir\share\qt5\plugins", "$InstalledDir\share\qt6\plugins")) {
+        if ($PlugDir -and (Test-Path $PlugDir)) {
+            Write-Host "Copying plugins from: $PlugDir" -ForegroundColor Cyan
+            Copy-Item -Recurse -Force $PlugDir $DistDir -ErrorAction SilentlyContinue
+            break
+        }
+    }
+
+    # Also copy deps into the build Release folder so running from there works
+    $ExeDir = Split-Path $ExePath -Parent
+    if ($ExeDir -and $ExeDir -ne $DistDir) {
+        Write-Host "Copying DLLs to build output: $ExeDir" -ForegroundColor Cyan
+        if ($VcpkgBin) {
+            Get-ChildItem -Path $VcpkgBin -Filter "*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
+                Copy-Item $_.FullName $ExeDir -Force -ErrorAction SilentlyContinue
+            }
+        }
+        foreach ($PlugDir in @("$InstalledDir\plugins", "$InstalledDir\share\qt5\plugins", "$InstalledDir\share\qt6\plugins")) {
+            if ($PlugDir -and (Test-Path $PlugDir)) {
+                Copy-Item -Recurse -Force $PlugDir $ExeDir -ErrorAction SilentlyContinue
+                break
+            }
+        }
     }
 
     Write-Host "Package ready: $DistDir" -ForegroundColor Green
