@@ -49,5 +49,5 @@ private:
     int m_currentChatType = 1;
     QMap<QString, Conversation> m_conversationMap;
     QMap<QString, QList<Message>> m_messageMap;
-    QMap<QString, QString> m_readReceiptMap;  // key: chatType#chatId, value: userId:lastMsgId
+    QMap<QString, QString> m_readReceiptMap;  // key: chatId, value: userId:lastMsgId
 };

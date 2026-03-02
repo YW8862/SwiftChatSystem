@@ -205,8 +205,8 @@ void MainWindow::onConversationSelected(const QString& chatId, int chatType) {
     m_contactWidget->setCurrentChat(chatId);
     m_chatWidget->setConversation(chatId, chatType);
     const QString key = convKey(chatId, chatType);
-    if (m_readReceiptMap.contains(key)) {
-        const QStringList parts = m_readReceiptMap.value(key).split(':');
+    if (m_readReceiptMap.contains(chatId)) {
+        const QStringList parts = m_readReceiptMap.value(chatId).split(':');
         if (parts.size() == 2) {
             m_chatWidget->setReadReceipt(parts[0], parts[1]);
         }
@@ -307,8 +307,7 @@ void MainWindow::onPushReadReceipt(const QByteArray& payload) {
     const QString lastMsgId = QString::fromStdString(notify.last_read_msg_id());
     if (chatId.isEmpty() || userId.isEmpty() || lastMsgId.isEmpty()) return;
 
-    const QString key = convKey(chatId, m_currentChatType);
-    m_readReceiptMap[key] = QString("%1:%2").arg(userId, lastMsgId);
+    m_readReceiptMap[chatId] = QString("%1:%2").arg(userId, lastMsgId);
     if (chatId == m_currentChatId) {
         m_chatWidget->setReadReceipt(userId, lastMsgId);
     }
