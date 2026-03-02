@@ -21,15 +21,10 @@
 #include <openssl/buffer.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
-#include <openssl/md5.h>
-#include <openssl/sha.h>
 
 namespace swift {
 namespace utils {
 
-// ============================================================================
-// 内部工具（匿名命名空间，仅本文件可见）
-// ============================================================================
 namespace {
 
 /**
@@ -61,6 +56,35 @@ std::string BytesToHex(const unsigned char *data, size_t len) {
     result += kHexChars[data[i] & 0x0F];
   }
   return result;
+}
+
+/**
+ * 使用 OpenSSL EVP 接口计算摘要，兼容 OpenSSL 3.x（避免低层 API 弃用告警）。
+ */
+std::string ComputeDigestHex(const EVP_MD* md, const std::string& input) {
+  if (md == nullptr) {
+    return "";
+  }
+
+  EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+  if (ctx == nullptr) {
+    return "";
+  }
+
+  unsigned char hash[EVP_MAX_MD_SIZE];
+  unsigned int hash_len = 0;
+
+  const bool ok =
+      EVP_DigestInit_ex(ctx, md, nullptr) == 1 &&
+      EVP_DigestUpdate(ctx, input.data(), input.size()) == 1 &&
+      EVP_DigestFinal_ex(ctx, hash, &hash_len) == 1;
+
+  EVP_MD_CTX_free(ctx);
+  if (!ok) {
+    return "";
+  }
+
+  return BytesToHex(hash, hash_len);
 }
 
 } // namespace
@@ -191,36 +215,15 @@ int64_t ParseTimestamp(const std::string &time_str, const std::string &format) {
  * 用途：密码/盐哈希、内容指纹、签名输入等。
  */
 std::string SHA256(const std::string &input) {
-  unsigned char hash[SHA256_DIGEST_LENGTH]; // 32 字节
-
-  SHA256_CTX ctx;
-  SHA256_Init(&ctx);
-  SHA256_Update(&ctx, input.c_str(), input.size());
-  SHA256_Final(hash, &ctx);
-
-  return BytesToHex(hash, SHA256_DIGEST_LENGTH);
+  return ComputeDigestHex(EVP_sha256(), input);
 }
 
 std::string SHA512(const std::string &input) {
-  unsigned char hash[SHA512_DIGEST_LENGTH]; // 64 字节
-
-  SHA512_CTX ctx;
-  SHA512_Init(&ctx);
-  SHA512_Update(&ctx, input.c_str(), input.size());
-  SHA512_Final(hash, &ctx);
-
-  return BytesToHex(hash, SHA512_DIGEST_LENGTH);
+  return ComputeDigestHex(EVP_sha512(), input);
 }
 
 std::string MD5(const std::string &input) {
-  unsigned char hash[MD5_DIGEST_LENGTH]; // 16 字节
-
-  MD5_CTX ctx;
-  MD5_Init(&ctx);
-  MD5_Update(&ctx, input.c_str(), input.size());
-  MD5_Final(hash, &ctx);
-
-  return BytesToHex(hash, MD5_DIGEST_LENGTH);
+  return ComputeDigestHex(EVP_md5(), input);
 }
 
 std::string HmacSHA256(const std::string &key, const std::string &data) {

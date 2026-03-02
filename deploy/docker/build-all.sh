@@ -4,11 +4,14 @@
 set -e
 cd "$(dirname "$0")/../.."
 
+KUBECTL_CMD=(kubectl)
+
 # 开启 Minikube 内部 Docker 环境
 # 这样不仅能省去极其漫长的 image load 过程，还能避免宿主机和 Minikube 之间的镜像版本不同步！
 if command -v minikube &>/dev/null && minikube status &>/dev/null; then
   echo "=> Minikube is running. Switching to Minikube docker environment..."
   eval $(minikube -p minikube docker-env)
+  KUBECTL_CMD=(minikube -p minikube kubectl --)
 else
   echo "=> Warning: Minikube is not running. Building on host Docker..."
   unset DOCKER_HOST DOCKER_CERT_PATH DOCKER_TLS_VERIFY MINIKUBE_ACTIVE_DOCKERD
@@ -36,13 +39,18 @@ for target in authsvr onlinesvr friendsvr chatsvr filesvr zonesvr gatesvr; do
 done
 
 echo "=> Applying k8s configurations..."
-kubectl apply -k ./deploy/k8s
+if ! "${KUBECTL_CMD[@]}" cluster-info >/dev/null 2>&1; then
+  echo "=> Error: Kubernetes cluster is unreachable for command: ${KUBECTL_CMD[*]}"
+  echo "=> Hint: start minikube (minikube start) or configure kubectl context, then rerun."
+  exit 1
+fi
+"${KUBECTL_CMD[@]}" apply -k ./deploy/k8s
 
 echo "=> Restarting pods to force them to pull the newly built local 'latest' image..."
 # 因为 rollout restart --all 在某些版本报错，这里直接删除所有旧 Pod，
 # Deployment 会立刻自动重建它们。由于 yaml 配置了 imagePullPolicy: Never，
 # 新 Pod 启动时会立刻使用刚才在 Minikube 内部构建好的那个最新的 latest 镜像！
-kubectl delete pods --all -n master
+"${KUBECTL_CMD[@]}" delete pods --all -n master
 
 echo "=> Cleaning up old unused images to save disk space..."
 # 一键清理刚才由于重新构建 latest，导致失去标签变成 <none>:<none> 的废弃旧镜像。
