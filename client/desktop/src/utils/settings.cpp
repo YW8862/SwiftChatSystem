@@ -11,7 +11,7 @@ Settings::~Settings() = default;
 
 QString Settings::serverUrl() const {
     QSettings settings;
-    return settings.value("server/url", "ws://localhost:9090/ws").toString();
+    return settings.value("server/url", "ws://117.72.44.96:9090/ws").toString();
 }
 
 void Settings::setServerUrl(const QString& url) {
