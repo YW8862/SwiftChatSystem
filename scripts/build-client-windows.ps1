@@ -153,20 +153,78 @@ if ($Generator -eq "Ninja") {
 }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$ExePath = "client\desktop\SwiftChat.exe"
-if (Test-Path $ExePath) {
-    Write-Host "`nBuild succeeded: $BuildDir\$ExePath" -ForegroundColor Green
-    Write-Host "Before running, deploy Qt DLLs (windeployqt)." -ForegroundColor Cyan
+$ExeCandidates = @(
+    "client\desktop\SwiftChat.exe",          # Ninja / single-config
+    "client\desktop\Release\SwiftChat.exe",  # Visual Studio multi-config
+    "client\desktop\Debug\SwiftChat.exe"
+)
+$ExePath = $null
+foreach ($p in $ExeCandidates) {
+    if (Test-Path $p) {
+        $ExePath = $p
+        break
+    }
+}
+if (-not $ExePath) {
+    $Found = Get-ChildItem -Path "client\desktop" -Recurse -Filter "SwiftChat.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($Found) {
+        $ExePath = $Found.FullName
+    }
+}
+
+if ($ExePath) {
+    # Normalize exe full path
+    if (Test-Path $ExePath) {
+        $ExePath = (Resolve-Path $ExePath).Path
+    }
+    Write-Host "`nBuild succeeded: $ExePath" -ForegroundColor Green
+
+    # -------------------------------------------------------------------------
+    # Deploy runtime deps to dist folder
+    # -------------------------------------------------------------------------
+    $DistRoot = Join-Path $ProjectRoot "dist"
+    if (-not (Test-Path $DistRoot)) { New-Item -ItemType Directory -Path $DistRoot | Out-Null }
+    $DistDir = Join-Path $DistRoot "SwiftChat-$Triplet"
+    if (Test-Path $DistDir) { Remove-Item -Recurse -Force $DistDir }
+    New-Item -ItemType Directory -Path $DistDir | Out-Null
+
+    Write-Host "Packaging runtime to: $DistDir" -ForegroundColor Green
+    Copy-Item $ExePath $DistDir -Force
+
+    # Find windeployqt from standalone Qt or vcpkg tools
+    $DeployQtPath = $null
     if ($QtPath -and (Test-Path "$QtPath\bin\windeployqt.exe")) {
-        Write-Host "  $QtPath\bin\windeployqt.exe $BuildDir\$ExePath" -ForegroundColor Cyan
+        $DeployQtPath = "$QtPath\bin\windeployqt.exe"
     } elseif ($InstalledDir) {
         $DeployQt = Get-ChildItem -Path "$InstalledDir\tools" -Recurse -Filter "windeployqt.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($DeployQt) {
-            Write-Host "  $($DeployQt.FullName) $BuildDir\$ExePath" -ForegroundColor Cyan
-        } else {
-            Write-Host "  windeployqt.exe not found automatically. Use your Qt installation path." -ForegroundColor Yellow
+        if ($DeployQt) { $DeployQtPath = $DeployQt.FullName }
+    }
+
+    if ($DeployQtPath) {
+        Write-Host "Running windeployqt: $DeployQtPath" -ForegroundColor Cyan
+        & $DeployQtPath (Join-Path $DistDir "SwiftChat.exe")
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "windeployqt failed; continue with vcpkg DLL copy fallback." -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "windeployqt not found; continue with vcpkg DLL copy fallback." -ForegroundColor Yellow
+    }
+
+    # Copy all vcpkg runtime DLLs as fallback/supplement
+    if ($InstalledDir -and (Test-Path "$InstalledDir\bin")) {
+        Write-Host "Copying DLLs from: $InstalledDir\bin" -ForegroundColor Cyan
+        Get-ChildItem -Path "$InstalledDir\bin" -Filter "*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName $DistDir -Force -ErrorAction SilentlyContinue
         }
     }
+
+    # Also copy plugins tree from vcpkg when present (e.g. platforms/qwindows.dll)
+    if ($InstalledDir -and (Test-Path "$InstalledDir\plugins")) {
+        Copy-Item -Recurse -Force "$InstalledDir\plugins" $DistDir -ErrorAction SilentlyContinue
+    }
+
+    Write-Host "Package ready: $DistDir" -ForegroundColor Green
+    Write-Host "Run: $DistDir\SwiftChat.exe" -ForegroundColor Green
 } else {
     Write-Host "Executable not found." -ForegroundColor Red
     exit 1
