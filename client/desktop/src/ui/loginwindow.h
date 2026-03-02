@@ -43,6 +43,8 @@ private:
     QLineEdit* m_passEdit = nullptr;
     QLabel* m_statusLabel = nullptr;
     QPushButton* m_loginBtn = nullptr;
+    QPushButton* m_registerBtn = nullptr;
     bool m_loginInFlight = false;
+    bool m_registerInFlight = false;
     std::unique_ptr<MainWindow> m_mainWindow;
 };

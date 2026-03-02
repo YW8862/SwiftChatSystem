@@ -39,6 +39,14 @@ struct AuthLogoutResult {
     std::string error;
 };
 
+/// 注册结果
+struct AuthRegisterResult {
+    bool success = false;
+    std::string user_id;
+    std::string error;
+    int error_code = 0;
+};
+
 /**
  * @class AuthSystem
  * @brief 认证子系统：登录/登出走 OnlineSvr，身份与资料走 AuthSvr
@@ -53,6 +61,12 @@ public:
     void Shutdown() override;
 
     // ============ 业务接口 ============
+
+    /// 注册：AuthSvr.Register
+    AuthRegisterResult Register(const std::string& username, const std::string& password,
+                                const std::string& nickname = "",
+                                const std::string& email = "",
+                                const std::string& avatar_url = "");
 
     /// 登录：VerifyCredentials(AuthSvr) + Login(OnlineSvr)，返回 token
     AuthLoginResult Login(const std::string& username, const std::string& password,

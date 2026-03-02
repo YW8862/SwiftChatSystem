@@ -40,6 +40,24 @@ void AuthSystem::Shutdown() {
     }
 }
 
+AuthRegisterResult AuthSystem::Register(const std::string& username,
+                                        const std::string& password,
+                                        const std::string& nickname,
+                                        const std::string& email,
+                                        const std::string& avatar_url) {
+    AuthRegisterResult result;
+    if (!auth_rpc_client_) {
+        result.error = "auth not configured";
+        return result;
+    }
+    if (!auth_rpc_client_->Register(username, password, nickname, email, avatar_url,
+                                    &result.user_id, &result.error, &result.error_code)) {
+        return result;
+    }
+    result.success = true;
+    return result;
+}
+
 AuthLoginResult AuthSystem::Login(const std::string& username,
                                    const std::string& password,
                                    const std::string& device_id,

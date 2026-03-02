@@ -122,6 +122,22 @@ message AuthLoginResponsePayload {
     string error = 5;
 }
 
+// auth.register 请求体
+message AuthRegisterPayload {
+    string username = 1;
+    string password = 2;
+    string nickname = 3;
+    string email = 4;
+    string avatar_url = 5;
+}
+
+// auth.register 返回体
+message AuthRegisterResponsePayload {
+    bool success = 1;
+    string user_id = 2;
+    string error = 3;
+}
+
 // auth.logout 请求体
 message AuthLogoutPayload {
     string user_id = 1;

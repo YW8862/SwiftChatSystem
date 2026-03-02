@@ -275,6 +275,33 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleAuth(
         SetResultError(result, swift::ErrorCode::SERVICE_UNAVAILABLE, request_id);
         return result;
     }
+    if (cmd == "auth.register") {
+        AuthRegisterPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        AuthRegisterResult reg = auth->Register(req.username(), req.password(),
+                                                req.nickname(), req.email(),
+                                                req.avatar_url());
+        AuthRegisterResponsePayload resp_pb;
+        resp_pb.set_success(reg.success);
+        resp_pb.set_user_id(reg.user_id);
+        resp_pb.set_error(reg.error);
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        if (reg.success) {
+            result.code = swift::ErrorCodeToInt(swift::ErrorCode::OK);
+            return result;
+        }
+        result.code = reg.error_code > 0
+            ? reg.error_code
+            : swift::ErrorCodeToInt(swift::ErrorCode::AUTH_FAILED);
+        if (!reg.error.empty()) result.message = reg.error;
+        return result;
+    }
     if (cmd == "auth.login") {
         AuthLoginPayload req;
         if (!req.ParseFromString(payload)) {

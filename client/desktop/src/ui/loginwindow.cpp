@@ -15,6 +15,9 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QFont>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
 #include <QSysInfo>
 
 LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
@@ -89,22 +92,22 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
         "QPushButton:hover { background-color: #1557b0; }"
         "QPushButton:pressed { background-color: #0d47a1; }"
     );
-    auto *regBtn = new QPushButton("注册");
-    regBtn->setMinimumHeight(44);
-    regBtn->setMinimumWidth(100);
-    regBtn->setStyleSheet(
+    m_registerBtn = new QPushButton("注册");
+    m_registerBtn->setMinimumHeight(44);
+    m_registerBtn->setMinimumWidth(100);
+    m_registerBtn->setStyleSheet(
         "QPushButton { background-color: #f1f3f4; color: #333; border: 1px solid #dadce0; border-radius: 8px; font-size: 14px; }"
         "QPushButton:hover { background-color: #e8eaed; }"
         "QPushButton:pressed { background-color: #dadce0; }"
     );
     btnLayout->addStretch();
     btnLayout->addWidget(m_loginBtn);
-    btnLayout->addWidget(regBtn);
+    btnLayout->addWidget(m_registerBtn);
     btnLayout->addStretch();
     mainLayout->addLayout(btnLayout);
 
     connect(m_loginBtn, &QPushButton::clicked, this, &LoginWindow::onLoginClicked);
-    connect(regBtn, &QPushButton::clicked, this, &LoginWindow::onRegisterClicked);
+    connect(m_registerBtn, &QPushButton::clicked, this, &LoginWindow::onRegisterClicked);
 
     if (m_wsClient) {
         connect(m_wsClient, &WebSocketClient::connected, this, &LoginWindow::onConnected);
@@ -255,11 +258,119 @@ void LoginWindow::onLoginClicked() {
 }
 
 void LoginWindow::onRegisterClicked() {
-    QMessageBox::information(this, "注册", "注册功能开发中，请稍后。");
+    if (!m_wsClient || !m_protocol) return;
+    if (m_loginInFlight || m_registerInFlight) return;
+    if (!m_wsClient->isConnected()) {
+        QMessageBox::warning(this, "注册失败", "当前未连接到网关，请稍后重试。");
+        return;
+    }
+
+    QDialog dialog(this);
+    dialog.setWindowTitle("注册账号");
+    dialog.setModal(true);
+    auto* form = new QFormLayout(&dialog);
+
+    auto* usernameEdit = new QLineEdit(&dialog);
+    usernameEdit->setPlaceholderText("3-32位，字母/数字/下划线");
+    auto* passwordEdit = new QLineEdit(&dialog);
+    passwordEdit->setEchoMode(QLineEdit::Password);
+    passwordEdit->setPlaceholderText("至少8位");
+    auto* confirmEdit = new QLineEdit(&dialog);
+    confirmEdit->setEchoMode(QLineEdit::Password);
+    confirmEdit->setPlaceholderText("再次输入密码");
+    auto* nicknameEdit = new QLineEdit(&dialog);
+    nicknameEdit->setPlaceholderText("可选，默认同用户名");
+    auto* emailEdit = new QLineEdit(&dialog);
+    emailEdit->setPlaceholderText("可选");
+
+    form->addRow("用户名", usernameEdit);
+    form->addRow("密码", passwordEdit);
+    form->addRow("确认密码", confirmEdit);
+    form->addRow("昵称", nicknameEdit);
+    form->addRow("邮箱", emailEdit);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    buttons->button(QDialogButtonBox::Ok)->setText("注册");
+    buttons->button(QDialogButtonBox::Cancel)->setText("取消");
+    form->addRow(buttons);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    usernameEdit->setText(m_userEdit ? m_userEdit->text().trimmed() : QString());
+    dialog.resize(360, 260);
+    if (dialog.exec() != QDialog::Accepted) return;
+
+    const QString username = usernameEdit->text().trimmed();
+    const QString password = passwordEdit->text();
+    const QString confirm = confirmEdit->text();
+    const QString nickname = nicknameEdit->text().trimmed();
+    const QString email = emailEdit->text().trimmed();
+
+    if (username.isEmpty() || password.isEmpty()) {
+        QMessageBox::warning(this, "注册失败", "用户名和密码不能为空。");
+        return;
+    }
+    if (password != confirm) {
+        QMessageBox::warning(this, "注册失败", "两次输入的密码不一致。");
+        return;
+    }
+
+    swift::zone::AuthRegisterPayload req;
+    req.set_username(username.toStdString());
+    req.set_password(password.toStdString());
+    if (!nickname.isEmpty()) req.set_nickname(nickname.toStdString());
+    if (!email.isEmpty()) req.set_email(email.toStdString());
+
+    std::string payload;
+    if (!req.SerializeToString(&payload)) {
+        QMessageBox::warning(this, "注册失败", "请求序列化失败。");
+        return;
+    }
+
+    m_registerInFlight = true;
+    setLoginUiEnabled(false);
+    if (m_statusLabel) m_statusLabel->setText("注册中...");
+    m_protocol->sendRequest("auth.register",
+                            QByteArray(payload.data(), static_cast<int>(payload.size())),
+                            [this, username](int code, const QByteArray& data) {
+        m_registerInFlight = false;
+        setLoginUiEnabled(true);
+
+        if (code != 0) {
+            swift::zone::AuthRegisterResponsePayload resp;
+            QString err = QString("服务器返回错误码：%1").arg(code);
+            if (resp.ParseFromArray(data.data(), data.size()) && !resp.error().empty()) {
+                err = QString::fromStdString(resp.error());
+            }
+            if (m_statusLabel) m_statusLabel->setText(QString("注册失败 code=%1").arg(code));
+            QMessageBox::warning(this, "注册失败", err);
+            return;
+        }
+
+        swift::zone::AuthRegisterResponsePayload resp;
+        if (!resp.ParseFromArray(data.data(), data.size())) {
+            if (m_statusLabel) m_statusLabel->setText("注册失败：响应解析失败");
+            QMessageBox::warning(this, "注册失败", "注册响应解析失败。");
+            return;
+        }
+        if (!resp.success()) {
+            const QString err = resp.error().empty()
+                ? QStringLiteral("注册失败")
+                : QString::fromStdString(resp.error());
+            if (m_statusLabel) m_statusLabel->setText("注册失败");
+            QMessageBox::warning(this, "注册失败", err);
+            return;
+        }
+
+        if (m_userEdit) m_userEdit->setText(username);
+        if (m_statusLabel) m_statusLabel->setText("注册成功，请登录");
+        QMessageBox::information(this, "注册成功", "账号已创建，请使用该账号登录。");
+    });
 }
 
 void LoginWindow::setLoginUiEnabled(bool enabled) {
     if (m_userEdit) m_userEdit->setEnabled(enabled);
     if (m_passEdit) m_passEdit->setEnabled(enabled);
     if (m_loginBtn) m_loginBtn->setEnabled(enabled);
+    if (m_registerBtn) m_registerBtn->setEnabled(enabled);
 }

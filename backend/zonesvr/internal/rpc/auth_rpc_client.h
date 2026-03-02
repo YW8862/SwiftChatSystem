@@ -24,6 +24,12 @@ public:
 
     void InitStub();
 
+    /// 注册账号，成功时返回 user_id
+    bool Register(const std::string& username, const std::string& password,
+                  const std::string& nickname, const std::string& email,
+                  const std::string& avatar_url, std::string* out_user_id,
+                  std::string* out_error, int* out_error_code = nullptr);
+
     /// 校验用户名密码，返回 user_id 与 profile（登录流程第一步）
     bool VerifyCredentials(const std::string& username, const std::string& password,
                           std::string* out_user_id, std::string* out_error);

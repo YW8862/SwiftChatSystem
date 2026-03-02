@@ -12,6 +12,40 @@ void AuthRpcClient::InitStub() {
     stub_ = swift::auth::AuthService::NewStub(GetChannel());
 }
 
+bool AuthRpcClient::Register(const std::string& username,
+                             const std::string& password,
+                             const std::string& nickname,
+                             const std::string& email,
+                             const std::string& avatar_url,
+                             std::string* out_user_id,
+                             std::string* out_error,
+                             int* out_error_code) {
+    if (!stub_) return false;
+    swift::auth::RegisterRequest req;
+    req.set_username(username);
+    req.set_password(password);
+    if (!nickname.empty()) req.set_nickname(nickname);
+    if (!email.empty()) req.set_email(email);
+    if (!avatar_url.empty()) req.set_avatar_url(avatar_url);
+
+    swift::auth::RegisterResponse resp;
+    auto ctx = CreateContext(5000);
+    grpc::Status status = stub_->Register(ctx.get(), req, &resp);
+    if (!status.ok()) {
+        if (out_error) *out_error = status.error_message();
+        if (out_error_code) *out_error_code = -1;
+        return false;
+    }
+    if (resp.code() != 0) {
+        if (out_error) *out_error = resp.message().empty() ? "register failed" : resp.message();
+        if (out_error_code) *out_error_code = resp.code();
+        return false;
+    }
+    if (out_user_id) *out_user_id = resp.user_id();
+    if (out_error_code) *out_error_code = 0;
+    return true;
+}
+
 bool AuthRpcClient::VerifyCredentials(const std::string& username,
                                       const std::string& password,
                                       std::string* out_user_id,

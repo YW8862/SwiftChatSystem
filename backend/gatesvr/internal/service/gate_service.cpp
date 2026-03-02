@@ -121,6 +121,8 @@ void GateService::HandleClientMessage(const std::string& conn_id, const std::str
                                        const std::string& payload, const std::string& request_id) {
     if (cmd == "auth.login") {
         HandleLogin(conn_id, payload, request_id);
+    } else if (cmd == "auth.register") {
+        ForwardToZone(conn_id, cmd, payload, request_id);
     } else if (cmd == "heartbeat") {
         HandleHeartbeat(conn_id, request_id);
     } else if (cmd == "auth.logout" || cmd == "auth.validate_token") {
