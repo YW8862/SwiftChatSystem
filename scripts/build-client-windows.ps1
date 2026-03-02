@@ -1,15 +1,16 @@
-# SwiftChatSystem Windows 客户端构建脚本
-# 前置要求：
-#   1. Qt 5.15 for Windows (建议 Qt Online Installer，勾选 MinGW 或 MSVC 组件)
+# SwiftChatSystem Windows client build script
+# Requirements:
+#   1. Qt 5.15+ for Windows (MinGW or MSVC)
 #   2. CMake 3.16+
-#   3. vcpkg（用于 Protobuf）或单独安装 Protobuf
-# 用法：在项目根目录执行 .\scripts\build-client-windows.ps1
+#   3. vcpkg (for protobuf) or a local protobuf install
+# Usage: run from repository root:
+#   .\scripts\build-client-windows.ps1
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectRoot
 
-# 查找 Qt5（依赖安装在 E 盘）
+# Locate Qt (common local install paths + env vars)
 $QtDirs = @(
     "E:\Qt\5.15.2\msvc2019_64",
     "E:\Qt\5.15.2\mingw81_64",
@@ -28,23 +29,23 @@ foreach ($d in $QtDirs) {
     }
 }
 if (-not $QtPath) {
-    Write-Host "未找到 Qt5，请先安装 Qt 或设置 Qt5_DIR。" -ForegroundColor Yellow
-    Write-Host "  1) 若尚未准备环境，请先运行: scripts\setup-env-windows.bat （右键以管理员身份运行）" -ForegroundColor Cyan
-    Write-Host "  2) 或手动安装 Qt 5.15.2 MinGW 到 E:\Qt ，或设置: `$env:Qt5_DIR='E:\Qt\5.15.2\mingw81_64'" -ForegroundColor Cyan
+    Write-Host "Qt was not found. Please install Qt or set Qt5_DIR." -ForegroundColor Yellow
+    Write-Host "  Example: `$env:Qt5_DIR='E:\Qt\5.15.2\mingw81_64'" -ForegroundColor Cyan
     exit 1
 }
 
-# 使用 MinGW 版 Qt 时，将 Qt 自带的 MinGW 加入 PATH，以便 CMake 使用 g++
+# If using MinGW Qt, prepend Qt's MinGW bin to PATH
 if ($QtPath -match "mingw") {
     $QtBase = Split-Path (Split-Path $QtPath -Parent) -Parent  # e.g. E:\Qt
     $ToolsMingw = Get-ChildItem -Path "$QtBase\Tools" -Directory -Filter "mingw*" -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($ToolsMingw -and (Test-Path "$($ToolsMingw.FullName)\bin\g++.exe")) {
         $env:Path = "$($ToolsMingw.FullName)\bin;" + $env:Path
-        Write-Host "已加入 PATH: $($ToolsMingw.FullName)\bin (MinGW)"
+        Write-Host "Added to PATH: $($ToolsMingw.FullName)\bin (MinGW)"
     }
 }
 
-# Protobuf: 通过 vcpkg 获取。Qt 为 MinGW 时用 x64-mingw-dynamic，为 MSVC 时用 x64-windows
+# Protobuf via vcpkg.
+# MinGW Qt -> x64-mingw-dynamic, MSVC Qt -> x64-windows
 $VcpkgRoot = $env:VCPKG_ROOT
 if (-not $VcpkgRoot -and (Test-Path "E:\vcpkg")) { $VcpkgRoot = "E:\vcpkg" }
 $Triplet = if ($QtPath -match "mingw") { "x64-mingw-dynamic" } else { "x64-windows" }
@@ -53,13 +54,13 @@ $CmakePrefixPath = $QtPath
 $VcpkgToolchain = "$VcpkgRoot\scripts\buildsystems\vcpkg.cmake"
 if ($VcpkgRoot -and (Test-Path $InstalledDir)) {
     $CmakePrefixPath = "$QtPath;$InstalledDir"
-    Write-Host "使用 vcpkg 已安装包 (triplet=$Triplet): $InstalledDir"
+    Write-Host "Using vcpkg installed packages (triplet=$Triplet): $InstalledDir"
 } elseif ($VcpkgRoot) {
-    Write-Host "请先执行: vcpkg install protobuf:${Triplet}" -ForegroundColor Yellow
+    Write-Host "Please run first: vcpkg install protobuf:${Triplet}" -ForegroundColor Yellow
     exit 1
 }
 
-# 构建
+# Build
 $BuildDir = "build-windows"
 if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
 New-Item -ItemType Directory -Path $BuildDir | Out-Null
@@ -73,21 +74,25 @@ $CmakeArgs = @(
     "-DSWIFT_BUILD_CLIENT_ONLY=ON",
     "-DSWIFT_BUILD_CLIENT=ON"
 )
+if ($VcpkgRoot -and (Test-Path $VcpkgToolchain)) {
+    $CmakeArgs += "-DCMAKE_TOOLCHAIN_FILE=$VcpkgToolchain"
+    $CmakeArgs += "-DVCPKG_TARGET_TRIPLET=$Triplet"
+}
 
-Write-Host "配置 CMake..." -ForegroundColor Green
+Write-Host "Configuring CMake..." -ForegroundColor Green
 & cmake @CmakeArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "编译 SwiftChat..." -ForegroundColor Green
+Write-Host "Building SwiftChat..." -ForegroundColor Green
 & ninja SwiftChat
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $ExePath = "client\desktop\SwiftChat.exe"
 if (Test-Path $ExePath) {
-    Write-Host "`n构建成功: $BuildDir\$ExePath" -ForegroundColor Green
-    Write-Host "运行前需将 Qt DLL 复制到同目录，或使用 windeployqt:" -ForegroundColor Cyan
+    Write-Host "`nBuild succeeded: $BuildDir\$ExePath" -ForegroundColor Green
+    Write-Host "Before running, deploy Qt DLLs (example):" -ForegroundColor Cyan
     Write-Host "  $QtPath\bin\windeployqt.exe $BuildDir\$ExePath" -ForegroundColor Cyan
 } else {
-    Write-Host "未找到可执行文件" -ForegroundColor Red
+    Write-Host "Executable not found." -ForegroundColor Red
     exit 1
 }
