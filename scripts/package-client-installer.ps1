@@ -16,7 +16,18 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if (-not $IsWindows) {
+$IsWindowsHost = $false
+if ($env:OS -eq "Windows_NT") {
+    $IsWindowsHost = $true
+} else {
+    try {
+        $IsWindowsHost = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)
+    } catch {
+        $IsWindowsHost = $false
+    }
+}
+
+if (-not $IsWindowsHost) {
     Write-Host "This script must be run on Windows." -ForegroundColor Red
     exit 1
 }
