@@ -10,6 +10,7 @@ class QLineEdit;
 class QPushButton;
 class QLabel;
 class QStackedWidget;
+class QComboBox;
 
 /**
  * 联系人/会话列表组件
@@ -75,6 +76,7 @@ public:
     void setCurrentGroupInfo(const GroupItem& groupInfo);
     void setGroupMembers(const QList<GroupMemberItem>& members);
     QString currentSelectedGroupId() const { return m_currentGroupId; }
+    FriendItem friendById(const QString& userId) const;
 
 signals:
     void conversationSelected(const QString& chatId, int chatType);
@@ -88,16 +90,19 @@ private:
     void refreshFriendList();
     void refreshGroupList();
     void refreshGroupMemberList();
+    void applyGroupMemberFilter();
     void applyFilter(const QString& keyword, ViewMode mode);
     QWidget* buildConversationItemWidget(const Conversation& conversation) const;
     QWidget* buildFriendItemWidget(const FriendItem& item) const;
-    QWidget* buildFriendRequestItemWidget(const FriendRequestItem& item) const;
+    QWidget* buildFriendRequestItemWidget(const FriendRequestItem& item);
     QWidget* buildGroupItemWidget(const GroupItem& item) const;
     QWidget* buildGroupMemberItemWidget(const GroupMemberItem& item) const;
     void onItemClicked(QListWidgetItem* item);
     void onFriendItemClicked(QListWidgetItem* item);
     void onGroupItemClicked(QListWidgetItem* item);
     void onSearchTextChanged(const QString& text);
+    void onGroupMemberSearchChanged(const QString& text);
+    void onGroupRoleFilterChanged(int index);
     void updateTabStyles();
 
     ViewMode m_viewMode = ViewMode::Conversations;
@@ -111,6 +116,8 @@ private:
     QListWidget* m_friendListWidget = nullptr;
     QListWidget* m_groupListWidget = nullptr;
     QListWidget* m_groupMemberListWidget = nullptr;
+    QLineEdit* m_groupMemberSearchEdit = nullptr;
+    QComboBox* m_groupRoleFilter = nullptr;
     QLabel* m_groupNameLabel = nullptr;
     QLabel* m_groupMetaLabel = nullptr;
     QLabel* m_groupAnnouncementLabel = nullptr;
@@ -123,6 +130,7 @@ private:
     QList<GroupItem> m_groups;
     QList<GroupItem> m_visibleGroups;
     QList<GroupMemberItem> m_groupMembers;
+    QList<GroupMemberItem> m_visibleGroupMembers;
     GroupItem m_currentGroupInfo;
     QString m_currentChatId;
     QString m_currentGroupId;

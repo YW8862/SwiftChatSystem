@@ -17,14 +17,18 @@ find_package(Qt5 COMPONENTS
     REQUIRED
 )
 
+# 自动收集 UI 目录，避免手工维护文件列表导致漏改
+file(GLOB UI_SOURCES CONFIGURE_DEPENDS
+    src/ui/*.cpp
+)
+file(GLOB UI_HEADERS CONFIGURE_DEPENDS
+    src/ui/*.h
+)
+
 # 源文件
 set(SOURCES
     src/main.cpp
-    src/ui/mainwindow.cpp
-    src/ui/loginwindow.cpp
-    src/ui/chatwidget.cpp
-    src/ui/contactwidget.cpp
-    src/ui/messageitem.cpp
+    ${UI_SOURCES}
     src/network/websocket_client.cpp
     src/network/protocol_handler.cpp
     src/models/user.cpp
@@ -37,11 +41,7 @@ set(SOURCES
 
 # 头文件
 set(HEADERS
-    src/ui/mainwindow.h
-    src/ui/loginwindow.h
-    src/ui/chatwidget.h
-    src/ui/contactwidget.h
-    src/ui/messageitem.h
+    ${UI_HEADERS}
     src/network/websocket_client.h
     src/network/protocol_handler.h
     src/models/user.h

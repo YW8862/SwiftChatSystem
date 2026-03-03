@@ -13,7 +13,9 @@
 #include <QList>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QStackedWidget>
 #include <QSplitter>
+#include <QStyle>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -30,6 +32,9 @@ MainWindow::MainWindow(ProtocolHandler* protocol,
     setupUi();
     wireSignals();
     syncConversations();
+    loadFriends();
+    loadFriendRequests();
+    loadUserGroups();
 }
 
 MainWindow::~MainWindow() = default;
@@ -78,12 +83,57 @@ void MainWindow::setupUi() {
     m_contactWidget = new ContactWidget(central);
     m_contactWidget->setMinimumWidth(240);
     m_contactWidget->setMaximumWidth(500);
-    m_chatWidget = new ChatWidget(central);
+    m_rightStack = new QStackedWidget(central);
+    m_chatWidget = new ChatWidget(m_rightStack);
     m_chatWidget->setCurrentUserId(m_currentUserId);
+    m_friendProfilePage = new QWidget(m_rightStack);
+    auto* profileLayout = new QVBoxLayout(m_friendProfilePage);
+    profileLayout->setContentsMargins(32, 28, 32, 28);
+    profileLayout->setSpacing(12);
+    auto* title = new QLabel("好友资料", m_friendProfilePage);
+    title->setStyleSheet("color:#1f1f1f;font-size:20px;font-weight:700;");
+    m_profileNameLabel = new QLabel("-", m_friendProfilePage);
+    m_profileNameLabel->setStyleSheet("color:#2c2c2c;font-size:18px;font-weight:600;");
+    m_profileIdLabel = new QLabel("ID: -", m_friendProfilePage);
+    m_profileRemarkLabel = new QLabel("备注: -", m_friendProfilePage);
+    m_profileSourceLabel = new QLabel("来源: 好友列表同步", m_friendProfilePage);
+    m_profileAddedAtLabel = new QLabel("加好友时间: -", m_friendProfilePage);
+    for (auto* label : {m_profileIdLabel, m_profileRemarkLabel, m_profileSourceLabel, m_profileAddedAtLabel}) {
+        label->setStyleSheet("color:#5f6776;font-size:13px;");
+    }
+    auto* card = new QFrame(m_friendProfilePage);
+    card->setObjectName("profileCard");
+    auto* cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(18, 16, 18, 16);
+    cardLayout->setSpacing(8);
+    cardLayout->addWidget(m_profileNameLabel);
+    cardLayout->addWidget(m_profileIdLabel);
+    cardLayout->addWidget(m_profileRemarkLabel);
+    cardLayout->addWidget(m_profileSourceLabel);
+    cardLayout->addWidget(m_profileAddedAtLabel);
+    m_profileSendMsgBtn = new QPushButton("发消息", m_friendProfilePage);
+    m_profileSendMsgBtn->setCursor(Qt::PointingHandCursor);
+    m_profileSendMsgBtn->setMinimumHeight(38);
+    m_profileSendMsgBtn->setStyleSheet(
+        "QPushButton{background:#07c160;color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;padding:0 18px;}"
+        "QPushButton:hover{background:#06ad56;}"
+    );
+    profileLayout->addWidget(title);
+    profileLayout->addWidget(card);
+    profileLayout->addWidget(m_profileSendMsgBtn, 0, Qt::AlignLeft);
+    profileLayout->addStretch();
+    m_friendProfilePage->setStyleSheet(
+        "QWidget{background:#f5f5f5;}"
+        "QFrame#profileCard{background:#ffffff;border:1px solid #e1e6ef;border-radius:10px;}"
+    );
+
+    m_rightStack->addWidget(m_chatWidget);
+    m_rightStack->addWidget(m_friendProfilePage);
+    m_rightStack->setCurrentWidget(m_chatWidget);
 
     splitter->addWidget(navPanel);
     splitter->addWidget(m_contactWidget);
-    splitter->addWidget(m_chatWidget);
+    splitter->addWidget(m_rightStack);
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 1);
     splitter->setStretchFactor(2, 3);
@@ -96,6 +146,43 @@ void MainWindow::setupUi() {
             "个人信息",
             QString("用户ID: %1\n状态: 在线").arg(m_currentUserId)
         );
+    });
+    connect(chatBtn, &QPushButton::clicked, this, [this, chatBtn, contactBtn]() {
+        m_contactWidget->setViewMode(ContactWidget::ViewMode::Conversations);
+        chatBtn->setObjectName("navBtnActive");
+        contactBtn->setObjectName("navBtn");
+        style()->unpolish(chatBtn);
+        style()->polish(chatBtn);
+        style()->unpolish(contactBtn);
+        style()->polish(contactBtn);
+    });
+    connect(contactBtn, &QPushButton::clicked, this, [this, chatBtn, contactBtn]() {
+        m_contactWidget->setViewMode(ContactWidget::ViewMode::Friends);
+        contactBtn->setObjectName("navBtnActive");
+        chatBtn->setObjectName("navBtn");
+        style()->unpolish(chatBtn);
+        style()->polish(chatBtn);
+        style()->unpolish(contactBtn);
+        style()->polish(contactBtn);
+    });
+    connect(m_profileSendMsgBtn, &QPushButton::clicked, this, [this]() {
+        if (m_profileUserId.isEmpty()) return;
+        Conversation conv;
+        const QString key = convKey(m_profileUserId, 1);
+        if (m_conversationMap.contains(key)) {
+            conv = m_conversationMap.value(key);
+        } else {
+            conv.chatId = m_profileUserId;
+            conv.chatType = 1;
+            conv.peerId = m_profileUserId;
+            conv.peerName = m_profileUserId;
+            conv.updatedAt = QDateTime::currentMSecsSinceEpoch();
+            m_conversationMap[key] = conv;
+            m_contactWidget->upsertConversation(conv);
+        }
+        m_contactWidget->setViewMode(ContactWidget::ViewMode::Conversations);
+        m_rightStack->setCurrentWidget(m_chatWidget);
+        onConversationSelected(m_profileUserId, 1);
     });
 
     setStyleSheet(
@@ -116,6 +203,12 @@ void MainWindow::wireSignals() {
     if (!m_protocol || !m_contactWidget || !m_chatWidget) return;
     connect(m_contactWidget, &ContactWidget::conversationSelected,
             this, &MainWindow::onConversationSelected);
+    connect(m_contactWidget, &ContactWidget::friendSelected,
+            this, &MainWindow::onFriendSelected);
+    connect(m_contactWidget, &ContactWidget::groupSelected,
+            this, &MainWindow::onGroupSelected);
+    connect(m_contactWidget, &ContactWidget::friendRequestHandled,
+            this, &MainWindow::handleFriendRequest);
     connect(m_chatWidget, &ChatWidget::messageSent,
             this, &MainWindow::sendChatMessage);
 
@@ -125,6 +218,10 @@ void MainWindow::wireSignals() {
             this, &MainWindow::onPushRecall);
     connect(m_protocol, &ProtocolHandler::readReceiptNotify,
             this, &MainWindow::onPushReadReceipt);
+    connect(m_protocol, &ProtocolHandler::friendRequestNotify,
+            this, &MainWindow::onPushFriendRequest);
+    connect(m_protocol, &ProtocolHandler::friendAcceptedNotify,
+            this, &MainWindow::onPushFriendAccepted);
 }
 
 void MainWindow::syncConversations() {
@@ -159,6 +256,175 @@ void MainWindow::syncConversations() {
             convs.append(conv);
         }
         m_contactWidget->setConversations(convs);
+    });
+}
+
+void MainWindow::loadFriends() {
+    if (!m_protocol || !m_contactWidget) return;
+    swift::zone::FriendGetFriendsPayload req;
+    req.set_group_id("");
+    std::string payload;
+    if (!req.SerializeToString(&payload)) return;
+    m_protocol->sendRequest("friend.get_friends",
+                            QByteArray(payload.data(), static_cast<int>(payload.size())),
+                            [this](int code, const QByteArray& data) {
+        if (code != 0) return;
+        swift::zone::FriendGetFriendsResponsePayload resp;
+        if (!resp.ParseFromArray(data.data(), data.size())) return;
+        QList<ContactWidget::FriendItem> friends;
+        friends.reserve(resp.friends_size());
+        for (const auto& f : resp.friends()) {
+            ContactWidget::FriendItem item;
+            item.friendId = QString::fromStdString(f.friend_id());
+            item.nickname = QString::fromStdString(f.nickname());
+            item.remark = QString::fromStdString(f.remark());
+            item.avatarUrl = QString::fromStdString(f.avatar_url());
+            item.addedAt = f.added_at();
+            friends.append(item);
+        }
+        m_contactWidget->setFriends(friends);
+    });
+}
+
+void MainWindow::loadFriendRequests() {
+    if (!m_protocol || !m_contactWidget) return;
+    swift::zone::FriendGetRequestsPayload req;
+    req.set_type(0);
+    std::string payload;
+    if (!req.SerializeToString(&payload)) return;
+    m_protocol->sendRequest("friend.get_requests",
+                            QByteArray(payload.data(), static_cast<int>(payload.size())),
+                            [this](int code, const QByteArray& data) {
+        if (code != 0) return;
+        swift::zone::FriendGetRequestsResponsePayload resp;
+        if (!resp.ParseFromArray(data.data(), data.size())) return;
+        QList<ContactWidget::FriendRequestItem> requests;
+        requests.reserve(resp.requests_size());
+        for (const auto& r : resp.requests()) {
+            ContactWidget::FriendRequestItem item;
+            item.requestId = QString::fromStdString(r.request_id());
+            item.fromUserId = QString::fromStdString(r.from_user_id());
+            item.fromNickname = QString::fromStdString(r.from_nickname());
+            item.fromAvatarUrl = QString::fromStdString(r.from_avatar_url());
+            item.remark = QString::fromStdString(r.remark());
+            item.status = r.status();
+            item.createdAt = r.created_at();
+            requests.append(item);
+        }
+        m_contactWidget->setFriendRequests(requests);
+    });
+}
+
+void MainWindow::handleFriendRequest(const QString& requestId, bool accept) {
+    if (!m_protocol || requestId.isEmpty()) return;
+    swift::zone::FriendHandleRequestPayload req;
+    req.set_user_id(m_currentUserId.toStdString());
+    req.set_request_id(requestId.toStdString());
+    req.set_accept(accept);
+    std::string payload;
+    if (!req.SerializeToString(&payload)) return;
+    m_protocol->sendRequest("friend.handle_request",
+                            QByteArray(payload.data(), static_cast<int>(payload.size())),
+                            [this](int code, const QByteArray&) {
+        if (code != 0) return;
+        loadFriendRequests();
+        loadFriends();
+    });
+}
+
+void MainWindow::loadUserGroups() {
+    if (!m_protocol || !m_contactWidget) return;
+    swift::zone::GroupGetUserGroupsPayload req;
+    std::string payload;
+    if (!req.SerializeToString(&payload)) return;
+    m_protocol->sendRequest("group.get_user_groups",
+                            QByteArray(payload.data(), static_cast<int>(payload.size())),
+                            [this](int code, const QByteArray& data) {
+        if (code != 0) return;
+        swift::zone::GroupGetUserGroupsResponsePayload resp;
+        if (!resp.ParseFromArray(data.data(), data.size())) return;
+        QList<ContactWidget::GroupItem> groups;
+        groups.reserve(resp.groups_size());
+        for (const auto& g : resp.groups()) {
+            ContactWidget::GroupItem item;
+            item.groupId = QString::fromStdString(g.group_id());
+            item.groupName = QString::fromStdString(g.group_name());
+            item.avatarUrl = QString::fromStdString(g.avatar_url());
+            item.ownerId = QString::fromStdString(g.owner_id());
+            item.announcement = QString::fromStdString(g.announcement());
+            item.memberCount = g.member_count();
+            item.createdAt = g.created_at();
+            groups.append(item);
+
+            // 让群组在聊天主链路中可被选中和发消息。
+            const QString key = convKey(item.groupId, 2);
+            if (!m_conversationMap.contains(key)) {
+                Conversation conv;
+                conv.chatId = item.groupId;
+                conv.chatType = 2;
+                conv.peerId = item.groupId;
+                conv.peerName = item.groupName;
+                conv.peerAvatar = item.avatarUrl;
+                conv.updatedAt = item.createdAt;
+                m_conversationMap[key] = conv;
+                m_contactWidget->upsertConversation(conv);
+            }
+        }
+        m_contactWidget->setGroups(groups);
+    });
+}
+
+void MainWindow::loadGroupInfo(const QString& groupId) {
+    if (!m_protocol || !m_contactWidget || groupId.isEmpty()) return;
+    swift::zone::GroupGetInfoPayload req;
+    req.set_group_id(groupId.toStdString());
+    std::string payload;
+    if (!req.SerializeToString(&payload)) return;
+    m_protocol->sendRequest("group.get_info",
+                            QByteArray(payload.data(), static_cast<int>(payload.size())),
+                            [this](int code, const QByteArray& data) {
+        if (code != 0) return;
+        swift::zone::GroupGetInfoResponsePayload resp;
+        if (!resp.ParseFromArray(data.data(), data.size())) return;
+        if (!resp.has_group()) return;
+        const auto& g = resp.group();
+        ContactWidget::GroupItem item;
+        item.groupId = QString::fromStdString(g.group_id());
+        item.groupName = QString::fromStdString(g.group_name());
+        item.avatarUrl = QString::fromStdString(g.avatar_url());
+        item.ownerId = QString::fromStdString(g.owner_id());
+        item.announcement = QString::fromStdString(g.announcement());
+        item.memberCount = g.member_count();
+        item.createdAt = g.created_at();
+        m_contactWidget->setCurrentGroupInfo(item);
+    });
+}
+
+void MainWindow::loadGroupMembers(const QString& groupId) {
+    if (!m_protocol || !m_contactWidget || groupId.isEmpty()) return;
+    swift::zone::GroupGetMembersPayload req;
+    req.set_group_id(groupId.toStdString());
+    req.set_page(1);
+    req.set_page_size(100);
+    std::string payload;
+    if (!req.SerializeToString(&payload)) return;
+    m_protocol->sendRequest("group.get_members",
+                            QByteArray(payload.data(), static_cast<int>(payload.size())),
+                            [this](int code, const QByteArray& data) {
+        if (code != 0) return;
+        swift::zone::GroupGetMembersResponsePayload resp;
+        if (!resp.ParseFromArray(data.data(), data.size())) return;
+        QList<ContactWidget::GroupMemberItem> members;
+        members.reserve(resp.members_size());
+        for (const auto& m : resp.members()) {
+            ContactWidget::GroupMemberItem item;
+            item.userId = QString::fromStdString(m.user_id());
+            item.nickname = QString::fromStdString(m.nickname());
+            item.role = m.role();
+            item.joinedAt = m.joined_at();
+            members.append(item);
+        }
+        m_contactWidget->setGroupMembers(members);
     });
 }
 
@@ -270,6 +536,9 @@ QString MainWindow::convKey(const QString& chatId, int chatType) const {
 }
 
 void MainWindow::onConversationSelected(const QString& chatId, int chatType) {
+    if (m_rightStack && m_chatWidget) {
+        m_rightStack->setCurrentWidget(m_chatWidget);
+    }
     m_currentChatId = chatId;
     m_currentChatType = chatType;
     m_contactWidget->setCurrentChat(chatId);
@@ -289,6 +558,39 @@ void MainWindow::onConversationSelected(const QString& chatId, int chatType) {
         return;
     }
     loadHistory(chatId, chatType);
+}
+
+void MainWindow::onFriendSelected(const QString& userId) {
+    if (!m_contactWidget || !m_rightStack || !m_friendProfilePage) return;
+    const ContactWidget::FriendItem f = m_contactWidget->friendById(userId);
+    m_profileUserId = f.friendId.isEmpty() ? userId : f.friendId;
+    const QString showName = f.remark.isEmpty()
+        ? (f.nickname.isEmpty() ? m_profileUserId : f.nickname)
+        : f.remark;
+    if (m_profileNameLabel) m_profileNameLabel->setText(showName);
+    if (m_profileIdLabel) m_profileIdLabel->setText(QString("ID: %1").arg(m_profileUserId));
+    if (m_profileRemarkLabel) {
+        m_profileRemarkLabel->setText(QString("备注: %1").arg(f.remark.isEmpty() ? "无" : f.remark));
+    }
+    if (m_profileSourceLabel) {
+        m_profileSourceLabel->setText("来源: 好友列表同步");
+    }
+    if (m_profileAddedAtLabel) {
+        const QString added = f.addedAt > 0
+            ? QDateTime::fromMSecsSinceEpoch(f.addedAt).toString("yyyy-MM-dd HH:mm")
+            : QString("未知");
+        m_profileAddedAtLabel->setText(QString("加好友时间: %1").arg(added));
+    }
+    m_rightStack->setCurrentWidget(m_friendProfilePage);
+}
+
+void MainWindow::onGroupSelected(const QString& groupId) {
+    if (groupId.isEmpty()) return;
+    if (m_rightStack && m_chatWidget) {
+        m_rightStack->setCurrentWidget(m_chatWidget);
+    }
+    loadGroupInfo(groupId);
+    loadGroupMembers(groupId);
 }
 
 void MainWindow::onPushNewMessage(const QByteArray& payload) {
@@ -381,4 +683,15 @@ void MainWindow::onPushReadReceipt(const QByteArray& payload) {
     if (chatId == m_currentChatId) {
         m_chatWidget->setReadReceipt(userId, lastMsgId);
     }
+}
+
+void MainWindow::onPushFriendRequest(const QByteArray& payload) {
+    Q_UNUSED(payload);
+    loadFriendRequests();
+}
+
+void MainWindow::onPushFriendAccepted(const QByteArray& payload) {
+    Q_UNUSED(payload);
+    loadFriends();
+    loadFriendRequests();
 }
