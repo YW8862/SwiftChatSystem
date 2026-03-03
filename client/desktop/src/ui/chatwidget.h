@@ -5,7 +5,7 @@
 #include "models/message.h"
 
 class QListWidget;
-class QLineEdit;
+class QTextEdit;
 class QPushButton;
 class QLabel;
 
@@ -29,6 +29,7 @@ public:
     int chatType() const { return m_chatType; }
     void setCurrentUserId(const QString& userId);
     void setMessages(const QList<Message>& messages);
+    void prependHistoryMessages(const QList<Message>& messages);
     void appendMessage(const Message& message);
     void markMessageRecalled(const QString& msgId);
     void setReadReceipt(const QString& userId, const QString& lastReadMsgId);
@@ -43,7 +44,9 @@ private slots:
     void onFileClicked();
     
 private:
-    void refreshMessageList();
+    QList<Message> normalizeMessages(const QList<Message>& messages) const;
+    void refreshMessageList(bool scrollToBottom = true, int preserveScrollValue = -1, int preserveScrollMax = -1);
+    void addTimeSeparatorItem(const QString& text);
     void addMessageItem(const Message& message);
     QWidget* buildMessageItemWidget(const Message& message) const;
     void updateHeader();
@@ -55,7 +58,7 @@ private:
     QLabel* m_titleLabel = nullptr;
     QLabel* m_subtitleLabel = nullptr;
     QListWidget* m_messageList = nullptr;
-    QLineEdit* m_input = nullptr;
+    QTextEdit* m_input = nullptr;
     QPushButton* m_sendBtn = nullptr;
     QLabel* m_readReceiptLabel = nullptr;
     QList<Message> m_messages;

@@ -240,3 +240,43 @@ copy E:\vcpkg\installed\x64-mingw-dynamic\bin\*.dll build-windows\client\desktop
 ## 七、构建方式说明
 
 当前仅保留 **在 Windows 本机构建**：在 Win11 x64 上安装 Qt、vcpkg、Protobuf、CMake、Ninja 后，执行 `scripts\build-client-windows.ps1`（或 `scripts\build-client-windows.bat`），得到 `build-windows\client\desktop\SwiftChat.exe`。
+
+---
+
+## 八、打包为可安装的 Windows x64 安装包（含依赖）
+
+如果你希望目标机器无需额外安装 Qt/编译环境，直接双击安装，可使用仓库内脚本：
+
+### 1. 安装 Inno Setup（仅打包机需要）
+
+```powershell
+winget install JRSoftware.InnoSetup
+```
+
+### 2. 在项目根目录执行安装包脚本
+
+```powershell
+.\scripts\package-client-installer.ps1
+```
+
+或：
+
+```cmd
+scripts\package-client-installer.bat
+```
+
+脚本会自动：
+
+1. 调用 `build-client-windows.ps1` 构建并生成 `dist\SwiftChat-<triplet>`（包含 `SwiftChat.exe` 与运行依赖）。
+2. 生成 Inno Setup 脚本并编译安装包。
+3. 输出 Windows x64 安装程序到 `installer\` 目录。
+
+默认输出文件名示例：
+
+- `installer\SwiftChat-Setup-x64-v1.0.0.exe`
+
+### 3. 自定义版本号与发布者（可选）
+
+```powershell
+.\scripts\package-client-installer.ps1 -AppVersion 1.2.3 -Publisher "YourCompany"
+```

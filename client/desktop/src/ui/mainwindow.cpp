@@ -7,8 +7,12 @@
 #include "gate.pb.h"
 
 #include <QDateTime>
+#include <QFrame>
 #include <QHBoxLayout>
+#include <QLabel>
 #include <QList>
+#include <QPushButton>
+#include <QVBoxLayout>
 #include <QWidget>
 
 MainWindow::MainWindow(ProtocolHandler* protocol,
@@ -34,18 +38,51 @@ void MainWindow::setupUi() {
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
+    auto* navPanel = new QFrame(central);
+    navPanel->setObjectName("navPanel");
+    navPanel->setFixedWidth(72);
+    auto* navLayout = new QVBoxLayout(navPanel);
+    navLayout->setContentsMargins(10, 14, 10, 14);
+    navLayout->setSpacing(12);
+
+    auto* avatar = new QLabel(m_currentUserId.left(1).toUpper(), navPanel);
+    avatar->setObjectName("navAvatar");
+    avatar->setAlignment(Qt::AlignCenter);
+    avatar->setFixedSize(42, 42);
+    navLayout->addWidget(avatar, 0, Qt::AlignHCenter);
+
+    auto* chatBtn = new QPushButton("聊", navPanel);
+    chatBtn->setObjectName("navBtnActive");
+    chatBtn->setCursor(Qt::PointingHandCursor);
+    chatBtn->setFixedSize(40, 40);
+    navLayout->addWidget(chatBtn, 0, Qt::AlignHCenter);
+
+    auto* contactBtn = new QPushButton("友", navPanel);
+    contactBtn->setObjectName("navBtn");
+    contactBtn->setCursor(Qt::PointingHandCursor);
+    contactBtn->setFixedSize(40, 40);
+    navLayout->addWidget(contactBtn, 0, Qt::AlignHCenter);
+    navLayout->addStretch();
+
     m_contactWidget = new ContactWidget(central);
-    m_contactWidget->setMinimumWidth(280);
-    m_contactWidget->setMaximumWidth(360);
+    m_contactWidget->setMinimumWidth(300);
+    m_contactWidget->setMaximumWidth(340);
     m_chatWidget = new ChatWidget(central);
     m_chatWidget->setCurrentUserId(m_currentUserId);
 
+    layout->addWidget(navPanel);
     layout->addWidget(m_contactWidget);
     layout->addWidget(m_chatWidget, 1);
     setCentralWidget(central);
 
     setStyleSheet(
-        "QWidget#mainRoot { background: #f3f6fb; }"
+        "QWidget#mainRoot { background: #ededed; }"
+        "QFrame#navPanel { background: #2e2f33; border-right: 1px solid #25262a; }"
+        "QLabel#navAvatar { background: #4c8cf5; color: white; border-radius: 21px; font-size: 17px; font-weight: 700; }"
+        "QPushButton#navBtn, QPushButton#navBtnActive { border-radius: 20px; font-size: 16px; font-weight: 700; border: none; color: #d5d5d5; }"
+        "QPushButton#navBtn { background: transparent; }"
+        "QPushButton#navBtn:hover { background: #3c3d42; }"
+        "QPushButton#navBtnActive { background: #3f8cff; color: white; }"
     );
 }
 
