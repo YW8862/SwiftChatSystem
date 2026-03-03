@@ -11,6 +11,7 @@ param(
     [string]$AppName = "SwiftChat",
     [string]$AppVersion = "1.0.0",
     [string]$Publisher = "SwiftChat",
+    [string]$IsccPath = "",
     [switch]$SkipBuild
 )
 
@@ -35,10 +36,19 @@ if (-not $IsWindowsHost) {
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectRoot
 
-function Resolve-Iscc {
+function Resolve-Iscc([string]$ManualPath) {
+    if ($ManualPath) {
+        if (Test-Path $ManualPath) { return $ManualPath }
+        Write-Host "Specified ISCC path not found: $ManualPath" -ForegroundColor Yellow
+    }
+
     $candidates = @(
+        "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
+        "$env:LOCALAPPDATA\Programs\Inno Setup 5\ISCC.exe",
         "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
-        "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+        "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",
+        "${env:ProgramFiles(x86)}\Inno Setup 5\ISCC.exe",
+        "${env:ProgramFiles}\Inno Setup 5\ISCC.exe"
     )
 
     foreach ($p in $candidates) {
@@ -47,6 +57,21 @@ function Resolve-Iscc {
 
     $cmd = Get-Command ISCC.exe -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
+
+    # Registry fallback
+    foreach ($reg in @(
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1",
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1",
+        "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1"
+    )) {
+        try {
+            $installLocation = (Get-ItemProperty -Path $reg -ErrorAction Stop).InstallLocation
+            if ($installLocation) {
+                $exe = Join-Path $installLocation "ISCC.exe"
+                if (Test-Path $exe) { return $exe }
+            }
+        } catch {}
+    }
 
     return $null
 }
@@ -79,11 +104,13 @@ if (-not $DistDir) {
     exit 1
 }
 
-$Iscc = Resolve-Iscc
+$Iscc = Resolve-Iscc $IsccPath
 if (-not $Iscc) {
     Write-Host "Inno Setup not found (ISCC.exe)." -ForegroundColor Red
     Write-Host "Install it first, e.g.:" -ForegroundColor Yellow
     Write-Host "  winget install JRSoftware.InnoSetup" -ForegroundColor Cyan
+    Write-Host "Or specify path explicitly:" -ForegroundColor Yellow
+    Write-Host "  .\scripts\package-client-installer.ps1 -IsccPath ""C:\Users\YANGWEI\AppData\Local\Programs\Inno Setup 6\ISCC.exe""" -ForegroundColor Cyan
     exit 1
 }
 
