@@ -30,6 +30,7 @@ public:
 private:
     void setupUi();
     void wireSignals();
+    void showProfileDialog();
     void syncConversations();
     void loadHistory(const QString& chatId, int chatType);
     void sendChatMessage(const QString& content);

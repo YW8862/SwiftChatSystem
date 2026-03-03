@@ -35,12 +35,8 @@ QString BuildTimeText(qint64 timestamp) {
 
 ContactWidget::ContactWidget(QWidget *parent) : QWidget(parent) {
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(12, 12, 12, 8);
-    layout->setSpacing(8);
-
-    auto* title = new QLabel("会话", this);
-    title->setObjectName("conversationTitle");
-    layout->addWidget(title);
+    layout->setContentsMargins(12, 10, 12, 8);
+    layout->setSpacing(6);
 
     auto* searchWrap = new QFrame(this);
     searchWrap->setObjectName("searchWrap");
@@ -68,7 +64,6 @@ ContactWidget::ContactWidget(QWidget *parent) : QWidget(parent) {
 
     setStyleSheet(
         "ContactWidget { background: #f5f5f5; border-right: 1px solid #dfdfdf; }"
-        "QLabel#conversationTitle { color: #2c2c2c; font-size: 16px; font-weight: 600; padding: 2px 4px; }"
         "QFrame#searchWrap { background: #ffffff; border: 1px solid #dedede; border-radius: 8px; }"
         "QLineEdit { border: none; background: transparent; color: #303133; font-size: 13px; padding: 4px 2px; }"
     );

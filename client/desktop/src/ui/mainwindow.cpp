@@ -11,7 +11,10 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QList>
+#include <QMessageBox>
 #include <QPushButton>
+#include <QSplitter>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -38,16 +41,24 @@ void MainWindow::setupUi() {
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
+    auto* splitter = new QSplitter(Qt::Horizontal, central);
+    splitter->setChildrenCollapsible(false);
+    splitter->setHandleWidth(6);
+    layout->addWidget(splitter);
+
     auto* navPanel = new QFrame(central);
     navPanel->setObjectName("navPanel");
-    navPanel->setFixedWidth(72);
+    navPanel->setMinimumWidth(68);
+    navPanel->setMaximumWidth(120);
     auto* navLayout = new QVBoxLayout(navPanel);
     navLayout->setContentsMargins(10, 14, 10, 14);
     navLayout->setSpacing(12);
 
-    auto* avatar = new QLabel(m_currentUserId.left(1).toUpper(), navPanel);
+    auto* avatar = new QToolButton(navPanel);
     avatar->setObjectName("navAvatar");
-    avatar->setAlignment(Qt::AlignCenter);
+    avatar->setText(m_currentUserId.left(1).toUpper());
+    avatar->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    avatar->setCursor(Qt::PointingHandCursor);
     avatar->setFixedSize(42, 42);
     navLayout->addWidget(avatar, 0, Qt::AlignHCenter);
 
@@ -65,20 +76,35 @@ void MainWindow::setupUi() {
     navLayout->addStretch();
 
     m_contactWidget = new ContactWidget(central);
-    m_contactWidget->setMinimumWidth(300);
-    m_contactWidget->setMaximumWidth(340);
+    m_contactWidget->setMinimumWidth(240);
+    m_contactWidget->setMaximumWidth(500);
     m_chatWidget = new ChatWidget(central);
     m_chatWidget->setCurrentUserId(m_currentUserId);
 
-    layout->addWidget(navPanel);
-    layout->addWidget(m_contactWidget);
-    layout->addWidget(m_chatWidget, 1);
+    splitter->addWidget(navPanel);
+    splitter->addWidget(m_contactWidget);
+    splitter->addWidget(m_chatWidget);
+    splitter->setStretchFactor(0, 0);
+    splitter->setStretchFactor(1, 1);
+    splitter->setStretchFactor(2, 3);
+    splitter->setSizes({80, 300, 900});
     setCentralWidget(central);
+
+    connect(avatar, &QToolButton::clicked, this, [this]() {
+        QMessageBox::information(
+            this,
+            "个人信息",
+            QString("用户ID: %1\n状态: 在线").arg(m_currentUserId)
+        );
+    });
 
     setStyleSheet(
         "QWidget#mainRoot { background: #ededed; }"
         "QFrame#navPanel { background: #2e2f33; border-right: 1px solid #25262a; }"
-        "QLabel#navAvatar { background: #4c8cf5; color: white; border-radius: 21px; font-size: 17px; font-weight: 700; }"
+        "QSplitter::handle:horizontal { background: #d9d9d9; }"
+        "QSplitter::handle:horizontal:hover { background: #c6c6c6; }"
+        "QToolButton#navAvatar { background: #4c8cf5; color: white; border-radius: 21px; font-size: 17px; font-weight: 700; border: none; }"
+        "QToolButton#navAvatar:hover { background: #3f80ec; }"
         "QPushButton#navBtn, QPushButton#navBtnActive { border-radius: 20px; font-size: 16px; font-weight: 700; border: none; color: #d5d5d5; }"
         "QPushButton#navBtn { background: transparent; }"
         "QPushButton#navBtn:hover { background: #3c3d42; }"

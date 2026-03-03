@@ -8,6 +8,8 @@ class QListWidget;
 class QTextEdit;
 class QPushButton;
 class QLabel;
+class QFrame;
+class QSplitter;
 
 /**
  * 聊天组件
@@ -50,13 +52,17 @@ private:
     void addMessageItem(const Message& message);
     QWidget* buildMessageItemWidget(const Message& message) const;
     void updateHeader();
+    void updateConversationVisibility();
     QString buildChatTitle() const;
 
     QString m_chatId;
     int m_chatType = 1;  // 1=私聊, 2=群聊
     QString m_currentUserId;
+    QFrame* m_headerFrame = nullptr;
+    QFrame* m_bodyFrame = nullptr;
     QLabel* m_titleLabel = nullptr;
     QLabel* m_subtitleLabel = nullptr;
+    QSplitter* m_verticalSplitter = nullptr;
     QListWidget* m_messageList = nullptr;
     QTextEdit* m_input = nullptr;
     QPushButton* m_sendBtn = nullptr;

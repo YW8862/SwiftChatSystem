@@ -9,6 +9,7 @@
 #include <QPushButton>
 #include <QScrollBar>
 #include <QSet>
+#include <QSplitter>
 #include <QTextEdit>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -68,35 +69,44 @@ ChatWidget::ChatWidget(QWidget *parent) : QWidget(parent) {
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    auto* header = new QFrame(this);
-    header->setObjectName("chatHeader");
-    auto* headerLayout = new QHBoxLayout(header);
+    m_headerFrame = new QFrame(this);
+    m_headerFrame->setObjectName("chatHeader");
+    auto* headerLayout = new QHBoxLayout(m_headerFrame);
     headerLayout->setContentsMargins(18, 12, 18, 12);
     headerLayout->setSpacing(8);
     auto* titleWrap = new QVBoxLayout();
     titleWrap->setSpacing(2);
     titleWrap->setContentsMargins(0, 0, 0, 0);
-    m_titleLabel = new QLabel("请选择一个会话", header);
+    m_titleLabel = new QLabel("", m_headerFrame);
     m_titleLabel->setObjectName("chatTitle");
-    m_subtitleLabel = new QLabel("可在左侧选择联系人开始聊天", header);
+    m_subtitleLabel = new QLabel("", m_headerFrame);
     m_subtitleLabel->setObjectName("chatSubtitle");
     titleWrap->addWidget(m_titleLabel);
     titleWrap->addWidget(m_subtitleLabel);
     headerLayout->addLayout(titleWrap);
     headerLayout->addStretch();
-    auto* moreBtn = new QPushButton("...", header);
+    auto* moreBtn = new QPushButton("...", m_headerFrame);
     moreBtn->setObjectName("chatMoreBtn");
     moreBtn->setFixedSize(30, 30);
     headerLayout->addWidget(moreBtn);
-    root->addWidget(header);
+    root->addWidget(m_headerFrame);
 
-    auto* body = new QFrame(this);
-    body->setObjectName("chatBody");
-    auto* bodyLayout = new QVBoxLayout(body);
+    m_bodyFrame = new QFrame(this);
+    m_bodyFrame->setObjectName("chatBody");
+    auto* bodyLayout = new QVBoxLayout(m_bodyFrame);
     bodyLayout->setContentsMargins(16, 12, 16, 10);
-    bodyLayout->setSpacing(8);
+    bodyLayout->setSpacing(0);
 
-    m_messageList = new QListWidget(this);
+    m_verticalSplitter = new QSplitter(Qt::Vertical, m_bodyFrame);
+    m_verticalSplitter->setChildrenCollapsible(false);
+    m_verticalSplitter->setHandleWidth(6);
+
+    auto* messagePanel = new QFrame(m_verticalSplitter);
+    auto* messageLayout = new QVBoxLayout(messagePanel);
+    messageLayout->setContentsMargins(0, 0, 0, 8);
+    messageLayout->setSpacing(8);
+
+    m_messageList = new QListWidget(messagePanel);
     m_messageList->setFrameShape(QFrame::NoFrame);
     m_messageList->setSpacing(12);
     m_messageList->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
@@ -106,14 +116,14 @@ ChatWidget::ChatWidget(QWidget *parent) : QWidget(parent) {
         "QListWidget::item { border: none; padding: 0px; margin: 0px; }"
         "QListWidget::item:selected { background: transparent; }"
     );
-    bodyLayout->addWidget(m_messageList, 1);
+    messageLayout->addWidget(m_messageList, 1);
 
-    m_readReceiptLabel = new QLabel(this);
+    m_readReceiptLabel = new QLabel(messagePanel);
     m_readReceiptLabel->setStyleSheet("color: #8d8d8d; font-size: 12px; padding-left: 4px;");
     m_readReceiptLabel->setText("");
-    bodyLayout->addWidget(m_readReceiptLabel);
+    messageLayout->addWidget(m_readReceiptLabel);
 
-    auto* inputCard = new QFrame(this);
+    auto* inputCard = new QFrame(m_verticalSplitter);
     inputCard->setObjectName("inputCard");
     auto* inputRoot = new QVBoxLayout(inputCard);
     inputRoot->setContentsMargins(12, 8, 12, 10);
@@ -163,8 +173,10 @@ ChatWidget::ChatWidget(QWidget *parent) : QWidget(parent) {
     actionRow->addWidget(m_sendBtn);
     inputRoot->addLayout(actionRow);
 
-    bodyLayout->addWidget(inputCard);
-    root->addWidget(body, 1);
+    bodyLayout->addWidget(m_verticalSplitter);
+    root->addWidget(m_bodyFrame, 1);
+    m_verticalSplitter->setStretchFactor(0, 5);
+    m_verticalSplitter->setStretchFactor(1, 2);
 
     setStyleSheet(
         "ChatWidget { background: #f5f5f5; }"
@@ -174,6 +186,8 @@ ChatWidget::ChatWidget(QWidget *parent) : QWidget(parent) {
         "QPushButton#chatMoreBtn { border: none; background: transparent; color: #8d8d8d; font-size: 18px; }"
         "QPushButton#chatMoreBtn:hover { background: #ebebeb; border-radius: 8px; }"
         "QFrame#chatBody { background: #f5f5f5; }"
+        "QSplitter::handle:vertical { background: #e8e8e8; }"
+        "QSplitter::handle:vertical:hover { background: #d6d6d6; }"
         "QFrame#inputCard { background: #ffffff; border-top: 1px solid #dfdfdf; }"
         "QPushButton#inputToolBtn { background: transparent; border: none; color: #707070; font-size: 16px; }"
         "QPushButton#inputToolBtn:hover { background: #f2f2f2; border-radius: 6px; }"
@@ -182,6 +196,7 @@ ChatWidget::ChatWidget(QWidget *parent) : QWidget(parent) {
 
     connect(m_sendBtn, &QPushButton::clicked, this, &ChatWidget::onSendClicked);
     connect(fileBtn, &QPushButton::clicked, this, &ChatWidget::onFileClicked);
+    updateConversationVisibility();
 }
 
 ChatWidget::~ChatWidget() = default;
@@ -191,6 +206,7 @@ void ChatWidget::setConversation(const QString& chatId, int chatType) {
     m_chatType = chatType;
     m_messages.clear();
     updateHeader();
+    updateConversationVisibility();
     refreshMessageList(true);
     clearReadReceipt();
 }
@@ -201,6 +217,7 @@ void ChatWidget::setCurrentUserId(const QString& userId) {
 
 void ChatWidget::setMessages(const QList<Message>& messages) {
     m_messages = normalizeMessages(messages);
+    updateConversationVisibility();
     refreshMessageList(true);
 }
 
@@ -222,6 +239,7 @@ void ChatWidget::appendMessage(const Message& message) {
         }
     }
     m_messages.append(message);
+    updateConversationVisibility();
     refreshMessageList(true);
 }
 
@@ -330,7 +348,6 @@ void ChatWidget::addMessageItem(const Message& message) {
     auto* row = buildMessageItemWidget(message);
     item->setSizeHint(row->sizeHint());
     m_messageList->setItemWidget(item, row);
-    m_messageList->scrollToBottom();
 }
 
 QWidget* ChatWidget::buildMessageItemWidget(const Message& message) const {
@@ -384,12 +401,18 @@ QWidget* ChatWidget::buildMessageItemWidget(const Message& message) const {
 void ChatWidget::updateHeader() {
     if (!m_titleLabel || !m_subtitleLabel) return;
     if (m_chatId.isEmpty()) {
-        m_titleLabel->setText("请选择一个会话");
-        m_subtitleLabel->setText("可在左侧选择联系人开始聊天");
+        m_titleLabel->clear();
+        m_subtitleLabel->clear();
         return;
     }
     m_titleLabel->setText(buildChatTitle());
     m_subtitleLabel->setText(m_chatType == 2 ? "群聊会话" : "私聊会话");
+}
+
+void ChatWidget::updateConversationVisibility() {
+    const bool hasConversation = !m_chatId.isEmpty();
+    if (m_headerFrame) m_headerFrame->setVisible(hasConversation);
+    if (m_bodyFrame) m_bodyFrame->setVisible(hasConversation);
 }
 
 QString ChatWidget::buildChatTitle() const {
