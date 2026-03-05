@@ -3,6 +3,7 @@
 #include <QMainWindow>
 #include <QMap>
 #include <QList>
+#include <QSet>
 #include "models/conversation.h"
 #include "models/message.h"
 
@@ -12,6 +13,7 @@ class ChatWidget;
 class QStackedWidget;
 class QLabel;
 class QPushButton;
+class QToolButton;
 
 /**
  * 主窗口
@@ -44,6 +46,8 @@ private:
     void loadHistory(const QString& chatId, int chatType);
     void sendChatMessage(const QString& content);
     void sendMarkRead();
+    void refreshFriendProfileCard();
+    void removeCurrentFriend();
     QString convKey(const QString& chatId, int chatType) const;
 
     void onConversationSelected(const QString& chatId, int chatType);
@@ -61,13 +65,23 @@ private:
     ChatWidget* m_chatWidget = nullptr;
     QStackedWidget* m_rightStack = nullptr;
     QWidget* m_friendProfilePage = nullptr;
+    QLabel* m_profileAvatarLabel = nullptr;
     QLabel* m_profileNameLabel = nullptr;
     QLabel* m_profileIdLabel = nullptr;
     QLabel* m_profileRemarkLabel = nullptr;
+    QLabel* m_profileTagStarLabel = nullptr;
+    QLabel* m_profileTagGroupLabel = nullptr;
     QLabel* m_profileSourceLabel = nullptr;
     QLabel* m_profileAddedAtLabel = nullptr;
+    QToolButton* m_profileMoreBtn = nullptr;
     QPushButton* m_profileSendMsgBtn = nullptr;
     QString m_profileUserId;
+    QString m_profileNickname;
+    QString m_profileRemark;
+    QString m_profileGroupId;
+    QString m_profileAvatarUrl;
+    qint64 m_profileAddedAt = 0;
+    QSet<QString> m_starFriendIds;
     QString m_currentChatId;
     int m_currentChatType = 1;
     QMap<QString, Conversation> m_conversationMap;

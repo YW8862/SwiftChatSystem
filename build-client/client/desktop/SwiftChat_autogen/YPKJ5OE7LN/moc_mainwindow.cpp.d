@@ -255,6 +255,7 @@
   /usr/include/x86_64-linux-gnu/gnu/stubs.h \
   /usr/include/x86_64-linux-gnu/qt5/QtCore/QList \
   /usr/include/x86_64-linux-gnu/qt5/QtCore/QMap \
+  /usr/include/x86_64-linux-gnu/qt5/QtCore/QSet \
   /usr/include/x86_64-linux-gnu/qt5/QtCore/QString \
   /usr/include/x86_64-linux-gnu/qt5/QtCore/QStringList \
   /usr/include/x86_64-linux-gnu/qt5/QtCore/qalgorithms.h \
@@ -297,6 +298,7 @@
   /usr/include/x86_64-linux-gnu/qt5/QtCore/qrefcount.h \
   /usr/include/x86_64-linux-gnu/qt5/QtCore/qregexp.h \
   /usr/include/x86_64-linux-gnu/qt5/QtCore/qscopedpointer.h \
+  /usr/include/x86_64-linux-gnu/qt5/QtCore/qset.h \
   /usr/include/x86_64-linux-gnu/qt5/QtCore/qshareddata.h \
   /usr/include/x86_64-linux-gnu/qt5/QtCore/qsharedpointer.h \
   /usr/include/x86_64-linux-gnu/qt5/QtCore/qsharedpointer_impl.h \

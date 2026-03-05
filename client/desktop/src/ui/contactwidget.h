@@ -29,6 +29,7 @@ public:
         QString friendId;
         QString nickname;
         QString remark;
+        QString groupId;
         QString avatarUrl;
         qint64 addedAt = 0;
     };
@@ -77,6 +78,8 @@ public:
     void setGroupMembers(const QList<GroupMemberItem>& members);
     QString currentSelectedGroupId() const { return m_currentGroupId; }
     FriendItem friendById(const QString& userId) const;
+    void updateFriendRemark(const QString& userId, const QString& remark);
+    void removeFriendById(const QString& userId);
 
 signals:
     void conversationSelected(const QString& chatId, int chatType);

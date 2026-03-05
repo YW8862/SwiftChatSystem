@@ -338,6 +338,7 @@ SwiftChat_autogen/timestamp: \
 	/usr/include/x86_64-linux-gnu/qt5/QtCore/QList \
 	/usr/include/x86_64-linux-gnu/qt5/QtCore/QMap \
 	/usr/include/x86_64-linux-gnu/qt5/QtCore/QObject \
+	/usr/include/x86_64-linux-gnu/qt5/QtCore/QSet \
 	/usr/include/x86_64-linux-gnu/qt5/QtCore/QSharedDataPointer \
 	/usr/include/x86_64-linux-gnu/qt5/QtCore/QString \
 	/usr/include/x86_64-linux-gnu/qt5/QtCore/QStringList \

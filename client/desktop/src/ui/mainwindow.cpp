@@ -9,8 +9,10 @@
 #include <QDateTime>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QLabel>
 #include <QList>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QStackedWidget>
@@ -19,6 +21,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
+#include "utils/image_utils.h"
 
 MainWindow::MainWindow(ProtocolHandler* protocol,
                        const QString& currentUserId,
@@ -90,10 +93,39 @@ void MainWindow::setupUi() {
     auto* profileLayout = new QVBoxLayout(m_friendProfilePage);
     profileLayout->setContentsMargins(32, 28, 32, 28);
     profileLayout->setSpacing(12);
+    auto* topRow = new QHBoxLayout();
     auto* title = new QLabel("好友资料", m_friendProfilePage);
     title->setStyleSheet("color:#1f1f1f;font-size:20px;font-weight:700;");
+    m_profileMoreBtn = new QToolButton(m_friendProfilePage);
+    m_profileMoreBtn->setText("⋯");
+    m_profileMoreBtn->setCursor(Qt::PointingHandCursor);
+    m_profileMoreBtn->setStyleSheet("QToolButton{border:none;background:transparent;font-size:20px;color:#6d7481;}QToolButton:hover{background:#eceff5;border-radius:8px;}");
+    topRow->addWidget(title);
+    topRow->addStretch();
+    topRow->addWidget(m_profileMoreBtn);
+
+    auto* profileHead = new QHBoxLayout();
+    m_profileAvatarLabel = new QLabel("-", m_friendProfilePage);
+    m_profileAvatarLabel->setFixedSize(68, 68);
+    m_profileAvatarLabel->setAlignment(Qt::AlignCenter);
+    m_profileAvatarLabel->setStyleSheet("background:#6fa2ec;color:white;border-radius:34px;font-size:26px;font-weight:700;");
+    auto* headTextWrap = new QVBoxLayout();
     m_profileNameLabel = new QLabel("-", m_friendProfilePage);
     m_profileNameLabel->setStyleSheet("color:#2c2c2c;font-size:18px;font-weight:600;");
+    auto* tagRow = new QHBoxLayout();
+    tagRow->setSpacing(6);
+    m_profileTagStarLabel = new QLabel("普通好友", m_friendProfilePage);
+    m_profileTagGroupLabel = new QLabel("默认分组", m_friendProfilePage);
+    m_profileTagStarLabel->setStyleSheet("background:#fff4d9;color:#9d6700;border-radius:10px;padding:2px 8px;font-size:11px;");
+    m_profileTagGroupLabel->setStyleSheet("background:#e8efff;color:#2752b4;border-radius:10px;padding:2px 8px;font-size:11px;");
+    tagRow->addWidget(m_profileTagStarLabel);
+    tagRow->addWidget(m_profileTagGroupLabel);
+    tagRow->addStretch();
+    headTextWrap->addWidget(m_profileNameLabel);
+    headTextWrap->addLayout(tagRow);
+    profileHead->addWidget(m_profileAvatarLabel);
+    profileHead->addLayout(headTextWrap, 1);
+
     m_profileIdLabel = new QLabel("ID: -", m_friendProfilePage);
     m_profileRemarkLabel = new QLabel("备注: -", m_friendProfilePage);
     m_profileSourceLabel = new QLabel("来源: 好友列表同步", m_friendProfilePage);
@@ -106,7 +138,7 @@ void MainWindow::setupUi() {
     auto* cardLayout = new QVBoxLayout(card);
     cardLayout->setContentsMargins(18, 16, 18, 16);
     cardLayout->setSpacing(8);
-    cardLayout->addWidget(m_profileNameLabel);
+    cardLayout->addLayout(profileHead);
     cardLayout->addWidget(m_profileIdLabel);
     cardLayout->addWidget(m_profileRemarkLabel);
     cardLayout->addWidget(m_profileSourceLabel);
@@ -118,7 +150,7 @@ void MainWindow::setupUi() {
         "QPushButton{background:#07c160;color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;padding:0 18px;}"
         "QPushButton:hover{background:#06ad56;}"
     );
-    profileLayout->addWidget(title);
+    profileLayout->addLayout(topRow);
     profileLayout->addWidget(card);
     profileLayout->addWidget(m_profileSendMsgBtn, 0, Qt::AlignLeft);
     profileLayout->addStretch();
@@ -183,6 +215,34 @@ void MainWindow::setupUi() {
         m_contactWidget->setViewMode(ContactWidget::ViewMode::Conversations);
         m_rightStack->setCurrentWidget(m_chatWidget);
         onConversationSelected(m_profileUserId, 1);
+    });
+    connect(m_profileMoreBtn, &QToolButton::clicked, this, [this]() {
+        if (m_profileUserId.isEmpty()) return;
+        QMenu menu(this);
+        QAction* starAction = menu.addAction(m_starFriendIds.contains(m_profileUserId) ? "取消星标好友" : "设为星标好友");
+        QAction* editRemarkAction = menu.addAction("编辑备注");
+        QAction* deleteAction = menu.addAction("删除好友");
+        QAction* picked = menu.exec(m_profileMoreBtn->mapToGlobal(QPoint(0, m_profileMoreBtn->height())));
+        if (!picked) return;
+        if (picked == starAction) {
+            if (m_starFriendIds.contains(m_profileUserId)) m_starFriendIds.remove(m_profileUserId);
+            else m_starFriendIds.insert(m_profileUserId);
+            refreshFriendProfileCard();
+            return;
+        }
+        if (picked == editRemarkAction) {
+            bool ok = false;
+            const QString initial = m_profileRemark.isEmpty() ? m_profileNickname : m_profileRemark;
+            const QString remark = QInputDialog::getText(this, "编辑备注", "备注名：", QLineEdit::Normal, initial, &ok).trimmed();
+            if (!ok) return;
+            m_profileRemark = remark;
+            if (m_contactWidget) m_contactWidget->updateFriendRemark(m_profileUserId, remark);
+            refreshFriendProfileCard();
+            return;
+        }
+        if (picked == deleteAction) {
+            removeCurrentFriend();
+        }
     });
 
     setStyleSheet(
@@ -278,6 +338,7 @@ void MainWindow::loadFriends() {
             item.friendId = QString::fromStdString(f.friend_id());
             item.nickname = QString::fromStdString(f.nickname());
             item.remark = QString::fromStdString(f.remark());
+            item.groupId = QString::fromStdString(f.group_id());
             item.avatarUrl = QString::fromStdString(f.avatar_url());
             item.addedAt = f.added_at();
             friends.append(item);
@@ -564,23 +625,12 @@ void MainWindow::onFriendSelected(const QString& userId) {
     if (!m_contactWidget || !m_rightStack || !m_friendProfilePage) return;
     const ContactWidget::FriendItem f = m_contactWidget->friendById(userId);
     m_profileUserId = f.friendId.isEmpty() ? userId : f.friendId;
-    const QString showName = f.remark.isEmpty()
-        ? (f.nickname.isEmpty() ? m_profileUserId : f.nickname)
-        : f.remark;
-    if (m_profileNameLabel) m_profileNameLabel->setText(showName);
-    if (m_profileIdLabel) m_profileIdLabel->setText(QString("ID: %1").arg(m_profileUserId));
-    if (m_profileRemarkLabel) {
-        m_profileRemarkLabel->setText(QString("备注: %1").arg(f.remark.isEmpty() ? "无" : f.remark));
-    }
-    if (m_profileSourceLabel) {
-        m_profileSourceLabel->setText("来源: 好友列表同步");
-    }
-    if (m_profileAddedAtLabel) {
-        const QString added = f.addedAt > 0
-            ? QDateTime::fromMSecsSinceEpoch(f.addedAt).toString("yyyy-MM-dd HH:mm")
-            : QString("未知");
-        m_profileAddedAtLabel->setText(QString("加好友时间: %1").arg(added));
-    }
+    m_profileNickname = f.nickname;
+    m_profileRemark = f.remark;
+    m_profileGroupId = f.groupId;
+    m_profileAvatarUrl = f.avatarUrl;
+    m_profileAddedAt = f.addedAt;
+    refreshFriendProfileCard();
     m_rightStack->setCurrentWidget(m_friendProfilePage);
 }
 
@@ -694,4 +744,65 @@ void MainWindow::onPushFriendAccepted(const QByteArray& payload) {
     Q_UNUSED(payload);
     loadFriends();
     loadFriendRequests();
+}
+
+void MainWindow::refreshFriendProfileCard() {
+    if (m_profileUserId.isEmpty()) return;
+    const QString showName = m_profileRemark.isEmpty()
+        ? (m_profileNickname.isEmpty() ? m_profileUserId : m_profileNickname)
+        : m_profileRemark;
+    if (m_profileNameLabel) m_profileNameLabel->setText(showName);
+    if (m_profileIdLabel) m_profileIdLabel->setText(QString("ID: %1").arg(m_profileUserId));
+    if (m_profileRemarkLabel) {
+        m_profileRemarkLabel->setText(QString("备注: %1").arg(m_profileRemark.isEmpty() ? "无" : m_profileRemark));
+    }
+    if (m_profileSourceLabel) m_profileSourceLabel->setText("来源: 好友列表同步");
+    if (m_profileAddedAtLabel) {
+        const QString added = m_profileAddedAt > 0
+            ? QDateTime::fromMSecsSinceEpoch(m_profileAddedAt).toString("yyyy-MM-dd HH:mm")
+            : QString("未知");
+        m_profileAddedAtLabel->setText(QString("加好友时间: %1").arg(added));
+    }
+    if (m_profileTagStarLabel) {
+        m_profileTagStarLabel->setText(m_starFriendIds.contains(m_profileUserId) ? "星标好友" : "普通好友");
+    }
+    if (m_profileTagGroupLabel) {
+        m_profileTagGroupLabel->setText(QString("分组: %1").arg(m_profileGroupId.isEmpty() ? "默认" : m_profileGroupId));
+    }
+    if (m_profileAvatarLabel) {
+        QPixmap pix(m_profileAvatarUrl);
+        if (!pix.isNull()) {
+            const QPixmap circle = ImageUtils::makeCircular(pix).scaled(68, 68, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+            m_profileAvatarLabel->setPixmap(circle);
+            m_profileAvatarLabel->setText("");
+        } else {
+            m_profileAvatarLabel->setPixmap(QPixmap());
+            m_profileAvatarLabel->setText(showName.left(1).toUpper());
+        }
+    }
+}
+
+void MainWindow::removeCurrentFriend() {
+    if (!m_protocol || m_profileUserId.isEmpty()) return;
+    const auto reply = QMessageBox::question(this, "删除好友", QString("确定删除好友 %1 吗？").arg(m_profileUserId));
+    if (reply != QMessageBox::Yes) return;
+    swift::zone::FriendRemovePayload req;
+    req.set_user_id(m_currentUserId.toStdString());
+    req.set_friend_id(m_profileUserId.toStdString());
+    std::string payload;
+    if (!req.SerializeToString(&payload)) return;
+    m_protocol->sendRequest("friend.remove",
+                            QByteArray(payload.data(), static_cast<int>(payload.size())),
+                            [this](int code, const QByteArray&) {
+        if (code != 0) {
+            QMessageBox::warning(this, "删除失败", QString("删除好友失败，错误码: %1").arg(code));
+            return;
+        }
+        if (m_contactWidget) m_contactWidget->removeFriendById(m_profileUserId);
+        m_starFriendIds.remove(m_profileUserId);
+        m_profileUserId.clear();
+        if (m_rightStack && m_chatWidget) {
+            m_rightStack->setCurrentWidget(m_chatWidget);
+        }
+    });
 }

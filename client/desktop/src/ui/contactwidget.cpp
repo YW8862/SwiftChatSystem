@@ -312,6 +312,28 @@ ContactWidget::FriendItem ContactWidget::friendById(const QString& userId) const
     return FriendItem{};
 }
 
+void ContactWidget::updateFriendRemark(const QString& userId, const QString& remark) {
+    for (auto& f : m_friends) {
+        if (f.friendId == userId) {
+            f.remark = remark;
+            break;
+        }
+    }
+    applyFilter(m_searchEdit ? m_searchEdit->text() : QString(), ViewMode::Friends);
+    if (m_viewMode == ViewMode::Friends) refreshFriendList();
+}
+
+void ContactWidget::removeFriendById(const QString& userId) {
+    for (int i = 0; i < m_friends.size(); ++i) {
+        if (m_friends[i].friendId == userId) {
+            m_friends.removeAt(i);
+            break;
+        }
+    }
+    applyFilter(m_searchEdit ? m_searchEdit->text() : QString(), ViewMode::Friends);
+    if (m_viewMode == ViewMode::Friends) refreshFriendList();
+}
+
 void ContactWidget::refreshView() {
     if (m_viewMode == ViewMode::Conversations) refreshConversationList();
     else if (m_viewMode == ViewMode::Friends) refreshFriendList();
