@@ -31,6 +31,7 @@ set(SOURCES
     ${UI_SOURCES}
     src/network/websocket_client.cpp
     src/network/protocol_handler.cpp
+    src/network/app_service.cpp
     src/models/user.cpp
     src/models/message.cpp
     src/models/conversation.cpp
@@ -44,6 +45,7 @@ set(HEADERS
     ${UI_HEADERS}
     src/network/websocket_client.h
     src/network/protocol_handler.h
+    src/network/app_service.h
     src/models/user.h
     src/models/message.h
     src/models/conversation.h

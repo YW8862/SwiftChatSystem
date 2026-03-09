@@ -21,8 +21,9 @@ WebSocketClient::~WebSocketClient() = default;
 
 void WebSocketClient::connect(const QString& url) {
     QUrl parsed = QUrl::fromUserInput(url.trimmed());
-    if (!parsed.isValid() || parsed.scheme().toLower() != "ws" || parsed.path() != "/ws") {
-        emit errorOccurred("Invalid WebSocket URL. Expected format: ws://host:port/ws");
+    const QString scheme = parsed.scheme().toLower();
+    if (!parsed.isValid() || (scheme != "ws" && scheme != "wss") || parsed.path() != "/ws") {
+        emit errorOccurred("Invalid WebSocket URL. Expected format: ws://host:port/ws or wss://host:port/ws");
         return;
     }
     if (parsed.host().trimmed().isEmpty()) {

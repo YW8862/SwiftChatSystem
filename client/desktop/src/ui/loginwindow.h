@@ -13,6 +13,7 @@ class QToolButton;
 class QStackedWidget;
 class QTimer;
 class MainWindow;
+namespace client { class AppService; }
 
 /**
  * 登录窗口
@@ -76,5 +77,6 @@ private:
     bool m_loginPendingAfterConnect = false;
     QString m_pendingLoginUsername;
     QString m_pendingLoginPassword;
+    std::unique_ptr<client::AppService> m_appService;
     std::unique_ptr<MainWindow> m_mainWindow;
 };

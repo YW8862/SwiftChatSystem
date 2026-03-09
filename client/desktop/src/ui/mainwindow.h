@@ -5,6 +5,7 @@
 #include <QList>
 #include <QSet>
 #include <QPair>
+#include <memory>
 #include "models/conversation.h"
 #include "models/message.h"
 
@@ -16,6 +17,7 @@ class QLabel;
 class QPushButton;
 class QToolButton;
 class QNetworkAccessManager;
+namespace client { class AppService; }
 
 /**
  * 主窗口
@@ -106,4 +108,5 @@ private:
     QString m_offlineCursor;
     bool m_offlinePullInFlight = false;
     QNetworkAccessManager* m_networkManager = nullptr;
+    std::unique_ptr<client::AppService> m_appService;
 };

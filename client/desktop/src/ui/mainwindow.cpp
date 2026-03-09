@@ -2,6 +2,7 @@
 
 #include "contactwidget.h"
 #include "chatwidget.h"
+#include "network/app_service.h"
 #include "network/protocol_handler.h"
 #include "zone.pb.h"
 #include "gate.pb.h"
@@ -47,6 +48,7 @@ MainWindow::MainWindow(ProtocolHandler* protocol,
 
     setupUi();
     m_networkManager = new QNetworkAccessManager(this);
+    m_appService = std::make_unique<client::AppService>(m_protocol);
     wireSignals();
     syncConversations();
     loadFriends();
@@ -677,20 +679,10 @@ void MainWindow::leaveGroup(const QString& groupId) {
 }
 
 void MainWindow::loadHistory(const QString& chatId, int chatType) {
-    if (!m_protocol) return;
-    swift::zone::ChatGetHistoryPayload req;
-    req.set_chat_id(chatId.toStdString());
-    req.set_chat_type(chatType);
-    req.set_limit(50);
-    std::string payload;
-    if (!req.SerializeToString(&payload)) return;
-
-    m_protocol->sendRequest("chat.get_history",
-                            QByteArray(payload.data(), static_cast<int>(payload.size())),
-                            [this, chatId, chatType](int code, const QByteArray& data) {
+    if (!m_appService) return;
+    m_appService->sendChatGetHistory(chatId, chatType, QString(), 50,
+                                     [this, chatId, chatType](int code, const QString&, const swift::zone::ChatGetHistoryResponsePayload& resp) {
         if (code != 0) return;
-        swift::zone::ChatGetHistoryResponsePayload resp;
-        if (!resp.ParseFromArray(data.data(), data.size())) return;
 
         QList<Message> messages;
         for (const auto& m : resp.messages()) {

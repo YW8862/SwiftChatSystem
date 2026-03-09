@@ -1,5 +1,6 @@
 #include "loginwindow.h"
 #include "mainwindow.h"
+#include "network/app_service.h"
 #include "network/websocket_client.h"
 #include "network/protocol_handler.h"
 #include "utils/settings.h"
@@ -29,6 +30,9 @@
 LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
                          QWidget *parent)
     : QWidget(parent), m_wsClient(wsClient), m_protocol(protocol) {
+    if (m_protocol) {
+        m_appService = std::make_unique<client::AppService>(m_protocol);
+    }
     setWindowTitle("SwiftChat - 登录");
     setFixedSize(460, 540);
     setMinimumWidth(420);
@@ -464,7 +468,7 @@ void LoginWindow::onLoginClicked() {
 }
 
 void LoginWindow::submitLoginRequest(const QString& username, const QString& password) {
-    if (!m_protocol || username.isEmpty() || password.isEmpty()) {
+    if (!m_appService || username.isEmpty() || password.isEmpty()) {
         setLoginUiEnabled(true);
         if (m_refreshBtn) m_refreshBtn->setEnabled(true);
         if (m_statusLabel) {
@@ -473,29 +477,16 @@ void LoginWindow::submitLoginRequest(const QString& username, const QString& pas
         return;
     }
 
-    swift::zone::AuthLoginPayload req;
-    req.set_username(username.toStdString());
-    req.set_password(password.toStdString());
-    QByteArray machineId = QSysInfo::machineUniqueId();
-    const QString deviceId = machineId.isEmpty()
-        ? QHostInfo::localHostName()
-        : QString::fromUtf8(machineId.toHex());
-    req.set_device_id(deviceId.toStdString());
-    req.set_device_type("desktop");
-
-    std::string payload;
-    if (!req.SerializeToString(&payload)) {
-        QMessageBox::warning(this, "登录失败", "请求序列化失败。");
-        return;
-    }
-
     m_loginInFlight = true;
     setLoginUiEnabled(false);
     if (m_statusLabel) m_statusLabel->setText("登录中...");
 
-    m_protocol->sendRequest("auth.login",
-                            QByteArray(payload.data(), static_cast<int>(payload.size())),
-                            [this](int code, const QByteArray& data, const QString& message) {
+    QByteArray machineId = QSysInfo::machineUniqueId();
+    const QString deviceId = machineId.isEmpty()
+        ? QHostInfo::localHostName()
+        : QString::fromUtf8(machineId.toHex());
+    m_appService->sendAuthLogin(username, password, deviceId, "desktop",
+                                [this](int code, const QString& message, const swift::zone::AuthLoginResponsePayload& resp) {
         m_loginInFlight = false;
         setLoginUiEnabled(true);
         if (m_refreshBtn) m_refreshBtn->setEnabled(true);
@@ -506,13 +497,6 @@ void LoginWindow::submitLoginRequest(const QString& username, const QString& pas
                 ? QString("服务器返回错误码：%1").arg(code)
                 : message;
             QMessageBox::warning(this, "登录失败", err);
-            return;
-        }
-
-        swift::zone::AuthLoginResponsePayload resp;
-        if (!resp.ParseFromArray(data.data(), data.size())) {
-            if (m_statusLabel) m_statusLabel->setText("登录失败：响应解析失败");
-            QMessageBox::warning(this, "登录失败", "登录响应解析失败。");
             return;
         }
         if (!resp.success() || resp.user_id().empty() || resp.token().empty()) {
