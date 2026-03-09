@@ -25,6 +25,14 @@ void WebSocketClient::connect(const QString& url) {
         emit errorOccurred("Invalid WebSocket URL. Expected format: ws://host:port/ws");
         return;
     }
+    if (parsed.host().trimmed().isEmpty()) {
+        emit errorOccurred("Invalid WebSocket URL. Host is required.");
+        return;
+    }
+    if (m_socket->state() == QAbstractSocket::ConnectingState ||
+        m_socket->state() == QAbstractSocket::ConnectedState) {
+        m_socket->close();
+    }
     m_socket->open(parsed);
 }
 
@@ -37,6 +45,10 @@ bool WebSocketClient::isConnected() const {
 }
 
 void WebSocketClient::sendMessage(const QByteArray& data) {
+    if (m_socket->state() != QAbstractSocket::ConnectedState) {
+        emit errorOccurred("WebSocket is not connected.");
+        return;
+    }
     m_socket->sendBinaryMessage(data);
 }
 

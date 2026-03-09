@@ -38,6 +38,9 @@ private slots:
     void onRegisterClicked();
 
 private:
+    QString currentServerUrl() const;
+    bool ensureConnectedForRequest(const QString& connectingStatus);
+    void submitLoginRequest(const QString& username, const QString& password);
     void sendConnectionProbe();
     void sendValidateTokenProbe(const QString& token);
     void sendHeartbeat();
@@ -62,6 +65,7 @@ private:
     int m_refreshAngle = 0;
     int m_reconnectIntervalMs = 3000;
     QWidget* m_loginPage = nullptr;
+    QLineEdit* m_serverEdit = nullptr;
     QLineEdit* m_userEdit = nullptr;
     QLineEdit* m_passEdit = nullptr;
     QLabel* m_statusLabel = nullptr;
@@ -69,5 +73,8 @@ private:
     QPushButton* m_registerBtn = nullptr;
     bool m_loginInFlight = false;
     bool m_registerInFlight = false;
+    bool m_loginPendingAfterConnect = false;
+    QString m_pendingLoginUsername;
+    QString m_pendingLoginPassword;
     std::unique_ptr<MainWindow> m_mainWindow;
 };

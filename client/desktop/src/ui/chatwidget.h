@@ -40,6 +40,10 @@ public:
 signals:
     void messageSent(const QString& content);
     void fileSelected(const QString& filePath);
+    void retryMessageRequested(const QString& msgId);
+    void recallMessageRequested(const QString& msgId);
+    void messageListReachedBottom();
+    void fileMessageOpenRequested(const QString& msgId);
     
 private slots:
     void onSendClicked();

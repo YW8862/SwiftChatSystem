@@ -116,6 +116,17 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
 
     cardLayout->addSpacing(10);
 
+    auto *serverLabel = new QLabel("服务器地址", card);
+    serverLabel->setObjectName("fieldLabel");
+    cardLayout->addWidget(serverLabel);
+    m_serverEdit = new QLineEdit(card);
+    m_serverEdit->setPlaceholderText("ws://host:port/ws");
+    m_serverEdit->setMinimumHeight(42);
+    m_serverEdit->setText(Settings::instance().serverUrl());
+    cardLayout->addWidget(m_serverEdit);
+
+    cardLayout->addSpacing(2);
+
     auto *userLabel = new QLabel("用户名", card);
     userLabel->setObjectName("fieldLabel");
     cardLayout->addWidget(userLabel);
@@ -195,6 +206,7 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
     connect(m_loginBtn, &QPushButton::clicked, this, &LoginWindow::onLoginClicked);
     connect(m_registerBtn, &QPushButton::clicked, this, &LoginWindow::onRegisterClicked);
     connect(m_passEdit, &QLineEdit::returnPressed, this, &LoginWindow::onLoginClicked);
+    connect(m_serverEdit, &QLineEdit::returnPressed, this, &LoginWindow::doConnect);
     connect(m_refreshBtn, &QToolButton::clicked, this, &LoginWindow::doConnect);
     m_refreshSpinTimer = new QTimer(this);
     m_refreshSpinTimer->setInterval(45);
@@ -225,13 +237,44 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
 
 LoginWindow::~LoginWindow() = default;
 
+QString LoginWindow::currentServerUrl() const {
+    const QString typed = m_serverEdit ? m_serverEdit->text().trimmed() : QString();
+    if (!typed.isEmpty()) {
+        return typed;
+    }
+    return Settings::instance().serverUrl();
+}
+
+bool LoginWindow::ensureConnectedForRequest(const QString& connectingStatus) {
+    if (!m_wsClient) return false;
+    if (m_wsClient->isConnected()) {
+        return true;
+    }
+    if (m_statusLabel && !connectingStatus.isEmpty()) {
+        m_statusLabel->setText(connectingStatus);
+    }
+    doConnect();
+    return false;
+}
+
 void LoginWindow::doConnect() {
     if (m_wsClient) {
         cancelAutoReconnect();
+        const QString url = currentServerUrl();
+        if (url.isEmpty()) {
+            if (m_statusLabel) {
+                m_statusLabel->setText("请先输入服务器地址");
+            }
+            if (m_refreshBtn) m_refreshBtn->setEnabled(true);
+            return;
+        }
+        if (!url.isEmpty()) {
+            Settings::instance().setServerUrl(url);
+        }
         showDisconnectedState("正在尝试连接服务器...");
         if (m_refreshBtn) m_refreshBtn->setEnabled(false);
         startRefreshAnimation();
-        m_wsClient->connect(Settings::instance().serverUrl());
+        m_wsClient->connect(url);
     }
 }
 
@@ -242,6 +285,12 @@ void LoginWindow::onConnected() {
     showLoginState();
     if (m_statusLabel) m_statusLabel->setText("已连接");
     sendConnectionProbe();
+    if (m_loginPendingAfterConnect) {
+        m_loginPendingAfterConnect = false;
+        submitLoginRequest(m_pendingLoginUsername, m_pendingLoginPassword);
+        m_pendingLoginUsername.clear();
+        m_pendingLoginPassword.clear();
+    }
 }
 
 void LoginWindow::sendConnectionProbe() {
@@ -299,6 +348,9 @@ void LoginWindow::onDisconnected() {
     stopRefreshAnimation();
     m_loginInFlight = false;
     m_registerInFlight = false;
+    m_loginPendingAfterConnect = false;
+    m_pendingLoginUsername.clear();
+    m_pendingLoginPassword.clear();
     setLoginUiEnabled(true);
     if (m_refreshBtn) m_refreshBtn->setEnabled(true);
     const QString reason = hasSavedSession()
@@ -320,6 +372,9 @@ void LoginWindow::onConnectionError(const QString& error) {
     }
     m_loginInFlight = false;
     m_registerInFlight = false;
+    m_loginPendingAfterConnect = false;
+    m_pendingLoginUsername.clear();
+    m_pendingLoginPassword.clear();
     setLoginUiEnabled(true);
     if (m_refreshBtn) m_refreshBtn->setEnabled(true);
     const QString message = hasSavedSession()
@@ -388,7 +443,7 @@ void LoginWindow::onHeartbeatResponse(int code, const QByteArray& payload) {
 
 void LoginWindow::onLoginClicked() {
     if (!m_wsClient || !m_protocol || !m_userEdit || !m_passEdit) return;
-    if (m_loginInFlight) return;
+    if (m_loginInFlight || m_loginPendingAfterConnect) return;
 
     const QString username = m_userEdit->text().trimmed();
     const QString password = m_passEdit->text();
@@ -396,8 +451,25 @@ void LoginWindow::onLoginClicked() {
         QMessageBox::warning(this, "登录失败", "用户名和密码不能为空。");
         return;
     }
-    if (!m_wsClient->isConnected()) {
-        QMessageBox::warning(this, "登录失败", "当前未连接到网关，请稍后重试。");
+    if (!ensureConnectedForRequest("连接中，连接成功后将自动登录...")) {
+        m_loginPendingAfterConnect = true;
+        m_pendingLoginUsername = username;
+        m_pendingLoginPassword = password;
+        setLoginUiEnabled(false);
+        if (m_refreshBtn) m_refreshBtn->setEnabled(false);
+        return;
+    }
+
+    submitLoginRequest(username, password);
+}
+
+void LoginWindow::submitLoginRequest(const QString& username, const QString& password) {
+    if (!m_protocol || username.isEmpty() || password.isEmpty()) {
+        setLoginUiEnabled(true);
+        if (m_refreshBtn) m_refreshBtn->setEnabled(true);
+        if (m_statusLabel) {
+            m_statusLabel->setText("登录失败：参数无效");
+        }
         return;
     }
 
@@ -423,13 +495,17 @@ void LoginWindow::onLoginClicked() {
 
     m_protocol->sendRequest("auth.login",
                             QByteArray(payload.data(), static_cast<int>(payload.size())),
-                            [this](int code, const QByteArray& data) {
+                            [this](int code, const QByteArray& data, const QString& message) {
         m_loginInFlight = false;
         setLoginUiEnabled(true);
+        if (m_refreshBtn) m_refreshBtn->setEnabled(true);
 
         if (code != 0) {
             if (m_statusLabel) m_statusLabel->setText(QString("登录失败 code=%1").arg(code));
-            QMessageBox::warning(this, "登录失败", QString("服务器返回错误码：%1").arg(code));
+            const QString err = message.trimmed().isEmpty()
+                ? QString("服务器返回错误码：%1").arg(code)
+                : message;
+            QMessageBox::warning(this, "登录失败", err);
             return;
         }
 
@@ -591,6 +667,7 @@ void LoginWindow::onRegisterClicked() {
 }
 
 void LoginWindow::setLoginUiEnabled(bool enabled) {
+    if (m_serverEdit) m_serverEdit->setEnabled(enabled);
     if (m_userEdit) m_userEdit->setEnabled(enabled);
     if (m_passEdit) m_passEdit->setEnabled(enabled);
     if (m_loginBtn) m_loginBtn->setEnabled(enabled);

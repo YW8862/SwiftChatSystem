@@ -10,7 +10,18 @@ ProtocolHandler::ProtocolHandler(QObject *parent) : QObject(parent) {
 ProtocolHandler::~ProtocolHandler() = default;
 
 void ProtocolHandler::sendRequest(const QString& cmd, const QByteArray& payload,
-                                   ResponseCallback callback) {
+                                  ResponseCallback callback) {
+    sendRequestImpl(cmd, payload, callback, nullptr);
+}
+
+void ProtocolHandler::sendRequest(const QString& cmd, const QByteArray& payload,
+                                  ResponseCallbackWithMessage callback) {
+    sendRequestImpl(cmd, payload, nullptr, callback);
+}
+
+void ProtocolHandler::sendRequestImpl(const QString& cmd, const QByteArray& payload,
+                                      ResponseCallback callback,
+                                      ResponseCallbackWithMessage callbackWithMessage) {
     QString requestId = generateRequestId();
     const qint64 startMs = QDateTime::currentMSecsSinceEpoch();
 
@@ -24,7 +35,9 @@ void ProtocolHandler::sendRequest(const QString& cmd, const QByteArray& payload,
     std::string serialized;
     if (!msg.SerializeToString(&serialized)) {
         qWarning() << "ProtocolHandler: failed to serialize ClientMessage";
-        if (callback) {
+        if (callbackWithMessage) {
+            callbackWithMessage(-1, QByteArray(), QString());
+        } else if (callback) {
             callback(-1, QByteArray());
         }
         return;
@@ -35,7 +48,7 @@ void ProtocolHandler::sendRequest(const QString& cmd, const QByteArray& payload,
              << "request_id=" << requestId
              << "payload_size=" << payload.size();
 
-    if (callback) {
+    if (callback || callbackWithMessage) {
         auto* timeoutTimer = new QTimer(this);
         timeoutTimer->setSingleShot(true);
         QObject::connect(timeoutTimer, &QTimer::timeout, this, [this, requestId]() {
@@ -48,7 +61,10 @@ void ProtocolHandler::sendRequest(const QString& cmd, const QByteArray& payload,
             if (pending.timeout_timer) {
                 pending.timeout_timer->deleteLater();
             }
-            if (pending.callback) {
+            if (pending.callback_with_message) {
+                const int REQUEST_TIMEOUT_CODE = -2;
+                pending.callback_with_message(REQUEST_TIMEOUT_CODE, QByteArray(), QString());
+            } else if (pending.callback) {
                 const int REQUEST_TIMEOUT_CODE = -2;
                 pending.callback(REQUEST_TIMEOUT_CODE, QByteArray());
             }
@@ -64,6 +80,7 @@ void ProtocolHandler::sendRequest(const QString& cmd, const QByteArray& payload,
 
         PendingRequest pending;
         pending.callback = callback;
+        pending.callback_with_message = callbackWithMessage;
         pending.timeout_timer = timeoutTimer;
         pending.cmd = cmd;
         pending.start_ms = startMs;
@@ -83,6 +100,7 @@ void ProtocolHandler::handleMessage(const QByteArray& data) {
     QString cmd = QString::fromStdString(msg.cmd());
     QString requestId = QString::fromStdString(msg.request_id());
     int code = msg.code();
+    QString serverMessage = QString::fromStdString(msg.message());
     QByteArray payload;
     if (msg.payload().size() > 0) {
         payload = QByteArray(msg.payload().data(), static_cast<int>(msg.payload().size()));
@@ -106,7 +124,9 @@ void ProtocolHandler::handleMessage(const QByteArray& data) {
                  << "code=" << code
                  << "cost_ms=" << costMs
                  << "payload_size=" << payload.size();
-        if (pending.callback) {
+        if (pending.callback_with_message) {
+            pending.callback_with_message(code, payload, serverMessage);
+        } else if (pending.callback) {
             pending.callback(code, payload);
         }
         return;
@@ -159,7 +179,9 @@ void ProtocolHandler::clearPendingRequests() {
                    << "cmd=" << request.cmd
                    << "request_id=" << pair.first
                    << "cost_ms=" << costMs;
-        if (request.callback) {
+        if (request.callback_with_message) {
+            request.callback_with_message(NETWORK_ERROR_CODE, QByteArray(), QString());
+        } else if (request.callback) {
             request.callback(NETWORK_ERROR_CODE, QByteArray());
         }
     }

@@ -55,6 +55,21 @@ QString BuildTimeText(qint64 timestamp) {
     return QDateTime::fromMSecsSinceEpoch(timestamp).toString("MM-dd HH:mm");
 }
 
+QString BuildMetaText(const Message& m) {
+    QString base = BuildTimeText(m.timestamp);
+    if (m.isSelf) {
+        if (m.sending) {
+            return base.isEmpty() ? QStringLiteral("发送中...") : QString("%1 · 发送中...").arg(base);
+        }
+        if (m.sendFailed) {
+            return base.isEmpty() ? QStringLiteral("发送失败 · 双击重发")
+                                  : QString("%1 · 发送失败 · 双击重发").arg(base);
+        }
+        return base.isEmpty() ? QStringLiteral("已发送") : QString("%1 · 已发送").arg(base);
+    }
+    return base;
+}
+
 QString BuildSeparatorText(qint64 timestamp) {
     if (timestamp <= 0) return QStringLiteral("刚刚");
     const QDateTime dt = QDateTime::fromMSecsSinceEpoch(timestamp);
@@ -215,6 +230,31 @@ ChatWidget::ChatWidget(QWidget *parent) : QWidget(parent) {
 
     connect(m_sendBtn, &QPushButton::clicked, this, &ChatWidget::onSendClicked);
     connect(fileBtn, &QPushButton::clicked, this, &ChatWidget::onFileClicked);
+    connect(m_messageList->verticalScrollBar(), &QScrollBar::valueChanged, this, [this](int value) {
+        if (!m_messageList || m_chatId.isEmpty()) return;
+        if (value >= m_messageList->verticalScrollBar()->maximum()) {
+            emit messageListReachedBottom();
+        }
+    });
+    connect(m_messageList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem* item) {
+        if (!item) return;
+        const QString msgId = item->data(Qt::UserRole).toString();
+        if (msgId.isEmpty()) return;
+        for (const auto& msg : m_messages) {
+            if (msg.msgId == msgId && msg.sendFailed) {
+                emit retryMessageRequested(msgId);
+                return;
+            }
+            if (msg.msgId == msgId && msg.status != 1 && IsFileMessage(msg)) {
+                emit fileMessageOpenRequested(msgId);
+                return;
+            }
+            if (msg.msgId == msgId && msg.isSelf && !msg.sending && !msg.sendFailed && msg.status != 1) {
+                emit recallMessageRequested(msgId);
+                return;
+            }
+        }
+    });
     updateConversationVisibility();
 }
 
@@ -386,6 +426,8 @@ QWidget* ChatWidget::buildMessageItemWidget(const Message& message) const {
     bubble->setObjectName("msgBubble");
     bubble->setProperty("self", message.isSelf);
     bubble->setProperty("recalled", message.status == 1);
+    bubble->setProperty("sending", message.sending);
+    bubble->setProperty("sendFailed", message.sendFailed);
     bubble->setMaximumWidth(520);
 
     auto* bubbleLayout = new QVBoxLayout(bubble);
@@ -394,7 +436,7 @@ QWidget* ChatWidget::buildMessageItemWidget(const Message& message) const {
 
     auto* sender = new QLabel(BuildSenderName(message), bubble);
     sender->setObjectName("msgSender");
-    auto* meta = new QLabel(BuildTimeText(message.timestamp), bubble);
+    auto* meta = new QLabel(BuildMetaText(message), bubble);
     meta->setObjectName("msgMeta");
 
     bubbleLayout->addWidget(sender);
@@ -435,11 +477,14 @@ QWidget* ChatWidget::buildMessageItemWidget(const Message& message) const {
     bubble->setStyleSheet(
         "QFrame#msgBubble { border-radius: 10px; border: 1px solid #e4e4e4; background: #ffffff; }"
         "QFrame#msgBubble[self='true'] { background: #d9fdd3; border-color: #bae6b0; }"
+        "QFrame#msgBubble[sending='true'] { background: #edf5ff; border-color: #bfd6ff; }"
+        "QFrame#msgBubble[sendFailed='true'] { background: #fff1f0; border-color: #ffb3ad; }"
         "QFrame#msgBubble[recalled='true'] { background: #f6f7f9; border-color: #e6e8ed; }"
         "QLabel#msgSender { color: #7a7a7a; font-size: 11px; font-weight: 600; }"
         "QLabel#msgContent { color: #222222; font-size: 14px; line-height: 1.4; }"
         "QFrame#msgBubble[recalled='true'] QLabel#msgContent { color: #9aa2b2; font-style: italic; }"
         "QLabel#msgMeta { color: #9b9b9b; font-size: 11px; }"
+        "QFrame#msgBubble[sendFailed='true'] QLabel#msgMeta { color: #d34c4c; font-weight: 600; }"
         "QFrame#fileCard { background: rgba(255, 255, 255, 0.72); border: 1px solid #d7dde9; border-radius: 8px; }"
         "QFrame#msgBubble[self='true'] QFrame#fileCard { background: rgba(255, 255, 255, 0.78); border-color: #c5d9ff; }"
         "QLabel#fileIcon { color: #2f6ff4; background: #eaf1ff; border-radius: 6px; font-size: 10px; font-weight: 700; }"

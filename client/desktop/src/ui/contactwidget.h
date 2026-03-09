@@ -86,6 +86,10 @@ signals:
     void friendSelected(const QString& userId);
     void friendRequestHandled(const QString& requestId, bool accept);
     void groupSelected(const QString& groupId);
+    void createGroupRequested();
+    void inviteGroupMembersRequested(const QString& groupId);
+    void removeGroupMemberRequested(const QString& groupId);
+    void leaveGroupRequested(const QString& groupId);
 
 private:
     void refreshView();

@@ -4,6 +4,7 @@
 #include <QMap>
 #include <QList>
 #include <QSet>
+#include <QPair>
 #include "models/conversation.h"
 #include "models/message.h"
 
@@ -14,6 +15,7 @@ class QStackedWidget;
 class QLabel;
 class QPushButton;
 class QToolButton;
+class QNetworkAccessManager;
 
 /**
  * 主窗口
@@ -37,15 +39,28 @@ private:
     void wireSignals();
     void showProfileDialog();
     void syncConversations();
-    void loadFriends();
+    void loadFriends(const QString& groupId = QString());
     void loadFriendRequests();
     void handleFriendRequest(const QString& requestId, bool accept);
     void loadUserGroups();
     void loadGroupInfo(const QString& groupId);
     void loadGroupMembers(const QString& groupId);
+    void createGroup();
+    void inviteGroupMembers(const QString& groupId);
+    void removeGroupMember(const QString& groupId);
+    void leaveGroup(const QString& groupId);
     void loadHistory(const QString& chatId, int chatType);
+    void pullOfflineMessages(int limit = 100);
+    bool mergeOfflineMessage(const Message& msg);
+    bool uploadFileByHttp(const QString& uploadUrl, const QString& uploadToken, const QString& filePath,
+                          QString* mediaUrl, QString* error);
+    bool resolveFileDownloadUrl(const Message& msg, QString* fileUrl, QString* fileName, QString* error);
+    bool downloadFileToPath(const QString& fileUrl, const QString& savePath, QString* error);
+    void openFileMessage(const QString& msgId);
     void sendChatMessage(const QString& content);
     void sendFileMessage(const QString& filePath);
+    void retryFailedMessage(const QString& msgId);
+    void recallMessage(const QString& msgId);
     void sendMarkRead();
     void refreshFriendProfileCard();
     void removeCurrentFriend();
@@ -88,4 +103,7 @@ private:
     QMap<QString, Conversation> m_conversationMap;
     QMap<QString, QList<Message>> m_messageMap;
     QMap<QString, QString> m_readReceiptMap;  // key: chatId, value: userId:lastMsgId
+    QString m_offlineCursor;
+    bool m_offlinePullInFlight = false;
+    QNetworkAccessManager* m_networkManager = nullptr;
 };

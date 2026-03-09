@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QByteArray>
+#include <QString>
 #include <QTimer>
 #include <functional>
 #include <map>
@@ -16,6 +17,7 @@ class ProtocolHandler : public QObject {
     
 public:
     using ResponseCallback = std::function<void(int code, const QByteArray& payload)>;
+    using ResponseCallbackWithMessage = std::function<void(int code, const QByteArray& payload, const QString& message)>;
     
     explicit ProtocolHandler(QObject *parent = nullptr);
     ~ProtocolHandler();
@@ -23,6 +25,8 @@ public:
     // 发送请求（异步，带回调）
     void sendRequest(const QString& cmd, const QByteArray& payload, 
                      ResponseCallback callback = nullptr);
+    void sendRequest(const QString& cmd, const QByteArray& payload,
+                     ResponseCallbackWithMessage callback);
     
     // 处理收到的消息
     void handleMessage(const QByteArray& data);
@@ -46,10 +50,15 @@ signals:
 private:
     struct PendingRequest {
         ResponseCallback callback;
+        ResponseCallbackWithMessage callback_with_message;
         QTimer* timeout_timer = nullptr;
         QString cmd;
         qint64 start_ms = 0;
     };
+
+    void sendRequestImpl(const QString& cmd, const QByteArray& payload,
+                         ResponseCallback callback,
+                         ResponseCallbackWithMessage callbackWithMessage);
 
     QString generateRequestId();
 
