@@ -44,6 +44,9 @@ private:
     void wireSignals();
     void showProfileDialog();
     void syncConversations();
+    void loadLocalConversationsAndMessages();
+    void saveConversationsToLocal();
+    void saveMessagesToLocal(const QString& chatId, int chatType);
     void loadFriends(const QString& groupId = QString());
     void loadFriendRequests();
     void handleFriendRequest(const QString& requestId, bool accept);

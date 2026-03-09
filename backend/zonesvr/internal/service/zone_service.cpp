@@ -176,7 +176,10 @@ std::shared_ptr<GateRpcClient> ZoneServiceImpl::GetOrCreateGateClient(const std:
         client->Disconnect();
     }
     auto client = std::make_shared<GateRpcClient>();
-    if (!client->Connect(gate_addr)) return nullptr;
+    if (!client->Connect(gate_addr)) {
+        LogWarning(TAG("service", "zonesvr"), "GetOrCreateGateClient Connect failed: gate_addr=" << gate_addr);
+        return nullptr;
+    }
     client->InitStub();
     gate_clients_[gate_addr] = client;
     return client;
@@ -185,8 +188,18 @@ std::shared_ptr<GateRpcClient> ZoneServiceImpl::GetOrCreateGateClient(const std:
 bool ZoneServiceImpl::PushToGate(const std::string& gate_addr, const std::string& user_id,
                                  const std::string& cmd, const std::string& payload) {
     auto client = GetOrCreateGateClient(gate_addr);
-    if (!client) return false;
-    return client->PushMessage(user_id, cmd, payload, nullptr);
+    if (!client) {
+        LogWarning(TAG("service", "zonesvr"), "PushToGate failed: no client for gate_addr=" << gate_addr
+                   << ", user_id=" << user_id << ", cmd=" << cmd);
+        return false;
+    }
+    std::string err;
+    if (!client->PushMessage(user_id, cmd, payload, &err)) {
+        LogWarning(TAG("service", "zonesvr"), "PushToGate failed: user_id=" << user_id
+                   << ", gate_addr=" << gate_addr << ", cmd=" << cmd << ", error=" << err);
+        return false;
+    }
+    return true;
 }
 
 // -----------------------------------------------------------------------------

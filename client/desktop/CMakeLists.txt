@@ -36,6 +36,7 @@ set(SOURCES
     src/models/message.cpp
     src/models/conversation.cpp
     src/utils/settings.cpp
+    src/utils/chat_storage.cpp
     src/utils/image_utils.cpp
     src/utils/client_logger.cpp
 )
@@ -50,6 +51,7 @@ set(HEADERS
     src/models/message.h
     src/models/conversation.h
     src/utils/settings.h
+    src/utils/chat_storage.h
     src/utils/image_utils.h
     src/utils/client_logger.h
     src/swift/log_helper.h

@@ -231,12 +231,14 @@ int main(int argc, char* argv[]) {
     });
 
     // 心跳：① 客户端超时检测 CheckHeartbeat；② 向 ZoneSvr 上报 Gate 存活 GateHeartbeat（建议每 30s）
+    // 每次心跳前先尝试 RegisterGate，应对启动时 Zone/Redis 未就绪导致的偶发注册失败
     int heartbeat_interval = config.heartbeat_interval_seconds > 0
         ? config.heartbeat_interval_seconds : 30;
-    std::thread heartbeat_thread([&running, gate_svc, heartbeat_interval]() {
+    std::thread heartbeat_thread([&running, gate_svc, heartbeat_interval, register_addr]() {
         while (running) {
             std::this_thread::sleep_for(std::chrono::seconds(heartbeat_interval));
             if (!running) break;
+            gate_svc->RegisterGate(register_addr);  // 幂等，偶发失败时每轮重试
             gate_svc->CheckHeartbeat();
             gate_svc->GateHeartbeat();
         }

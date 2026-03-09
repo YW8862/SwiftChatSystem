@@ -8,6 +8,7 @@
 #include "zone.pb.h"
 #include "gate.pb.h"
 #include "utils/settings.h"
+#include "utils/chat_storage.h"
 #include "swift/log_helper.h"
 
 #include <QDateTime>
@@ -39,11 +40,14 @@
 #include <QWidget>
 #include <QEventLoop>
 #include <QElapsedTimer>
+#include <QTimer>
 #include <QFileDialog>
 #include <QFile>
 #include <QCoreApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSet>
+#include <algorithm>
 #include <QUrl>
 #include "utils/image_utils.h"
 
@@ -62,6 +66,7 @@ MainWindow::MainWindow(ProtocolHandler* protocol,
     m_networkManager = new QNetworkAccessManager(this);
     m_appService = std::make_unique<client::AppService>(m_protocol);
     wireSignals();
+    loadLocalConversationsAndMessages();
     triggerSessionValidation();
     syncConversations();
     loadFriends();
@@ -366,10 +371,39 @@ void MainWindow::wireSignals() {
         });
         connect(m_wsClient, &WebSocketClient::connected, this, [this]() {
             m_sessionReady = false;
-            LogInfo("[MainWindow] websocket connected, trigger session validation");
-            triggerSessionValidation();
+            LogInfo("[MainWindow] websocket connected, schedule session validation after 300ms");
+            QTimer::singleShot(300, this, [this]() {
+                if (m_wsClient && m_wsClient->isConnected()) {
+                    LogInfo("[MainWindow] deferred trigger session validation");
+                    triggerSessionValidation();
+                }
+            });
         });
     }
+}
+
+void MainWindow::loadLocalConversationsAndMessages() {
+    if (m_currentUserId.trimmed().isEmpty()) return;
+    QList<Conversation> convs = ChatStorage::instance().loadConversations(m_currentUserId);
+    if (convs.isEmpty()) return;
+    m_conversationMap.clear();
+    for (const auto& c : convs) {
+        m_conversationMap[convKey(c.chatId, c.chatType)] = c;
+    }
+    m_contactWidget->setConversations(convs);
+}
+
+void MainWindow::saveConversationsToLocal() {
+    if (m_currentUserId.trimmed().isEmpty()) return;
+    ChatStorage::instance().mergeAndSaveConversations(m_currentUserId, m_conversationMap);
+}
+
+void MainWindow::saveMessagesToLocal(const QString& chatId, int chatType) {
+    if (m_currentUserId.trimmed().isEmpty() || chatId.isEmpty()) return;
+    const QString key = convKey(chatId, chatType);
+    if (!m_messageMap.contains(key)) return;
+    ChatStorage::instance().mergeAndSaveMessages(m_currentUserId, chatId, chatType,
+                                                  m_messageMap[key], 500);
 }
 
 void MainWindow::syncConversations() {
@@ -404,6 +438,7 @@ void MainWindow::syncConversations() {
             convs.append(conv);
         }
         m_contactWidget->setConversations(convs);
+        saveConversationsToLocal();
     });
 }
 
@@ -795,6 +830,7 @@ void MainWindow::leaveGroup(const QString& groupId) {
                 m_chatWidget->setConversation(QString(), 2);
             }
         }
+        saveConversationsToLocal();
         loadUserGroups();
     });
 }
@@ -826,6 +862,7 @@ void MainWindow::dismissGroup(const QString& groupId) {
             m_currentChatId.clear();
             m_chatWidget->setConversation(QString(), 2);
         }
+        saveConversationsToLocal();
         loadUserGroups();
     });
 }
@@ -1100,6 +1137,7 @@ void MainWindow::loadHistory(const QString& chatId, int chatType) {
         if (code != 0) return;
 
         QList<Message> messages;
+        QSet<QString> serverMsgIds;
         for (const auto& m : resp.messages()) {
             Message msg;
             msg.msgId = QString::fromStdString(m.msg_id());
@@ -1112,10 +1150,17 @@ void MainWindow::loadHistory(const QString& chatId, int chatType) {
             msg.timestamp = m.timestamp();
             msg.isSelf = (msg.fromUserId == m_currentUserId);
             messages.append(msg);
+            if (!msg.msgId.isEmpty()) serverMsgIds.insert(msg.msgId);
         }
-
         const QString key = convKey(chatId, chatType);
+        for (const auto& local : m_messageMap.value(key)) {
+            if (!local.msgId.isEmpty() && !serverMsgIds.contains(local.msgId))
+                messages.append(local);
+        }
+        std::sort(messages.begin(), messages.end(),
+                  [](const Message& a, const Message& b) { return a.timestamp < b.timestamp; });
         m_messageMap[key] = messages;
+        ChatStorage::instance().mergeAndSaveMessages(m_currentUserId, chatId, chatType, messages, 500);
         if (chatId == m_currentChatId && chatType == m_currentChatType) {
             m_chatWidget->setMessages(messages);
             sendMarkRead();
@@ -1159,7 +1204,10 @@ void MainWindow::pullOfflineMessages(int limit) {
             msg.isSelf = (msg.fromUserId == m_currentUserId);
 
             if (mergeOfflineMessage(msg)) {
-                if (convKey(msg.toId, msg.chatType) == currentKey) {
+                const QString peerId = (msg.chatType == 1)
+                    ? (msg.isSelf ? msg.toId : msg.fromUserId)
+                    : msg.toId;
+                if (convKey(peerId, msg.chatType) == currentKey) {
                     currentConversationTouched = true;
                 }
             }
@@ -1173,7 +1221,10 @@ void MainWindow::pullOfflineMessages(int limit) {
 }
 
 bool MainWindow::mergeOfflineMessage(const Message& msg) {
-    const QString key = convKey(msg.toId, msg.chatType);
+    const QString peerId = (msg.chatType == 1)
+        ? (msg.isSelf ? msg.toId : msg.fromUserId)
+        : msg.toId;
+    const QString key = convKey(peerId, msg.chatType);
     auto& list = m_messageMap[key];
     if (!msg.msgId.isEmpty()) {
         for (const auto& existed : list) {
@@ -1185,18 +1236,20 @@ bool MainWindow::mergeOfflineMessage(const Message& msg) {
     list.append(msg);
 
     Conversation conv = m_conversationMap.value(key);
-    conv.chatId = msg.toId;
+    conv.chatId = peerId;
     conv.chatType = msg.chatType;
-    if (conv.peerName.isEmpty()) conv.peerName = msg.toId;
+    if (conv.peerName.isEmpty()) conv.peerName = peerId;
     if (msg.timestamp >= conv.updatedAt) {
         conv.lastMessage = msg;
         conv.updatedAt = msg.timestamp;
     }
-    if (!(msg.toId == m_currentChatId && msg.chatType == m_currentChatType) && !msg.isSelf) {
+    if (!(peerId == m_currentChatId && msg.chatType == m_currentChatType) && !msg.isSelf) {
         conv.unreadCount += 1;
     }
     m_conversationMap[key] = conv;
     m_contactWidget->upsertConversation(conv);
+    saveMessagesToLocal(peerId, msg.chatType);
+    saveConversationsToLocal();
     return true;
 }
 
@@ -1243,7 +1296,7 @@ void MainWindow::sendChatMessage(const QString& content) {
             << ", content_len=" << content.size());
     m_protocol->sendRequest("chat.send_message",
                             QByteArray(payload.data(), static_cast<int>(payload.size())),
-                            [this, key, localMsgId](int code, const QByteArray& data, const QString& message) {
+                            [this, key, localMsgId, chatId, chatType](int code, const QByteArray& data, const QString& message) {
         auto& messages = m_messageMap[key];
         int idx = -1;
         for (int i = 0; i < messages.size(); ++i) {
@@ -1313,6 +1366,8 @@ void MainWindow::sendChatMessage(const QString& content) {
             convIt->updatedAt = msg.timestamp;
             m_contactWidget->upsertConversation(*convIt);
         }
+        saveMessagesToLocal(chatId, chatType);
+        saveConversationsToLocal();
     });
 }
 
@@ -1574,6 +1629,8 @@ void MainWindow::sendFileMessage(const QString& filePath) {
                     convIt->updatedAt = msg.timestamp;
                     m_contactWidget->upsertConversation(*convIt);
                 }
+                saveMessagesToLocal(targetChatId, targetChatType);
+                saveConversationsToLocal();
             });
         });
     };
@@ -1885,6 +1942,13 @@ void MainWindow::onConversationSelected(const QString& chatId, int chatType) {
         }
         return;
     }
+    QList<Message> local = ChatStorage::instance().loadMessages(m_currentUserId, chatId, chatType);
+    if (!local.isEmpty()) {
+        for (auto& m : local) m.isSelf = (m.fromUserId == m_currentUserId);
+        m_messageMap[key] = local;
+        m_chatWidget->setMessages(local);
+        sendMarkRead();
+    }
     loadHistory(chatId, chatType);
     if (!m_offlineCursor.isEmpty()) {
         pullOfflineMessages();
@@ -1969,14 +2033,18 @@ void MainWindow::onPushNewMessage(const QByteArray& payload) {
         m.mediaType = QString::fromStdString(legacy.media_type());
         m.timestamp = legacy.timestamp();
         m.isSelf = (m.fromUserId == m_currentUserId);
-        const QString key = convKey(m.toId, m.chatType);
+        // 私聊: chat_id 为对方 id；群聊: chat_id 为 group_id。legacy 格式 chat_id 即会话 peer
+        const QString peerId = m.toId;  // legacy 中 chat_id 已是 peer
+        const QString key = convKey(peerId, m.chatType);
         m_messageMap[key].append(m);
-        if (m.toId == m_currentChatId && m.chatType == m_currentChatType) {
+        if (peerId == m_currentChatId && m.chatType == m_currentChatType) {
             m_chatWidget->appendMessage(m);
             sendMarkRead();
-        } else {
-            m_contactWidget->increaseUnreadForChat(m.toId);
+        } else if (!m.isSelf) {
+            m_contactWidget->increaseUnreadForChat(peerId);
         }
+        saveMessagesToLocal(peerId, m.chatType);
+        saveConversationsToLocal();
         return;
     }
 
@@ -1990,23 +2058,28 @@ void MainWindow::onPushNewMessage(const QByteArray& payload) {
     msg.mediaType = QString::fromStdString(push.media_type());
     msg.timestamp = push.timestamp();
     msg.isSelf = (msg.fromUserId == m_currentUserId);
-
-    const QString key = convKey(msg.toId, msg.chatType);
+    // 私聊: 接收方时 peer=发送方(from_user_id)，发送方同步时 peer=接收方(to_id)；群聊: peer=to_id
+    const QString peerId = (msg.chatType == 1)
+        ? (msg.isSelf ? msg.toId : msg.fromUserId)
+        : msg.toId;
+    const QString key = convKey(peerId, msg.chatType);
     m_messageMap[key].append(msg);
 
     Conversation conv = m_conversationMap.value(key);
-    conv.chatId = msg.toId;
+    conv.chatId = peerId;
     conv.chatType = msg.chatType;
-    if (conv.peerName.isEmpty()) conv.peerName = msg.toId;
+    if (conv.peerName.isEmpty()) conv.peerName = peerId;
     conv.lastMessage = msg;
     conv.updatedAt = msg.timestamp;
-    if (!(msg.toId == m_currentChatId && msg.chatType == m_currentChatType)) {
+    if (!(peerId == m_currentChatId && msg.chatType == m_currentChatType) && !msg.isSelf) {
         conv.unreadCount += 1;
     }
     m_conversationMap[key] = conv;
     m_contactWidget->upsertConversation(conv);
+    saveMessagesToLocal(peerId, msg.chatType);
+    saveConversationsToLocal();
 
-    if (msg.toId == m_currentChatId && msg.chatType == m_currentChatType) {
+    if (peerId == m_currentChatId && msg.chatType == m_currentChatType) {
         m_chatWidget->appendMessage(msg);
         sendMarkRead();
     }
