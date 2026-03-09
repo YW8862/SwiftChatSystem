@@ -204,6 +204,13 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
         const QPixmap rotated = m_refreshIcon.transformed(QTransform().rotate(m_refreshAngle), Qt::SmoothTransformation);
         m_refreshBtn->setIcon(QIcon(rotated));
     });
+    m_reconnectTimer = new QTimer(this);
+    m_reconnectTimer->setSingleShot(true);
+    m_reconnectTimer->setInterval(m_reconnectIntervalMs);
+    connect(m_reconnectTimer, &QTimer::timeout, this, [this]() {
+        if (!m_wsClient || m_wsClient->isConnected()) return;
+        doConnect();
+    });
 
     if (m_wsClient) {
         connect(m_wsClient, &WebSocketClient::connected, this, &LoginWindow::onConnected);
@@ -220,6 +227,7 @@ LoginWindow::~LoginWindow() = default;
 
 void LoginWindow::doConnect() {
     if (m_wsClient) {
+        cancelAutoReconnect();
         showDisconnectedState("正在尝试连接服务器...");
         if (m_refreshBtn) m_refreshBtn->setEnabled(false);
         startRefreshAnimation();
@@ -228,11 +236,63 @@ void LoginWindow::doConnect() {
 }
 
 void LoginWindow::onConnected() {
+    cancelAutoReconnect();
     stopRefreshAnimation();
     if (m_refreshBtn) m_refreshBtn->setEnabled(true);
     showLoginState();
     if (m_statusLabel) m_statusLabel->setText("已连接");
+    sendConnectionProbe();
+}
+
+void LoginWindow::sendConnectionProbe() {
+    const QString token = Settings::instance().savedToken().trimmed();
+    if (!token.isEmpty()) {
+        sendValidateTokenProbe(token);
+        return;
+    }
     sendHeartbeat();
+}
+
+void LoginWindow::sendValidateTokenProbe(const QString& token) {
+    if (!m_protocol || token.isEmpty()) {
+        sendHeartbeat();
+        return;
+    }
+
+    swift::zone::AuthValidateTokenPayload req;
+    req.set_token(token.toStdString());
+
+    std::string payload;
+    if (!req.SerializeToString(&payload)) {
+        sendHeartbeat();
+        return;
+    }
+
+    m_protocol->sendRequest("auth.validate_token",
+                            QByteArray(payload.data(), static_cast<int>(payload.size())),
+                            [this](int code, const QByteArray& data) {
+        if (!m_statusLabel) return;
+
+        if (code != 0) {
+            m_statusLabel->setText(QString("已连接 (token校验失败 code=%1)").arg(code));
+            return;
+        }
+
+        swift::zone::AuthValidateTokenResponsePayload resp;
+        if (!resp.ParseFromArray(data.data(), data.size())) {
+            m_statusLabel->setText("已连接 (token校验响应解析失败)");
+            return;
+        }
+
+        const QString userId = QString::fromStdString(resp.user_id());
+        if (userId.isEmpty()) {
+            Settings::instance().clearLoginInfo();
+            m_statusLabel->setText("已连接 (token无效)");
+            return;
+        }
+
+        m_statusLabel->setText(QString("已连接 (token有效: %1)").arg(userId));
+    });
 }
 
 void LoginWindow::onDisconnected() {
@@ -241,7 +301,11 @@ void LoginWindow::onDisconnected() {
     m_registerInFlight = false;
     setLoginUiEnabled(true);
     if (m_refreshBtn) m_refreshBtn->setEnabled(true);
-    showDisconnectedState("与服务器的连接已断开，请点击刷新图标重连。");
+    const QString reason = hasSavedSession()
+        ? QString("与服务器的连接已断开，将在 %1 秒后自动重连。").arg(m_reconnectIntervalMs / 1000)
+        : QStringLiteral("与服务器的连接已断开，请点击刷新图标重连。");
+    showDisconnectedState(reason);
+    scheduleAutoReconnect();
 }
 
 void LoginWindow::onConnectionError(const QString& error) {
@@ -258,7 +322,11 @@ void LoginWindow::onConnectionError(const QString& error) {
     m_registerInFlight = false;
     setLoginUiEnabled(true);
     if (m_refreshBtn) m_refreshBtn->setEnabled(true);
-    showDisconnectedState("连接失败：\n" + detail);
+    const QString message = hasSavedSession()
+        ? QString("连接失败：\n%1\n\n将在 %2 秒后自动重连。").arg(detail).arg(m_reconnectIntervalMs / 1000)
+        : QString("连接失败：\n" + detail);
+    showDisconnectedState(message);
+    scheduleAutoReconnect();
 }
 
 void LoginWindow::sendHeartbeat() {
@@ -275,6 +343,32 @@ void LoginWindow::sendHeartbeat() {
                             [this](int code, const QByteArray& data) {
         onHeartbeatResponse(code, data);
     });
+}
+
+bool LoginWindow::hasSavedSession() const {
+    return !Settings::instance().savedUserId().trimmed().isEmpty() &&
+           !Settings::instance().savedToken().trimmed().isEmpty();
+}
+
+void LoginWindow::scheduleAutoReconnect() {
+    if (!m_reconnectTimer) return;
+    if (!hasSavedSession()) {
+        cancelAutoReconnect();
+        return;
+    }
+    if (m_wsClient && m_wsClient->isConnected()) {
+        cancelAutoReconnect();
+        return;
+    }
+    if (!m_reconnectTimer->isActive()) {
+        m_reconnectTimer->start();
+    }
+}
+
+void LoginWindow::cancelAutoReconnect() {
+    if (m_reconnectTimer && m_reconnectTimer->isActive()) {
+        m_reconnectTimer->stop();
+    }
 }
 
 void LoginWindow::onHeartbeatResponse(int code, const QByteArray& payload) {

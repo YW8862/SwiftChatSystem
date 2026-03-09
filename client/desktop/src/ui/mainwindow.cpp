@@ -7,6 +7,7 @@
 #include "gate.pb.h"
 
 #include <QDateTime>
+#include <QFileInfo>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QInputDialog>
@@ -271,6 +272,8 @@ void MainWindow::wireSignals() {
             this, &MainWindow::handleFriendRequest);
     connect(m_chatWidget, &ChatWidget::messageSent,
             this, &MainWindow::sendChatMessage);
+    connect(m_chatWidget, &ChatWidget::fileSelected,
+            this, &MainWindow::sendFileMessage);
 
     connect(m_protocol, &ProtocolHandler::newMessageNotify,
             this, &MainWindow::onPushNewMessage);
@@ -557,6 +560,66 @@ void MainWindow::sendChatMessage(const QString& content) {
         msg.chatType = m_currentChatType;
         msg.content = content;
         msg.mediaType = "text";
+        msg.timestamp = resp.timestamp();
+        msg.isSelf = true;
+
+        const QString key = convKey(m_currentChatId, m_currentChatType);
+        m_messageMap[key].append(msg);
+        if (m_chatWidget->chatId() == m_currentChatId && m_chatWidget->chatType() == m_currentChatType) {
+            m_chatWidget->appendMessage(msg);
+        }
+
+        auto convIt = m_conversationMap.find(key);
+        if (convIt != m_conversationMap.end()) {
+            convIt->lastMessage = msg;
+            convIt->updatedAt = msg.timestamp;
+            m_contactWidget->upsertConversation(*convIt);
+        }
+    });
+}
+
+void MainWindow::sendFileMessage(const QString& filePath) {
+    if (!m_protocol || m_currentChatId.isEmpty() || filePath.isEmpty()) return;
+    QFileInfo fileInfo(filePath);
+    if (!fileInfo.exists() || !fileInfo.isFile()) {
+        QMessageBox::warning(this, "文件发送失败", "选择的文件不存在或不可用。");
+        return;
+    }
+
+    swift::zone::ChatSendMessagePayload req;
+    req.set_from_user_id(m_currentUserId.toStdString());
+    req.set_to_id(m_currentChatId.toStdString());
+    req.set_chat_type(m_currentChatType);
+    req.set_content(fileInfo.fileName().toStdString());
+    req.set_media_type("file");
+    req.set_media_url(filePath.toStdString());
+    req.set_file_size(fileInfo.size());
+    req.set_client_msg_id(QString("c_file_%1").arg(QDateTime::currentMSecsSinceEpoch()).toStdString());
+
+    std::string payload;
+    if (!req.SerializeToString(&payload)) return;
+    m_protocol->sendRequest("chat.send_message",
+                            QByteArray(payload.data(), static_cast<int>(payload.size())),
+                            [this, filePath](int code, const QByteArray& data) {
+        if (code != 0) {
+            QMessageBox::warning(this, "文件发送失败", QString("请求失败，错误码: %1").arg(code));
+            return;
+        }
+        swift::zone::ChatSendMessageResponsePayload resp;
+        if (!resp.ParseFromArray(data.data(), data.size()) || !resp.success()) {
+            QMessageBox::warning(this, "文件发送失败", "服务端未返回成功结果。");
+            return;
+        }
+
+        QFileInfo info(filePath);
+        Message msg;
+        msg.msgId = QString::fromStdString(resp.msg_id());
+        msg.fromUserId = m_currentUserId;
+        msg.toId = m_currentChatId;
+        msg.chatType = m_currentChatType;
+        msg.content = info.fileName();
+        msg.mediaType = "file";
+        msg.mediaUrl = filePath;
         msg.timestamp = resp.timestamp();
         msg.isSelf = true;
 

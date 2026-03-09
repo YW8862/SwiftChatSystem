@@ -38,7 +38,12 @@ private slots:
     void onRegisterClicked();
 
 private:
+    void sendConnectionProbe();
+    void sendValidateTokenProbe(const QString& token);
     void sendHeartbeat();
+    bool hasSavedSession() const;
+    void scheduleAutoReconnect();
+    void cancelAutoReconnect();
     void setLoginUiEnabled(bool enabled);
     void showDisconnectedState(const QString& reason);
     void showLoginState();
@@ -52,8 +57,10 @@ private:
     QLabel* m_disconnectedReasonLabel = nullptr;
     QToolButton* m_refreshBtn = nullptr;
     QTimer* m_refreshSpinTimer = nullptr;
+    QTimer* m_reconnectTimer = nullptr;
     QPixmap m_refreshIcon;
     int m_refreshAngle = 0;
+    int m_reconnectIntervalMs = 3000;
     QWidget* m_loginPage = nullptr;
     QLineEdit* m_userEdit = nullptr;
     QLineEdit* m_passEdit = nullptr;

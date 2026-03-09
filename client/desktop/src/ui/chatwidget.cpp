@@ -1,6 +1,8 @@
 #include "chatwidget.h"
 
 #include <QDateTime>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -29,6 +31,23 @@ QString BuildMessageBody(const Message& m) {
         return QStringLiteral("[空消息]");
     }
     return m.content;
+}
+
+bool IsFileMessage(const Message& m) {
+    return m.mediaType.compare("file", Qt::CaseInsensitive) == 0;
+}
+
+QString BuildFileName(const Message& m) {
+    if (!m.content.trimmed().isEmpty()) {
+        return m.content.trimmed();
+    }
+    if (!m.mediaUrl.trimmed().isEmpty()) {
+        QFileInfo info(m.mediaUrl.trimmed());
+        if (!info.fileName().isEmpty()) {
+            return info.fileName();
+        }
+    }
+    return QStringLiteral("未命名文件");
 }
 
 QString BuildTimeText(qint64 timestamp) {
@@ -272,7 +291,14 @@ void ChatWidget::onSendClicked() {
 }
 
 void ChatWidget::onFileClicked() {
-    // TODO: 选择文件
+    const QString filePath = QFileDialog::getOpenFileName(
+        this,
+        QStringLiteral("选择文件"),
+        QString(),
+        QStringLiteral("所有文件 (*.*)")
+    );
+    if (filePath.isEmpty()) return;
+    emit fileSelected(filePath);
 }
 
 QList<Message> ChatWidget::normalizeMessages(const QList<Message>& messages) const {
@@ -368,24 +394,57 @@ QWidget* ChatWidget::buildMessageItemWidget(const Message& message) const {
 
     auto* sender = new QLabel(BuildSenderName(message), bubble);
     sender->setObjectName("msgSender");
-    auto* content = new QLabel(BuildMessageBody(message), bubble);
-    content->setObjectName("msgContent");
-    content->setWordWrap(true);
     auto* meta = new QLabel(BuildTimeText(message.timestamp), bubble);
     meta->setObjectName("msgMeta");
 
     bubbleLayout->addWidget(sender);
-    bubbleLayout->addWidget(content);
+    if (message.status != 1 && IsFileMessage(message)) {
+        auto* fileCard = new QFrame(bubble);
+        fileCard->setObjectName("fileCard");
+        auto* fileLayout = new QHBoxLayout(fileCard);
+        fileLayout->setContentsMargins(10, 8, 10, 8);
+        fileLayout->setSpacing(10);
+
+        auto* icon = new QLabel("FILE", fileCard);
+        icon->setObjectName("fileIcon");
+        icon->setAlignment(Qt::AlignCenter);
+        icon->setFixedSize(40, 40);
+
+        auto* textWrap = new QVBoxLayout();
+        textWrap->setContentsMargins(0, 0, 0, 0);
+        textWrap->setSpacing(2);
+        auto* fileName = new QLabel(BuildFileName(message), fileCard);
+        fileName->setObjectName("fileName");
+        fileName->setWordWrap(true);
+        auto* fileHint = new QLabel("文件消息", fileCard);
+        fileHint->setObjectName("fileHint");
+        textWrap->addWidget(fileName);
+        textWrap->addWidget(fileHint);
+
+        fileLayout->addWidget(icon);
+        fileLayout->addLayout(textWrap, 1);
+        bubbleLayout->addWidget(fileCard);
+    } else {
+        auto* content = new QLabel(BuildMessageBody(message), bubble);
+        content->setObjectName("msgContent");
+        content->setWordWrap(true);
+        bubbleLayout->addWidget(content);
+    }
     bubbleLayout->addWidget(meta, 0, message.isSelf ? Qt::AlignRight : Qt::AlignLeft);
 
     bubble->setStyleSheet(
-        "QFrame#msgBubble { border-radius: 6px; border: 1px solid #e4e4e4; background: #ffffff; }"
-        "QFrame#msgBubble[self='true'] { background: #95ec69; border-color: #8de05f; }"
+        "QFrame#msgBubble { border-radius: 10px; border: 1px solid #e4e4e4; background: #ffffff; }"
+        "QFrame#msgBubble[self='true'] { background: #d9fdd3; border-color: #bae6b0; }"
         "QFrame#msgBubble[recalled='true'] { background: #f6f7f9; border-color: #e6e8ed; }"
         "QLabel#msgSender { color: #7a7a7a; font-size: 11px; font-weight: 600; }"
         "QLabel#msgContent { color: #222222; font-size: 14px; line-height: 1.4; }"
         "QFrame#msgBubble[recalled='true'] QLabel#msgContent { color: #9aa2b2; font-style: italic; }"
         "QLabel#msgMeta { color: #9b9b9b; font-size: 11px; }"
+        "QFrame#fileCard { background: rgba(255, 255, 255, 0.72); border: 1px solid #d7dde9; border-radius: 8px; }"
+        "QFrame#msgBubble[self='true'] QFrame#fileCard { background: rgba(255, 255, 255, 0.78); border-color: #c5d9ff; }"
+        "QLabel#fileIcon { color: #2f6ff4; background: #eaf1ff; border-radius: 6px; font-size: 10px; font-weight: 700; }"
+        "QLabel#fileName { color: #1f2a3d; font-size: 13px; font-weight: 600; }"
+        "QLabel#fileHint { color: #7d8798; font-size: 11px; }"
     );
 
     if (message.isSelf) {

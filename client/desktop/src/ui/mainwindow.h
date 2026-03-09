@@ -45,6 +45,7 @@ private:
     void loadGroupMembers(const QString& groupId);
     void loadHistory(const QString& chatId, int chatType);
     void sendChatMessage(const QString& content);
+    void sendFileMessage(const QString& filePath);
     void sendMarkRead();
     void refreshFriendProfileCard();
     void removeCurrentFriend();
