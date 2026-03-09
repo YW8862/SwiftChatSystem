@@ -8,8 +8,10 @@
 #include "zone.pb.h"
 #include "gate.pb.h"
 #include "utils/settings.h"
+#include "swift/log_helper.h"
 
 #include <QDateTime>
+#include <functional>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QCheckBox>
@@ -1221,6 +1223,10 @@ void MainWindow::sendChatMessage(const QString& content) {
 
     std::string payload;
     if (!req.SerializeToString(&payload)) return;
+    LogInfo("[MainWindow] send text message req, to=" << chatId.toStdString()
+            << ", chat_type=" << chatType
+            << ", client_msg_id=" << localMsgId.toStdString()
+            << ", content_len=" << content.size());
     m_protocol->sendRequest("chat.send_message",
                             QByteArray(payload.data(), static_cast<int>(payload.size())),
                             [this, key, localMsgId](int code, const QByteArray& data, const QString& message) {
@@ -1235,6 +1241,9 @@ void MainWindow::sendChatMessage(const QString& content) {
         if (idx < 0) return;
 
         if (code != 0) {
+            LogWarning("[MainWindow] send text message failed, code=" << code
+                       << ", client_msg_id=" << localMsgId.toStdString()
+                       << ", message=" << message.toStdString());
             messages[idx].sending = false;
             messages[idx].sendFailed = true;
             if (m_chatWidget->chatId() == messages[idx].toId && m_chatWidget->chatType() == messages[idx].chatType) {
@@ -1248,6 +1257,10 @@ void MainWindow::sendChatMessage(const QString& content) {
         }
         swift::zone::ChatSendMessageResponsePayload resp;
         if (!resp.ParseFromArray(data.data(), data.size()) || !resp.success()) {
+            LogWarning("[MainWindow] send text message response invalid, client_msg_id="
+                       << localMsgId.toStdString()
+                       << ", parse_ok=" << resp.ParseFromArray(data.data(), data.size())
+                       << ", success=" << resp.success());
             messages[idx].sending = false;
             messages[idx].sendFailed = true;
             if (m_chatWidget->chatId() == messages[idx].toId && m_chatWidget->chatType() == messages[idx].chatType) {
@@ -1266,6 +1279,10 @@ void MainWindow::sendChatMessage(const QString& content) {
         if (resp.timestamp() > 0) {
             messages[idx].timestamp = resp.timestamp();
         }
+        LogInfo("[MainWindow] send text message done, client_msg_id="
+                << localMsgId.toStdString()
+                << ", server_msg_id=" << messages[idx].msgId.toStdString()
+                << ", ts=" << messages[idx].timestamp);
 
         const Message& msg = messages[idx];
         if (m_chatWidget->chatId() == msg.toId && m_chatWidget->chatType() == msg.chatType) {
@@ -1380,99 +1397,162 @@ void MainWindow::retryFailedMessage(const QString& msgId) {
 void MainWindow::sendFileMessage(const QString& filePath) {
     if (!m_protocol || m_currentChatId.isEmpty() || filePath.isEmpty()) return;
     if (!ensureGatewayConnected(QStringLiteral("发送文件"))) return;
+    const QString targetChatId = m_currentChatId;
+    const int targetChatType = m_currentChatType;
     QFileInfo fileInfo(filePath);
     if (!fileInfo.exists() || !fileInfo.isFile()) {
+        LogWarning("[MainWindow] send file aborted: invalid file path=" << filePath.toStdString());
         QMessageBox::warning(this, "文件发送失败", "选择的文件不存在或不可用。");
         return;
     }
+    LogInfo("[MainWindow] send file begin, path=" << filePath.toStdString()
+            << ", to=" << targetChatId.toStdString()
+            << ", chat_type=" << targetChatType
+            << ", size=" << fileInfo.size());
 
     swift::zone::FileGetUploadTokenPayload tokenReq;
     tokenReq.set_user_id(m_currentUserId.toStdString());
     tokenReq.set_file_name(fileInfo.fileName().toStdString());
     tokenReq.set_file_size(fileInfo.size());
 
-    std::string tokenPayload;
-    if (!tokenReq.SerializeToString(&tokenPayload)) return;
-    m_protocol->sendRequest("file.get_upload_token",
-                            QByteArray(tokenPayload.data(), static_cast<int>(tokenPayload.size())),
-                            [this, filePath, fileInfo](int code, const QByteArray& data, const QString& message) {
-        if (code != 0) {
-            const QString err = message.trimmed().isEmpty()
-                ? QString("获取上传令牌失败，错误码: %1").arg(code)
-                : message;
-            QMessageBox::warning(this, "文件发送失败", err);
-            return;
-        }
+    auto requestUploadToken = std::make_shared<std::function<void(bool)>>();
+    *requestUploadToken = [this, filePath, fileInfo, targetChatId, targetChatType, requestUploadToken](bool retried) {
+        LogInfo("[MainWindow] request upload token, retried=" << retried
+                << ", file=" << filePath.toStdString());
+        swift::zone::FileGetUploadTokenPayload tokenReqInner;
+        tokenReqInner.set_user_id(m_currentUserId.toStdString());
+        tokenReqInner.set_file_name(fileInfo.fileName().toStdString());
+        tokenReqInner.set_file_size(fileInfo.size());
 
-        swift::zone::FileGetUploadTokenResponsePayload tokenResp;
-        if (!tokenResp.ParseFromArray(data.data(), data.size()) || !tokenResp.success()) {
-            const QString err = QString::fromStdString(tokenResp.error()).trimmed();
-            QMessageBox::warning(this, "文件发送失败", err.isEmpty() ? "上传令牌响应无效。" : err);
-            return;
-        }
-
-        const QString uploadUrl = QString::fromStdString(tokenResp.upload_url());
-        const QString uploadToken = QString::fromStdString(tokenResp.upload_token());
-        QString mediaUrl;
-        QString uploadError;
-        if (!uploadFileByHttp(uploadUrl, uploadToken, filePath, &mediaUrl, &uploadError)) {
-            QMessageBox::warning(this, "文件发送失败", uploadError.isEmpty() ? "文件上传失败。" : uploadError);
-            return;
-        }
-
-        swift::zone::ChatSendMessagePayload req;
-        req.set_from_user_id(m_currentUserId.toStdString());
-        req.set_to_id(m_currentChatId.toStdString());
-        req.set_chat_type(m_currentChatType);
-        req.set_content(fileInfo.fileName().toStdString());
-        req.set_media_type("file");
-        req.set_media_url(mediaUrl.toStdString());
-        req.set_file_size(fileInfo.size());
-        req.set_client_msg_id(QString("c_file_%1").arg(QDateTime::currentMSecsSinceEpoch()).toStdString());
-
-        std::string payload;
-        if (!req.SerializeToString(&payload)) return;
-        m_protocol->sendRequest("chat.send_message",
-                                QByteArray(payload.data(), static_cast<int>(payload.size())),
-                                [this, mediaUrl, fileInfo](int sendCode, const QByteArray& sendData, const QString& sendMessage) {
-            if (sendCode != 0) {
-                const QString err = sendMessage.trimmed().isEmpty()
-                    ? QString("发送文件消息失败，错误码: %1").arg(sendCode)
-                    : sendMessage;
+        std::string tokenPayload;
+        if (!tokenReqInner.SerializeToString(&tokenPayload)) return;
+        m_protocol->sendRequest("file.get_upload_token",
+                                QByteArray(tokenPayload.data(), static_cast<int>(tokenPayload.size())),
+                                [this, filePath, fileInfo, targetChatId, targetChatType, retried, requestUploadToken]
+                                (int code, const QByteArray& data, const QString& message) {
+            if (code == -1 || code == -2) {
+                if (!retried) {
+                    LogWarning("[MainWindow] upload token request network fail, will retry once, code=" << code);
+                    ensureGatewayConnected(QStringLiteral("发送文件"));
+                    QTimer::singleShot(600, this, [requestUploadToken]() {
+                        (*requestUploadToken)(true);
+                    });
+                    return;
+                }
+                LogWarning("[MainWindow] upload token request failed after retry, code=" << code);
+                const QString netErr = (code == -1)
+                    ? QStringLiteral("与网关连接已断开，请等待自动重连后重试。")
+                    : QStringLiteral("获取上传令牌请求超时，请稍后重试。");
+                QMessageBox::warning(this, "文件发送失败", netErr);
+                return;
+            }
+            if (code != 0) {
+                LogWarning("[MainWindow] upload token request failed, code=" << code
+                           << ", message=" << message.toStdString());
+                const QString err = message.trimmed().isEmpty()
+                    ? QString("获取上传令牌失败，错误码: %1").arg(code)
+                    : message;
                 QMessageBox::warning(this, "文件发送失败", err);
                 return;
             }
-            swift::zone::ChatSendMessageResponsePayload resp;
-            if (!resp.ParseFromArray(sendData.data(), sendData.size()) || !resp.success()) {
-                QMessageBox::warning(this, "文件发送失败", "服务端未返回成功结果。");
+
+            swift::zone::FileGetUploadTokenResponsePayload tokenResp;
+            if (!tokenResp.ParseFromArray(data.data(), data.size()) || !tokenResp.success()) {
+                LogWarning("[MainWindow] upload token response invalid, success=" << tokenResp.success()
+                           << ", error=" << tokenResp.error());
+                const QString err = QString::fromStdString(tokenResp.error()).trimmed();
+                QMessageBox::warning(this, "文件发送失败", err.isEmpty() ? "上传令牌响应无效。" : err);
                 return;
             }
 
-            Message msg;
-            msg.msgId = QString::fromStdString(resp.msg_id());
-            msg.fromUserId = m_currentUserId;
-            msg.toId = m_currentChatId;
-            msg.chatType = m_currentChatType;
-            msg.content = fileInfo.fileName();
-            msg.mediaType = "file";
-            msg.mediaUrl = mediaUrl;
-            msg.timestamp = resp.timestamp();
-            msg.isSelf = true;
-
-            const QString key = convKey(m_currentChatId, m_currentChatType);
-            m_messageMap[key].append(msg);
-            if (m_chatWidget->chatId() == m_currentChatId && m_chatWidget->chatType() == m_currentChatType) {
-                m_chatWidget->appendMessage(msg);
+            const QString uploadUrl = QString::fromStdString(tokenResp.upload_url());
+            const QString uploadToken = QString::fromStdString(tokenResp.upload_token());
+            QString mediaUrl;
+            QString uploadError;
+            if (!uploadFileByHttp(uploadUrl, uploadToken, filePath, &mediaUrl, &uploadError)) {
+                LogWarning("[MainWindow] file upload http failed, file=" << filePath.toStdString()
+                           << ", error=" << uploadError.toStdString());
+                QMessageBox::warning(this, "文件发送失败", uploadError.isEmpty() ? "文件上传失败。" : uploadError);
+                return;
             }
+            LogInfo("[MainWindow] file upload http done, file=" << filePath.toStdString()
+                    << ", media_url=" << mediaUrl.toStdString());
 
-            auto convIt = m_conversationMap.find(key);
-            if (convIt != m_conversationMap.end()) {
-                convIt->lastMessage = msg;
-                convIt->updatedAt = msg.timestamp;
-                m_contactWidget->upsertConversation(*convIt);
-            }
+            swift::zone::ChatSendMessagePayload req;
+            req.set_from_user_id(m_currentUserId.toStdString());
+            req.set_to_id(targetChatId.toStdString());
+            req.set_chat_type(targetChatType);
+            req.set_content(fileInfo.fileName().toStdString());
+            req.set_media_type("file");
+            req.set_media_url(mediaUrl.toStdString());
+            req.set_file_size(fileInfo.size());
+            req.set_client_msg_id(QString("c_file_%1").arg(QDateTime::currentMSecsSinceEpoch()).toStdString());
+
+            std::string payload;
+            if (!req.SerializeToString(&payload)) return;
+            LogInfo("[MainWindow] send file message req, to=" << targetChatId.toStdString()
+                    << ", chat_type=" << targetChatType
+                    << ", file_name=" << fileInfo.fileName().toStdString());
+            m_protocol->sendRequest("chat.send_message",
+                                    QByteArray(payload.data(), static_cast<int>(payload.size())),
+                                    [this, mediaUrl, fileInfo, targetChatId, targetChatType]
+                                    (int sendCode, const QByteArray& sendData, const QString& sendMessage) {
+                if (sendCode == -1 || sendCode == -2) {
+                    LogWarning("[MainWindow] send file message network fail, code=" << sendCode
+                               << ", file=" << fileInfo.fileName().toStdString());
+                    const QString netErr = (sendCode == -1)
+                        ? QStringLiteral("文件已上传，但发送消息时连接断开，请重连后重试发送。")
+                        : QStringLiteral("发送文件消息超时，请稍后重试。");
+                    QMessageBox::warning(this, "文件发送失败", netErr);
+                    return;
+                }
+                if (sendCode != 0) {
+                    LogWarning("[MainWindow] send file message failed, code=" << sendCode
+                               << ", message=" << sendMessage.toStdString());
+                    const QString err = sendMessage.trimmed().isEmpty()
+                        ? QString("发送文件消息失败，错误码: %1").arg(sendCode)
+                        : sendMessage;
+                    QMessageBox::warning(this, "文件发送失败", err);
+                    return;
+                }
+                swift::zone::ChatSendMessageResponsePayload resp;
+                if (!resp.ParseFromArray(sendData.data(), sendData.size()) || !resp.success()) {
+                    LogWarning("[MainWindow] send file message response invalid, success=" << resp.success()
+                               << ", error=" << resp.error());
+                    QMessageBox::warning(this, "文件发送失败", "服务端未返回成功结果。");
+                    return;
+                }
+
+                Message msg;
+                msg.msgId = QString::fromStdString(resp.msg_id());
+                msg.fromUserId = m_currentUserId;
+                msg.toId = targetChatId;
+                msg.chatType = targetChatType;
+                msg.content = fileInfo.fileName();
+                msg.mediaType = "file";
+                msg.mediaUrl = mediaUrl;
+                msg.timestamp = resp.timestamp();
+                msg.isSelf = true;
+                LogInfo("[MainWindow] send file message done, server_msg_id=" << msg.msgId.toStdString()
+                        << ", file_name=" << msg.content.toStdString()
+                        << ", ts=" << msg.timestamp);
+
+                const QString key = convKey(targetChatId, targetChatType);
+                m_messageMap[key].append(msg);
+                if (m_chatWidget->chatId() == targetChatId && m_chatWidget->chatType() == targetChatType) {
+                    m_chatWidget->appendMessage(msg);
+                }
+
+                auto convIt = m_conversationMap.find(key);
+                if (convIt != m_conversationMap.end()) {
+                    convIt->lastMessage = msg;
+                    convIt->updatedAt = msg.timestamp;
+                    m_contactWidget->upsertConversation(*convIt);
+                }
+            });
         });
-    });
+    };
+    (*requestUploadToken)(false);
 }
 
 bool MainWindow::uploadFileByHttp(const QString& uploadUrl,
@@ -1951,6 +2031,8 @@ void MainWindow::onPushFriendRequest(const QByteArray& payload) {
         if (!showName.isEmpty()) {
             prompt = QString("%1 请求加你为好友。").arg(showName);
         }
+        LogInfo("[MainWindow] friend.request push, from_user=" << fromUserId.toStdString()
+                << ", from_nickname=" << fromNickname.toStdString());
     }
     QMessageBox::information(this, "好友申请", prompt);
     loadFriendRequests();
@@ -1967,6 +2049,8 @@ void MainWindow::onPushFriendAccepted(const QByteArray& payload) {
         if (!showName.isEmpty()) {
             prompt = QString("%1 已成为你的好友。").arg(showName);
         }
+        LogInfo("[MainWindow] friend.accepted push, friend_id=" << userId.toStdString()
+                << ", nickname=" << nickname.toStdString());
     }
     QMessageBox::information(this, "好友通知", prompt);
     loadFriends();
@@ -2038,6 +2122,8 @@ bool MainWindow::ensureGatewayConnected(const QString& actionText) {
     if (!m_wsClient) return true;
     if (m_wsClient->isConnected()) return true;
     const QString serverUrl = Settings::instance().serverUrl().trimmed();
+    LogWarning("[MainWindow] gateway disconnected before action=" << actionText.toStdString()
+               << ", reconnect_url=" << serverUrl.toStdString());
     if (!serverUrl.isEmpty()) {
         m_wsClient->connect(serverUrl);
     }

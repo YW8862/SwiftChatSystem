@@ -1,8 +1,8 @@
 #include "protocol_handler.h"
 #include "gate.pb.h"
+#include "swift/log_helper.h"
 
 #include <QDateTime>
-#include <QDebug>
 
 ProtocolHandler::ProtocolHandler(QObject *parent) : QObject(parent) {
 }
@@ -34,7 +34,7 @@ void ProtocolHandler::sendRequestImpl(const QString& cmd, const QByteArray& payl
 
     std::string serialized;
     if (!msg.SerializeToString(&serialized)) {
-        qWarning() << "ProtocolHandler: failed to serialize ClientMessage";
+        LogError("[ProtocolHandler] failed to serialize ClientMessage, cmd=" << cmd.toStdString());
         if (callbackWithMessage) {
             callbackWithMessage(-1, QByteArray(), QString());
         } else if (callback) {
@@ -43,10 +43,9 @@ void ProtocolHandler::sendRequestImpl(const QString& cmd, const QByteArray& payl
         return;
     }
 
-    qDebug() << "ProtocolHandler request sent"
-             << "cmd=" << cmd
-             << "request_id=" << requestId
-             << "payload_size=" << payload.size();
+    LogDebug("[ProtocolHandler] request sent, cmd=" << cmd.toStdString()
+             << ", request_id=" << requestId.toStdString()
+             << ", payload_size=" << payload.size());
 
     if (callback || callbackWithMessage) {
         auto* timeoutTimer = new QTimer(this);
@@ -71,10 +70,9 @@ void ProtocolHandler::sendRequestImpl(const QString& cmd, const QByteArray& payl
             const qint64 costMs = pending.start_ms > 0
                 ? (QDateTime::currentMSecsSinceEpoch() - pending.start_ms)
                 : -1;
-            qWarning() << "ProtocolHandler request timeout"
-                       << "cmd=" << pending.cmd
-                       << "request_id=" << requestId
-                       << "cost_ms=" << costMs;
+            LogWarning("[ProtocolHandler] request timeout, cmd=" << pending.cmd.toStdString()
+                       << ", request_id=" << requestId.toStdString()
+                       << ", cost_ms=" << costMs);
         });
         timeoutTimer->start(m_requestTimeoutMs);
 
@@ -93,7 +91,7 @@ void ProtocolHandler::sendRequestImpl(const QString& cmd, const QByteArray& payl
 void ProtocolHandler::handleMessage(const QByteArray& data) {
     swift::gate::ServerMessage msg;
     if (!msg.ParseFromArray(data.data(), data.size())) {
-        qWarning() << "ProtocolHandler: failed to parse ServerMessage";
+        LogWarning("[ProtocolHandler] failed to parse ServerMessage, bytes=" << data.size());
         return;
     }
 
@@ -118,12 +116,11 @@ void ProtocolHandler::handleMessage(const QByteArray& data) {
             pending.timeout_timer->stop();
             pending.timeout_timer->deleteLater();
         }
-        qDebug() << "ProtocolHandler request done"
-                 << "cmd=" << pending.cmd
-                 << "request_id=" << requestId
-                 << "code=" << code
-                 << "cost_ms=" << costMs
-                 << "payload_size=" << payload.size();
+        LogDebug("[ProtocolHandler] request done, cmd=" << pending.cmd.toStdString()
+                 << ", request_id=" << requestId.toStdString()
+                 << ", code=" << code
+                 << ", cost_ms=" << costMs
+                 << ", payload_size=" << payload.size());
         if (pending.callback_with_message) {
             pending.callback_with_message(code, payload, serverMessage);
         } else if (pending.callback) {
@@ -155,7 +152,7 @@ void ProtocolHandler::handleMessage(const QByteArray& data) {
         }
         emit kickedNotify(reason);
     } else {
-        qDebug() << "ProtocolHandler: unhandled push cmd=" << cmd;
+        LogDebug("[ProtocolHandler] unhandled push cmd=" << cmd.toStdString());
     }
 }
 
@@ -175,10 +172,9 @@ void ProtocolHandler::clearPendingRequests() {
             request.timeout_timer->stop();
             request.timeout_timer->deleteLater();
         }
-        qWarning() << "ProtocolHandler request aborted by disconnect"
-                   << "cmd=" << request.cmd
-                   << "request_id=" << pair.first
-                   << "cost_ms=" << costMs;
+        LogWarning("[ProtocolHandler] request aborted by disconnect, cmd=" << request.cmd.toStdString()
+                   << ", request_id=" << pair.first.toStdString()
+                   << ", cost_ms=" << costMs);
         if (request.callback_with_message) {
             request.callback_with_message(NETWORK_ERROR_CODE, QByteArray(), QString());
         } else if (request.callback) {
