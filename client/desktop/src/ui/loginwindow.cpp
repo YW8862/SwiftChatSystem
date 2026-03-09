@@ -515,7 +515,7 @@ void LoginWindow::submitLoginRequest(const QString& username, const QString& pas
 
         if (m_statusLabel) m_statusLabel->setText("登录成功");
         if (!m_mainWindow) {
-            m_mainWindow = std::make_unique<MainWindow>(m_protocol, userId);
+            m_mainWindow = std::make_unique<MainWindow>(m_protocol, m_wsClient, userId);
         }
         m_mainWindow->show();
         hide();

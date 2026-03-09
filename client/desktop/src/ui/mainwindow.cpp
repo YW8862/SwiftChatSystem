@@ -4,8 +4,10 @@
 #include "chatwidget.h"
 #include "network/app_service.h"
 #include "network/protocol_handler.h"
+#include "network/websocket_client.h"
 #include "zone.pb.h"
 #include "gate.pb.h"
+#include "utils/settings.h"
 
 #include <QDateTime>
 #include <QDialog>
@@ -44,10 +46,12 @@
 #include "utils/image_utils.h"
 
 MainWindow::MainWindow(ProtocolHandler* protocol,
+                       WebSocketClient* wsClient,
                        const QString& currentUserId,
                        QWidget *parent)
     : QMainWindow(parent)
     , m_protocol(protocol)
+    , m_wsClient(wsClient)
     , m_currentUserId(currentUserId) {
     setWindowTitle("SwiftChat");
     resize(1024, 768);
@@ -1183,6 +1187,7 @@ bool MainWindow::mergeOfflineMessage(const Message& msg) {
 
 void MainWindow::sendChatMessage(const QString& content) {
     if (!m_protocol || m_currentChatId.isEmpty() || content.isEmpty()) return;
+    if (!ensureGatewayConnected(QStringLiteral("发送消息"))) return;
 
     const QString chatId = m_currentChatId;
     const int chatType = m_currentChatType;
@@ -1374,6 +1379,7 @@ void MainWindow::retryFailedMessage(const QString& msgId) {
 
 void MainWindow::sendFileMessage(const QString& filePath) {
     if (!m_protocol || m_currentChatId.isEmpty() || filePath.isEmpty()) return;
+    if (!ensureGatewayConnected(QStringLiteral("发送文件"))) return;
     QFileInfo fileInfo(filePath);
     if (!fileInfo.exists() || !fileInfo.isFile()) {
         QMessageBox::warning(this, "文件发送失败", "选择的文件不存在或不可用。");
@@ -2026,4 +2032,19 @@ void MainWindow::removeCurrentFriend() {
             m_rightStack->setCurrentWidget(m_chatWidget);
         }
     });
+}
+
+bool MainWindow::ensureGatewayConnected(const QString& actionText) {
+    if (!m_wsClient) return true;
+    if (m_wsClient->isConnected()) return true;
+    const QString serverUrl = Settings::instance().serverUrl().trimmed();
+    if (!serverUrl.isEmpty()) {
+        m_wsClient->connect(serverUrl);
+    }
+    QMessageBox::warning(
+        this,
+        "网络未连接",
+        QString("当前与网关连接已断开，正在自动重连，请稍后再%1。").arg(actionText)
+    );
+    return false;
 }

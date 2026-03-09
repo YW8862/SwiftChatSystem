@@ -18,6 +18,7 @@ class QLabel;
 class QPushButton;
 class QToolButton;
 class QNetworkAccessManager;
+class WebSocketClient;
 namespace client { class AppService; }
 
 /**
@@ -33,6 +34,7 @@ class MainWindow : public QMainWindow {
     
 public:
     explicit MainWindow(ProtocolHandler* protocol,
+                        WebSocketClient* wsClient,
                         const QString& currentUserId,
                         QWidget *parent = nullptr);
     ~MainWindow();
@@ -72,6 +74,7 @@ private:
     void sendMarkRead();
     void refreshFriendProfileCard();
     void removeCurrentFriend();
+    bool ensureGatewayConnected(const QString& actionText);
     QString convKey(const QString& chatId, int chatType) const;
 
     void onConversationSelected(const QString& chatId, int chatType);
@@ -85,6 +88,7 @@ private:
     void onConversationMoreRequested(const QPoint& globalPos);
 
     ProtocolHandler* m_protocol = nullptr;
+    WebSocketClient* m_wsClient = nullptr;
     QString m_currentUserId;
     ContactWidget* m_contactWidget = nullptr;
     ChatWidget* m_chatWidget = nullptr;
