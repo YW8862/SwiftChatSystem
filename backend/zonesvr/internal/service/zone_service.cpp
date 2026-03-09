@@ -363,7 +363,6 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleChat(
     const std::string& user_id, const std::string& cmd,
     const std::string& payload, const std::string& request_id,
     const std::string& token) {
-    (void)token;
     HandleClientRequestResult result;
     result.request_id = request_id;
     auto* chat = manager_->GetChatSystem();
@@ -381,7 +380,7 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleChat(
         auto r = chat->SendMessage(req.from_user_id(), req.to_id(), req.chat_type(),
                                   req.content(), req.media_url(), req.media_type(),
                                   mentions, req.reply_to_msg_id(),
-                                  req.client_msg_id(), req.file_size());
+                                  req.client_msg_id(), req.file_size(), token);
         ChatSendMessageResponsePayload resp_pb;
         resp_pb.set_success(r.success);
         resp_pb.set_msg_id(r.msg_id);
@@ -441,7 +440,7 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleChat(
         }
         std::string err;
         bool ok = chat->MarkRead(user_id, req.chat_id(), req.chat_type(),
-                                req.last_msg_id(), &err);
+                                req.last_msg_id(), &err, token);
         result.code = ok ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
                         : swift::ErrorCodeToInt(swift::ErrorCode::INVALID_PARAM);
         if (!err.empty()) result.message = err;
@@ -492,7 +491,7 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleChat(
             limit = req.limit();
         else if (req.limit() >= 200)
             limit = 200;
-        auto r = chat->PullOffline(user_id, limit, req.cursor());
+        auto r = chat->PullOffline(user_id, limit, req.cursor(), token);
         if (!r.success) {
             result.code = swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
             result.message = r.error.empty() ? "pull offline failed" : r.error;
@@ -526,7 +525,7 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleChat(
             return result;
         }
         std::string err;
-        bool ok = chat->RecallMessage(req.msg_id(), req.user_id(), &err);
+        bool ok = chat->RecallMessage(req.msg_id(), req.user_id(), &err, token);
         result.code = ok ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
                         : swift::ErrorCodeToInt(swift::ErrorCode::RECALL_NOT_ALLOWED);
         if (!err.empty()) result.message = err;
@@ -545,7 +544,7 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleChat(
         }
         int32_t limit = req.limit() > 0 && req.limit() <= 100 ? req.limit() : 50;
         auto r = chat->GetHistory(user_id, req.chat_id(), req.chat_type(),
-                                  req.before_msg_id(), limit);
+                                  req.before_msg_id(), limit, token);
         if (!r.success) {
             result.code = swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
             result.message = r.error.empty() ? "get history failed" : r.error;
@@ -582,7 +581,7 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleChat(
             return result;
         }
         int64_t last_sync = req.last_sync_time();
-        auto r = chat->SyncConversations(user_id, last_sync);
+        auto r = chat->SyncConversations(user_id, last_sync, token);
         if (!r.success) {
             result.code = swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
             result.message = r.error.empty() ? "sync conversations failed" : r.error;
@@ -620,7 +619,7 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleChat(
             return result;
         }
         std::string err;
-        bool ok = chat->DeleteConversation(user_id, req.chat_id(), req.chat_type(), &err);
+        bool ok = chat->DeleteConversation(user_id, req.chat_id(), req.chat_type(), &err, token);
         result.code = ok ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
                         : swift::ErrorCodeToInt(swift::ErrorCode::INVALID_PARAM);
         if (!err.empty()) result.message = err;

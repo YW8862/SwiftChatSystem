@@ -31,7 +31,8 @@ SendMessageResult ChatRpcClient::SendMessage(const std::string& from_user_id, co
                                              const std::string& media_url, const std::string& media_type,
                                              const std::vector<std::string>& mentions,
                                              const std::string& reply_to_msg_id,
-                                             const std::string& client_msg_id, int64_t file_size) {
+                                             const std::string& client_msg_id, int64_t file_size,
+                                             const std::string& token) {
     SendMessageResult result;
     if (!stub_) return result;
     swift::chat::SendMessageRequest req;
@@ -46,7 +47,7 @@ SendMessageResult ChatRpcClient::SendMessage(const std::string& from_user_id, co
     if (!client_msg_id.empty()) req.set_client_msg_id(client_msg_id);
     if (file_size > 0) req.set_file_size(file_size);
     swift::chat::SendMessageResponse resp;
-    auto ctx = CreateContext(10000);
+    auto ctx = CreateContext(10000, token);
     grpc::Status status = stub_->SendMessage(ctx.get(), req, &resp);
     if (!status.ok()) {
         result.error = status.error_message();
@@ -63,13 +64,13 @@ SendMessageResult ChatRpcClient::SendMessage(const std::string& from_user_id, co
 }
 
 bool ChatRpcClient::RecallMessage(const std::string& msg_id, const std::string& user_id,
-                                  std::string* out_error) {
+                                  std::string* out_error, const std::string& token) {
     if (!stub_) return false;
     swift::chat::RecallMessageRequest req;
     req.set_msg_id(msg_id);
     req.set_user_id(user_id);
     swift::chat::RecallMessageResponse resp;
-    auto ctx = CreateContext(5000);
+    auto ctx = CreateContext(5000, token);
     grpc::Status status = stub_->RecallMessage(ctx.get(), req, &resp);
     if (!status.ok()) {
         if (out_error) *out_error = status.error_message();
@@ -82,14 +83,14 @@ bool ChatRpcClient::RecallMessage(const std::string& msg_id, const std::string& 
 
 bool ChatRpcClient::PullOffline(const std::string& user_id, int32_t limit, const std::string& cursor,
                                 std::vector<ChatMessageResult>* out_messages, std::string* next_cursor,
-                                bool* has_more, std::string* out_error) {
+                                bool* has_more, std::string* out_error, const std::string& token) {
     if (!stub_) return false;
     swift::chat::PullOfflineRequest req;
     req.set_user_id(user_id);
     if (limit > 0) req.set_limit(limit);
     if (!cursor.empty()) req.set_cursor(cursor);
     swift::chat::PullOfflineResponse resp;
-    auto ctx = CreateContext(10000);
+    auto ctx = CreateContext(10000, token);
     grpc::Status status = stub_->PullOffline(ctx.get(), req, &resp);
     if (!status.ok()) {
         if (out_error) *out_error = status.error_message();
@@ -110,7 +111,7 @@ bool ChatRpcClient::PullOffline(const std::string& user_id, int32_t limit, const
 bool ChatRpcClient::GetHistory(const std::string& user_id, const std::string& chat_id, int32_t chat_type,
                                const std::string& before_msg_id, int32_t limit,
                                std::vector<ChatMessageResult>* out_messages, bool* has_more,
-                               std::string* out_error) {
+                               std::string* out_error, const std::string& token) {
     if (!stub_) return false;
     swift::chat::GetHistoryRequest req;
     req.set_user_id(user_id);
@@ -119,7 +120,7 @@ bool ChatRpcClient::GetHistory(const std::string& user_id, const std::string& ch
     if (!before_msg_id.empty()) req.set_before_msg_id(before_msg_id);
     if (limit > 0) req.set_limit(limit);
     swift::chat::GetHistoryResponse resp;
-    auto ctx = CreateContext(10000);
+    auto ctx = CreateContext(10000, token);
     grpc::Status status = stub_->GetHistory(ctx.get(), req, &resp);
     if (!status.ok()) {
         if (out_error) *out_error = status.error_message();
@@ -138,13 +139,13 @@ bool ChatRpcClient::GetHistory(const std::string& user_id, const std::string& ch
 
 bool ChatRpcClient::SyncConversations(const std::string& user_id, int64_t last_sync_time,
                                       std::vector<ConversationResult>* out_conversations,
-                                      std::string* out_error) {
+                                      std::string* out_error, const std::string& token) {
     if (!stub_) return false;
     swift::chat::SyncConversationsRequest req;
     req.set_user_id(user_id);
     if (last_sync_time > 0) req.set_last_sync_time(last_sync_time);
     swift::chat::SyncConversationsResponse resp;
-    auto ctx = CreateContext(10000);
+    auto ctx = CreateContext(10000, token);
     grpc::Status status = stub_->SyncConversations(ctx.get(), req, &resp);
     if (!status.ok()) {
         if (out_error) *out_error = status.error_message();
@@ -176,14 +177,15 @@ bool ChatRpcClient::SyncConversations(const std::string& user_id, int64_t last_s
 }
 
 bool ChatRpcClient::DeleteConversation(const std::string& user_id, const std::string& chat_id,
-                                       int32_t chat_type, std::string* out_error) {
+                                       int32_t chat_type, std::string* out_error,
+                                       const std::string& token) {
     if (!stub_) return false;
     swift::chat::DeleteConversationRequest req;
     req.set_user_id(user_id);
     req.set_chat_id(chat_id);
     req.set_chat_type(chat_type);
     swift::chat::DeleteConversationResponse resp;
-    auto ctx = CreateContext(5000);
+    auto ctx = CreateContext(5000, token);
     grpc::Status status = stub_->DeleteConversation(ctx.get(), req, &resp);
     if (!status.ok()) {
         if (out_error) *out_error = status.error_message();
@@ -195,7 +197,8 @@ bool ChatRpcClient::DeleteConversation(const std::string& user_id, const std::st
 }
 
 bool ChatRpcClient::MarkRead(const std::string& user_id, const std::string& chat_id, int32_t chat_type,
-                             const std::string& last_msg_id, std::string* out_error) {
+                             const std::string& last_msg_id, std::string* out_error,
+                             const std::string& token) {
     if (!stub_) return false;
     swift::chat::MarkReadRequest req;
     req.set_user_id(user_id);
@@ -203,7 +206,7 @@ bool ChatRpcClient::MarkRead(const std::string& user_id, const std::string& chat
     req.set_chat_type(chat_type);
     if (!last_msg_id.empty()) req.set_last_msg_id(last_msg_id);
     swift::chat::MarkReadResponse resp;
-    auto ctx = CreateContext(5000);
+    auto ctx = CreateContext(5000, token);
     grpc::Status status = stub_->MarkRead(ctx.get(), req, &resp);
     if (!status.ok()) {
         if (out_error) *out_error = status.error_message();

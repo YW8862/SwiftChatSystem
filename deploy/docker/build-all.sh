@@ -5,13 +5,23 @@ set -e
 cd "$(dirname "$0")/../.."
 
 KUBECTL_CMD=(kubectl)
+USE_MINIKUBE_DOCKER=0
+MINIKUBE_PROFILE="${MINIKUBE_PROFILE:-minikube}"
 
 # 开启 Minikube 内部 Docker 环境
 # 这样不仅能省去极其漫长的 image load 过程，还能避免宿主机和 Minikube 之间的镜像版本不同步！
-if command -v minikube &>/dev/null && minikube status &>/dev/null; then
+if command -v minikube &>/dev/null && minikube -p "$MINIKUBE_PROFILE" status &>/dev/null; then
   echo "=> Minikube is running. Switching to Minikube docker environment..."
-  eval $(minikube -p minikube docker-env)
-  KUBECTL_CMD=(minikube -p minikube kubectl --)
+  eval "$(minikube -p "$MINIKUBE_PROFILE" docker-env)"
+  KUBECTL_CMD=(minikube -p "$MINIKUBE_PROFILE" kubectl --)
+  if docker info >/dev/null 2>&1; then
+    USE_MINIKUBE_DOCKER=1
+    echo "=> Using Minikube Docker daemon."
+  else
+    echo "=> Warning: Minikube Docker daemon is unreachable. Fallback to host Docker + minikube image load."
+    unset DOCKER_HOST DOCKER_CERT_PATH DOCKER_TLS_VERIFY MINIKUBE_ACTIVE_DOCKERD
+    USE_MINIKUBE_DOCKER=0
+  fi
 else
   echo "=> Warning: Minikube is not running. Building on host Docker..."
   unset DOCKER_HOST DOCKER_CERT_PATH DOCKER_TLS_VERIFY MINIKUBE_ACTIVE_DOCKERD
@@ -33,6 +43,11 @@ for target in authsvr onlinesvr friendsvr chatsvr filesvr zonesvr gatesvr; do
     --build-arg BUILD_TARGET=$target \
     --build-arg BASE_IMAGE="$BASE_IMAGE" \
     -t "$img" .
+
+  if [[ "$USE_MINIKUBE_DOCKER" -ne 1 ]] && command -v minikube &>/dev/null && minikube -p "$MINIKUBE_PROFILE" status &>/dev/null; then
+    echo "=> Loading $img into Minikube image cache..."
+    minikube -p "$MINIKUBE_PROFILE" image load "$img"
+  fi
   
   # 将 k8s 部署文件恢复为使用 latest 标签（防止你之前执行了上一个版本的脚本）
   sed -i "s|image: $REGISTRY/$target:.*|image: $img|g" "deploy/k8s/${target}-deployment.yaml"
