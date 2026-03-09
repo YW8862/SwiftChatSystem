@@ -357,6 +357,18 @@ void MainWindow::wireSignals() {
             this, &MainWindow::onPushFriendRequest);
     connect(m_protocol, &ProtocolHandler::friendAcceptedNotify,
             this, &MainWindow::onPushFriendAccepted);
+    if (m_wsClient) {
+        connect(m_wsClient, &WebSocketClient::disconnected, this, [this]() {
+            m_sessionReady = false;
+            m_sessionValidationInFlight = false;
+            LogWarning("[MainWindow] websocket disconnected, session marked not ready");
+        });
+        connect(m_wsClient, &WebSocketClient::connected, this, [this]() {
+            m_sessionReady = false;
+            LogInfo("[MainWindow] websocket connected, trigger session validation");
+            triggerSessionValidation();
+        });
+    }
 }
 
 void MainWindow::syncConversations() {
@@ -1190,6 +1202,7 @@ bool MainWindow::mergeOfflineMessage(const Message& msg) {
 void MainWindow::sendChatMessage(const QString& content) {
     if (!m_protocol || m_currentChatId.isEmpty() || content.isEmpty()) return;
     if (!ensureGatewayConnected(QStringLiteral("发送消息"))) return;
+    if (!ensureSessionReady(QStringLiteral("发送消息"))) return;
 
     const QString chatId = m_currentChatId;
     const int chatType = m_currentChatType;
@@ -1397,6 +1410,7 @@ void MainWindow::retryFailedMessage(const QString& msgId) {
 void MainWindow::sendFileMessage(const QString& filePath) {
     if (!m_protocol || m_currentChatId.isEmpty() || filePath.isEmpty()) return;
     if (!ensureGatewayConnected(QStringLiteral("发送文件"))) return;
+    if (!ensureSessionReady(QStringLiteral("发送文件"))) return;
     const QString targetChatId = m_currentChatId;
     const int targetChatType = m_currentChatType;
     QFileInfo fileInfo(filePath);
@@ -2133,4 +2147,68 @@ bool MainWindow::ensureGatewayConnected(const QString& actionText) {
         QString("当前与网关连接已断开，正在自动重连，请稍后再%1。").arg(actionText)
     );
     return false;
+}
+
+bool MainWindow::ensureSessionReady(const QString& actionText) {
+    if (m_sessionReady) return true;
+    triggerSessionValidation();
+    QMessageBox::information(
+        this,
+        "会话恢复中",
+        QString("连接已恢复，正在校验登录状态，请稍后再%1。").arg(actionText)
+    );
+    return false;
+}
+
+void MainWindow::triggerSessionValidation() {
+    if (!m_protocol || m_sessionValidationInFlight) return;
+    const QString token = Settings::instance().savedToken().trimmed();
+    if (token.isEmpty()) {
+        m_sessionReady = false;
+        LogWarning("[MainWindow] no saved token, cannot validate session");
+        return;
+    }
+
+    swift::zone::AuthValidateTokenPayload req;
+    req.set_token(token.toStdString());
+    std::string payload;
+    if (!req.SerializeToString(&payload)) {
+        m_sessionReady = false;
+        LogWarning("[MainWindow] auth.validate_token serialize failed");
+        return;
+    }
+
+    m_sessionValidationInFlight = true;
+    LogInfo("[MainWindow] send auth.validate_token for session recovery");
+    m_protocol->sendRequest("auth.validate_token",
+                            QByteArray(payload.data(), static_cast<int>(payload.size())),
+                            [this](int code, const QByteArray& data, const QString& message) {
+        m_sessionValidationInFlight = false;
+        if (code != 0) {
+            m_sessionReady = false;
+            LogWarning("[MainWindow] auth.validate_token failed, code=" << code
+                       << ", message=" << message.toStdString());
+            return;
+        }
+        swift::zone::AuthValidateTokenResponsePayload resp;
+        if (!resp.ParseFromArray(data.data(), data.size())) {
+            m_sessionReady = false;
+            LogWarning("[MainWindow] auth.validate_token response parse failed");
+            return;
+        }
+        const QString uid = QString::fromStdString(resp.user_id()).trimmed();
+        if (uid.isEmpty()) {
+            m_sessionReady = false;
+            LogWarning("[MainWindow] auth.validate_token returned empty user_id");
+            return;
+        }
+        if (!m_currentUserId.trimmed().isEmpty() && uid != m_currentUserId) {
+            m_sessionReady = false;
+            LogWarning("[MainWindow] auth.validate_token user mismatch, expected="
+                       << m_currentUserId.toStdString() << ", got=" << uid.toStdString());
+            return;
+        }
+        m_sessionReady = true;
+        LogInfo("[MainWindow] session validation success, user_id=" << uid.toStdString());
+    });
 }
