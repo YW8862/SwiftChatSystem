@@ -124,6 +124,7 @@ void MainWindow::setupUi() {
     navLayout->addStretch();
 
     m_contactWidget = new ContactWidget(central);
+    m_contactWidget->setCurrentUserId(m_currentUserId);
     m_contactWidget->setMinimumWidth(240);
     m_contactWidget->setMaximumWidth(500);
     m_rightStack = new QStackedWidget(central);
@@ -433,6 +434,7 @@ void MainWindow::loadFriendRequests() {
             ContactWidget::FriendRequestItem item;
             item.requestId = QString::fromStdString(r.request_id());
             item.fromUserId = QString::fromStdString(r.from_user_id());
+            item.toUserId = QString::fromStdString(r.to_user_id());
             item.fromNickname = QString::fromStdString(r.from_nickname());
             item.fromAvatarUrl = QString::fromStdString(r.from_avatar_url());
             item.remark = QString::fromStdString(r.remark());
@@ -601,7 +603,7 @@ void MainWindow::createGroup() {
             ? (f.nickname.trimmed().isEmpty() ? userId : f.nickname.trimmed())
             : f.remark.trimmed();
         auto* item = new QListWidgetItem(list);
-        auto* cb = new QCheckBox(QString("%1 (%2)").arg(display, userId), list);
+        auto* cb = new QCheckBox(display, list);
         cb->setProperty("userId", userId);
         list->setItemWidget(item, cb);
     }
@@ -1016,7 +1018,7 @@ QString MainWindow::pickUserForAction(const QString& title,
     auto* list = new QListWidget(&dialog);
     list->setSelectionMode(QAbstractItemView::SingleSelection);
     for (const auto& c : candidates) {
-        auto* item = new QListWidgetItem(QString("%1 (%2)").arg(c.second, c.first), list);
+        auto* item = new QListWidgetItem(c.second, list);
         item->setData(Qt::UserRole, c.first);
     }
     root->addWidget(list, 1);
@@ -1049,7 +1051,7 @@ QStringList MainWindow::pickUsersForAction(const QString& title,
     list->setSelectionMode(QAbstractItemView::NoSelection);
     for (const auto& c : candidates) {
         auto* item = new QListWidgetItem(list);
-        auto* box = new QCheckBox(QString("%1 (%2)").arg(c.second, c.first), list);
+        auto* box = new QCheckBox(c.second, list);
         box->setProperty("userId", c.first);
         list->setItemWidget(item, box);
     }
@@ -1946,6 +1948,7 @@ void MainWindow::onPushFriendRequest(const QByteArray& payload) {
     }
     QMessageBox::information(this, "好友申请", prompt);
     loadFriendRequests();
+    loadFriends();
 }
 
 void MainWindow::onPushFriendAccepted(const QByteArray& payload) {

@@ -580,7 +580,9 @@ QWidget* ContactWidget::buildFriendRequestItemWidget(const FriendRequestItem& it
     root->addWidget(avatar);
     root->addLayout(textWrap, 1);
 
-    if (item.status == 0) {
+    const bool isOutgoing = !m_currentUserId.isEmpty() && item.fromUserId == m_currentUserId;
+    const bool isIncoming = !isOutgoing;
+    if (item.status == 0 && isIncoming) {
         auto* agreeBtn = new QPushButton("同意", container);
         agreeBtn->setCursor(Qt::PointingHandCursor);
         auto* rejectBtn = new QPushButton("拒绝", container);
@@ -594,7 +596,15 @@ QWidget* ContactWidget::buildFriendRequestItemWidget(const FriendRequestItem& it
         root->addWidget(agreeBtn);
         root->addWidget(rejectBtn);
     } else {
-        auto* done = new QLabel(item.status == 1 ? "已同意" : "已拒绝", container);
+        QString stateText;
+        if (item.status == 0) {
+            stateText = QStringLiteral("等待同意");
+        } else if (item.status == 1) {
+            stateText = isIncoming ? QStringLiteral("已同意") : QStringLiteral("已添加");
+        } else {
+            stateText = QStringLiteral("已拒绝");
+        }
+        auto* done = new QLabel(stateText, container);
         done->setObjectName("requestMeta");
         root->addWidget(done);
     }

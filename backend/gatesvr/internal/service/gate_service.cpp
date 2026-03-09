@@ -339,6 +339,30 @@ void GateService::ForwardToZone(const std::string& conn_id, const std::string& c
         SendResponse(conn_id, cmd, request_id, code, msg);
         return;
     }
+
+    if (cmd == "auth.validate_token" &&
+        result.code == swift::ErrorCodeToInt(swift::ErrorCode::OK)) {
+        swift::zone::AuthValidateTokenPayload validate_req;
+        swift::zone::AuthValidateTokenResponsePayload validate_resp;
+        const bool req_ok = validate_req.ParseFromString(payload);
+        const bool resp_ok = validate_resp.ParseFromString(result.payload);
+        const std::string validated_user_id = resp_ok ? validate_resp.user_id() : std::string();
+        const std::string validated_token = req_ok ? validate_req.token() : std::string();
+        if (!validated_user_id.empty() && !validated_token.empty()) {
+            std::string device_id;
+            std::string device_type;
+            {
+                Connection* c = GetConnection(conn_id);
+                if (c) {
+                    device_id = c->device_id;
+                    device_type = c->device_type;
+                }
+            }
+            BindUser(conn_id, validated_user_id, validated_token, device_id, device_type);
+            zone_client_->UserOnline(validated_user_id, gate_id_, device_type, device_id);
+        }
+    }
+
     SendResponse(conn_id, cmd, result.request_id, result.code, result.message, result.payload);
 }
 

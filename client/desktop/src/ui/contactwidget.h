@@ -37,6 +37,7 @@ public:
     struct FriendRequestItem {
         QString requestId;
         QString fromUserId;
+        QString toUserId;
         QString fromNickname;
         QString fromAvatarUrl;
         QString remark;
@@ -76,6 +77,7 @@ public:
     void setGroups(const QList<GroupItem>& groups);
     void setCurrentGroupInfo(const GroupItem& groupInfo);
     void setGroupMembers(const QList<GroupMemberItem>& members);
+    void setCurrentUserId(const QString& userId) { m_currentUserId = userId; }
     QString currentSelectedGroupId() const { return m_currentGroupId; }
     QList<FriendItem> friends() const { return m_friends; }
     QList<GroupMemberItem> groupMembers() const { return m_groupMembers; }
@@ -144,4 +146,5 @@ private:
     GroupItem m_currentGroupInfo;
     QString m_currentChatId;
     QString m_currentGroupId;
+    QString m_currentUserId;
 };
