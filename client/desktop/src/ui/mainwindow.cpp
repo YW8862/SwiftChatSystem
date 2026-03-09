@@ -8,23 +8,29 @@
 #include "gate.pb.h"
 
 #include <QDateTime>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QCheckBox>
 #include <QFileInfo>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QLabel>
 #include <QList>
+#include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QPushButton>
+#include <QPointer>
 #include <QSaveFile>
 #include <QStackedWidget>
 #include <QSplitter>
 #include <QStyle>
 #include <QToolButton>
+#include <QLineEdit>
 #include <QVBoxLayout>
 #include <QWidget>
 #include <QEventLoop>
@@ -98,6 +104,23 @@ void MainWindow::setupUi() {
     contactBtn->setCursor(Qt::PointingHandCursor);
     contactBtn->setFixedSize(40, 40);
     navLayout->addWidget(contactBtn, 0, Qt::AlignHCenter);
+
+    auto* quickActionBtn = new QToolButton(navPanel);
+    quickActionBtn->setObjectName("navPlusBtn");
+    quickActionBtn->setText("+");
+    quickActionBtn->setCursor(Qt::PointingHandCursor);
+    quickActionBtn->setFixedSize(40, 40);
+    quickActionBtn->setPopupMode(QToolButton::InstantPopup);
+    auto* quickMenu = new QMenu(quickActionBtn);
+    quickMenu->setStyleSheet(
+        "QMenu{background:#ffffff;border:1px solid #dfe4ec;border-radius:10px;padding:6px 0;}"
+        "QMenu::item{padding:8px 16px;color:#2f3440;font-size:13px;min-width:120px;}"
+        "QMenu::item:selected{background:#ecf3ff;color:#2c63db;}"
+    );
+    QAction* addFriendAction = quickMenu->addAction("添加好友");
+    QAction* createGroupAction = quickMenu->addAction("创建群聊");
+    quickActionBtn->setMenu(quickMenu);
+    navLayout->addWidget(quickActionBtn, 0, Qt::AlignHCenter);
     navLayout->addStretch();
 
     m_contactWidget = new ContactWidget(central);
@@ -214,6 +237,12 @@ void MainWindow::setupUi() {
         style()->unpolish(contactBtn);
         style()->polish(contactBtn);
     });
+    connect(addFriendAction, &QAction::triggered, this, [this]() {
+        showAddFriendDialog();
+    });
+    connect(createGroupAction, &QAction::triggered, this, [this]() {
+        createGroup();
+    });
     connect(m_profileSendMsgBtn, &QPushButton::clicked, this, [this]() {
         if (m_profileUserId.isEmpty()) return;
         Conversation conv;
@@ -269,6 +298,8 @@ void MainWindow::setupUi() {
         "QSplitter::handle:horizontal:hover { background: #c6c6c6; }"
         "QToolButton#navAvatar { background: #4c8cf5; color: white; border-radius: 21px; font-size: 17px; font-weight: 700; border: none; }"
         "QToolButton#navAvatar:hover { background: #3f80ec; }"
+        "QToolButton#navPlusBtn { background: transparent; border: none; border-radius: 20px; color: #d5d5d5; font-size: 22px; font-weight: 500; }"
+        "QToolButton#navPlusBtn:hover { background: #3c3d42; color: #ffffff; }"
         "QPushButton#navBtn, QPushButton#navBtnActive { border-radius: 20px; font-size: 16px; font-weight: 700; border: none; color: #d5d5d5; }"
         "QPushButton#navBtn { background: transparent; }"
         "QPushButton#navBtn:hover { background: #3c3d42; }"
@@ -306,6 +337,8 @@ void MainWindow::wireSignals() {
             this, &MainWindow::sendMarkRead);
     connect(m_chatWidget, &ChatWidget::fileMessageOpenRequested,
             this, &MainWindow::openFileMessage);
+    connect(m_chatWidget, &ChatWidget::conversationMoreRequested,
+            this, &MainWindow::onConversationMoreRequested);
 
     connect(m_protocol, &ProtocolHandler::newMessageNotify,
             this, &MainWindow::onPushNewMessage);
@@ -531,26 +564,83 @@ void MainWindow::loadGroupMembers(const QString& groupId) {
 }
 
 void MainWindow::createGroup() {
-    if (!m_protocol) return;
-    bool ok = false;
-    const QString name = QInputDialog::getText(this, "创建群聊", "群名称：", QLineEdit::Normal, "", &ok).trimmed();
-    if (!ok || name.isEmpty()) return;
+    if (!m_protocol || !m_contactWidget) return;
+    const QList<ContactWidget::FriendItem> friends = m_contactWidget->friends();
+    if (friends.isEmpty()) {
+        QMessageBox::information(this, "创建群聊", "当前没有可选好友，请先添加好友。");
+        return;
+    }
 
-    const QString membersInput = QInputDialog::getText(
-        this, "创建群聊", "初始成员ID（逗号分隔，可留空）：", QLineEdit::Normal, "", &ok).trimmed();
-    if (!ok) return;
+    QDialog dialog(this);
+    dialog.setWindowTitle("创建群聊");
+    dialog.resize(440, 520);
+    auto* layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(16, 16, 16, 12);
+    layout->setSpacing(10);
+
+    auto* nameEdit = new QLineEdit(&dialog);
+    nameEdit->setPlaceholderText("请输入群聊名称");
+    nameEdit->setClearButtonEnabled(true);
+    nameEdit->setMinimumHeight(34);
+    layout->addWidget(nameEdit);
+
+    auto* tip = new QLabel("选择要加入群聊的好友", &dialog);
+    tip->setStyleSheet("color:#7f8694;font-size:12px;");
+    layout->addWidget(tip);
+
+    auto* list = new QListWidget(&dialog);
+    list->setSelectionMode(QAbstractItemView::NoSelection);
+    list->setStyleSheet(
+        "QListWidget{background:#fff;border:1px solid #e1e6ef;border-radius:10px;}"
+        "QListWidget::item{height:36px;}"
+    );
+    for (const auto& f : friends) {
+        const QString userId = f.friendId.trimmed();
+        if (userId.isEmpty()) continue;
+        const QString display = f.remark.trimmed().isEmpty()
+            ? (f.nickname.trimmed().isEmpty() ? userId : f.nickname.trimmed())
+            : f.remark.trimmed();
+        auto* item = new QListWidgetItem(list);
+        auto* cb = new QCheckBox(QString("%1 (%2)").arg(display, userId), list);
+        cb->setProperty("userId", userId);
+        list->setItemWidget(item, cb);
+    }
+    layout->addWidget(list, 1);
+
+    auto* btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    btns->button(QDialogButtonBox::Ok)->setText("完成");
+    btns->button(QDialogButtonBox::Cancel)->setText("取消");
+    layout->addWidget(btns);
+    connect(btns, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(btns, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() != QDialog::Accepted) return;
+    const QString name = nameEdit->text().trimmed();
+    if (name.isEmpty()) {
+        QMessageBox::information(this, "创建群聊", "群名称不能为空。");
+        return;
+    }
+
+    QStringList memberIds;
+    for (int i = 0; i < list->count(); ++i) {
+        QListWidgetItem* item = list->item(i);
+        auto* cb = qobject_cast<QCheckBox*>(list->itemWidget(item));
+        if (!cb || !cb->isChecked()) continue;
+        const QString userId = cb->property("userId").toString().trimmed();
+        if (!userId.isEmpty() && userId != m_currentUserId) {
+            memberIds.append(userId);
+        }
+    }
+    if (memberIds.isEmpty()) {
+        QMessageBox::information(this, "创建群聊", "请至少选择一位好友。");
+        return;
+    }
 
     swift::zone::GroupCreatePayload req;
     req.set_creator_id(m_currentUserId.toStdString());
     req.set_group_name(name.toStdString());
-    if (!membersInput.isEmpty()) {
-        const QStringList ids = membersInput.split(',', Qt::SkipEmptyParts);
-        for (const QString& raw : ids) {
-            const QString id = raw.trimmed();
-            if (!id.isEmpty() && id != m_currentUserId) {
-                req.add_member_ids(id.toStdString());
-            }
-        }
+    for (const QString& id : memberIds) {
+        req.add_member_ids(id.toStdString());
     }
 
     std::string payload;
@@ -582,21 +672,25 @@ void MainWindow::createGroup() {
 }
 
 void MainWindow::inviteGroupMembers(const QString& groupId) {
-    if (!m_protocol || groupId.isEmpty()) return;
-    bool ok = false;
-    const QString membersInput = QInputDialog::getText(
-        this, "邀请成员", "成员ID（逗号分隔）：", QLineEdit::Normal, "", &ok).trimmed();
-    if (!ok || membersInput.isEmpty()) return;
+    if (!m_protocol || !m_contactWidget || groupId.isEmpty()) return;
+    QList<QPair<QString, QString>> candidates;
+    const QList<ContactWidget::FriendItem> friends = m_contactWidget->friends();
+    for (const auto& f : friends) {
+        const QString id = f.friendId.trimmed();
+        if (id.isEmpty() || id == m_currentUserId) continue;
+        const QString display = f.remark.trimmed().isEmpty()
+            ? (f.nickname.trimmed().isEmpty() ? id : f.nickname.trimmed())
+            : f.remark.trimmed();
+        candidates.append({id, display});
+    }
+    const QStringList pickedIds = pickUsersForAction("邀请群成员", "选择要邀请的好友", candidates);
+    if (pickedIds.isEmpty()) return;
 
     swift::zone::GroupInviteMembersPayload req;
     req.set_group_id(groupId.toStdString());
     req.set_inviter_id(m_currentUserId.toStdString());
-    const QStringList ids = membersInput.split(',', Qt::SkipEmptyParts);
-    for (const QString& raw : ids) {
-        const QString id = raw.trimmed();
-        if (!id.isEmpty() && id != m_currentUserId) {
-            req.add_member_ids(id.toStdString());
-        }
+    for (const QString& id : pickedIds) {
+        req.add_member_ids(id.toStdString());
     }
 
     std::string payload;
@@ -617,11 +711,17 @@ void MainWindow::inviteGroupMembers(const QString& groupId) {
 }
 
 void MainWindow::removeGroupMember(const QString& groupId) {
-    if (!m_protocol || groupId.isEmpty()) return;
-    bool ok = false;
-    const QString memberId = QInputDialog::getText(
-        this, "踢出成员", "成员ID：", QLineEdit::Normal, "", &ok).trimmed();
-    if (!ok || memberId.isEmpty()) return;
+    if (!m_protocol || !m_contactWidget || groupId.isEmpty()) return;
+    QList<QPair<QString, QString>> candidates;
+    const QList<ContactWidget::GroupMemberItem> members = m_contactWidget->groupMembers();
+    for (const auto& m : members) {
+        const QString id = m.userId.trimmed();
+        if (id.isEmpty() || id == m_currentUserId) continue;
+        const QString display = m.nickname.trimmed().isEmpty() ? id : m.nickname.trimmed();
+        candidates.append({id, display});
+    }
+    const QString memberId = pickUserForAction("移出群成员", "选择要移出的成员", candidates);
+    if (memberId.isEmpty()) return;
 
     swift::zone::GroupRemoveMemberPayload req;
     req.set_group_id(groupId.toStdString());
@@ -676,6 +776,300 @@ void MainWindow::leaveGroup(const QString& groupId) {
         }
         loadUserGroups();
     });
+}
+
+void MainWindow::dismissGroup(const QString& groupId) {
+    if (!m_protocol || groupId.isEmpty()) return;
+    const auto reply = QMessageBox::question(this, "删除群聊", QString("确定解散并删除群聊 %1 吗？").arg(groupId));
+    if (reply != QMessageBox::Yes) return;
+
+    swift::zone::GroupDismissPayload req;
+    req.set_group_id(groupId.toStdString());
+    req.set_operator_id(m_currentUserId.toStdString());
+    std::string payload;
+    if (!req.SerializeToString(&payload)) return;
+    m_protocol->sendRequest("group.dismiss",
+                            QByteArray(payload.data(), static_cast<int>(payload.size())),
+                            [this, groupId](int code, const QByteArray&, const QString& message) {
+        if (code != 0) {
+            const QString err = message.trimmed().isEmpty()
+                ? QString("删除群聊失败，错误码: %1").arg(code)
+                : message;
+            QMessageBox::warning(this, "删除群聊失败", err);
+            return;
+        }
+        const QString key = convKey(groupId, 2);
+        m_conversationMap.remove(key);
+        m_messageMap.remove(key);
+        if (m_currentChatType == 2 && m_currentChatId == groupId) {
+            m_currentChatId.clear();
+            m_chatWidget->setConversation(QString(), 2);
+        }
+        loadUserGroups();
+    });
+}
+
+void MainWindow::deleteConversation(const QString& chatId, int chatType) {
+    if (!m_protocol || chatId.isEmpty()) return;
+    const auto reply = QMessageBox::question(this, "删除会话", "确定删除当前会话吗？");
+    if (reply != QMessageBox::Yes) return;
+
+    swift::zone::ChatDeleteConversationPayload req;
+    req.set_chat_id(chatId.toStdString());
+    req.set_chat_type(chatType);
+    std::string payload;
+    if (!req.SerializeToString(&payload)) return;
+    m_protocol->sendRequest("chat.delete_conversation",
+                            QByteArray(payload.data(), static_cast<int>(payload.size())),
+                            [this, chatId, chatType](int code, const QByteArray&, const QString& message) {
+        if (code != 0) {
+            const QString err = message.trimmed().isEmpty()
+                ? QString("删除会话失败，错误码: %1").arg(code)
+                : message;
+            QMessageBox::warning(this, "删除会话失败", err);
+            return;
+        }
+        const QString key = convKey(chatId, chatType);
+        m_conversationMap.remove(key);
+        m_messageMap.remove(key);
+        if (m_currentChatId == chatId && m_currentChatType == chatType) {
+            m_currentChatId.clear();
+            m_chatWidget->setConversation(QString(), chatType);
+        }
+        syncConversations();
+    });
+}
+
+void MainWindow::showAddFriendDialog() {
+    if (!m_protocol) return;
+
+    QDialog dialog(this);
+    dialog.setWindowTitle("添加好友");
+    dialog.resize(520, 460);
+    QPointer<QDialog> dialogGuard(&dialog);
+    auto* root = new QVBoxLayout(&dialog);
+    root->setContentsMargins(16, 14, 16, 12);
+    root->setSpacing(10);
+
+    auto* searchRow = new QHBoxLayout();
+    auto* keywordEdit = new QLineEdit(&dialog);
+    keywordEdit->setPlaceholderText("输入好友名称或用户ID");
+    keywordEdit->setClearButtonEnabled(true);
+    keywordEdit->setMinimumHeight(34);
+    auto* searchBtn = new QPushButton("搜索", &dialog);
+    searchBtn->setCursor(Qt::PointingHandCursor);
+    searchBtn->setMinimumSize(78, 34);
+    searchRow->addWidget(keywordEdit, 1);
+    searchRow->addWidget(searchBtn);
+    root->addLayout(searchRow);
+
+    auto* hintLabel = new QLabel("输入关键词后点击搜索", &dialog);
+    hintLabel->setStyleSheet("color:#7f8694;font-size:12px;");
+    root->addWidget(hintLabel);
+
+    auto* resultList = new QListWidget(&dialog);
+    resultList->setFrameShape(QFrame::NoFrame);
+    resultList->setStyleSheet(
+        "QListWidget{background:#fff;border:1px solid #e1e6ef;border-radius:10px;}"
+        "QListWidget::item{height:56px;}"
+    );
+    root->addWidget(resultList, 1);
+
+    auto requestSeq = std::make_shared<int>(0);
+    auto renderResults = [this, keywordEdit, resultList, hintLabel, searchBtn, dialogGuard, requestSeq]() {
+        resultList->clear();
+        const QString key = keywordEdit->text().trimmed();
+        if (key.isEmpty()) {
+            hintLabel->setText("输入关键词后点击搜索");
+            return;
+        }
+
+        const int seq = ++(*requestSeq);
+        searchBtn->setEnabled(false);
+        hintLabel->setText("搜索中...");
+
+        swift::zone::FriendSearchPayload req;
+        req.set_keyword(key.toStdString());
+        req.set_limit(30);
+        std::string payload;
+        if (!req.SerializeToString(&payload)) {
+            searchBtn->setEnabled(true);
+            hintLabel->setText("请求构造失败，请重试");
+            return;
+        }
+        m_protocol->sendRequest("friend.search",
+                                QByteArray(payload.data(), static_cast<int>(payload.size())),
+                                [this, dialogGuard, resultList, hintLabel, searchBtn, requestSeq, seq](int code, const QByteArray& data, const QString& message) {
+            if (!dialogGuard) return;
+            if (seq != *requestSeq) return;
+            searchBtn->setEnabled(true);
+            resultList->clear();
+            if (code != 0) {
+                const QString err = message.trimmed().isEmpty()
+                    ? QString("搜索失败，错误码: %1").arg(code)
+                    : message;
+                hintLabel->setText(err);
+                return;
+            }
+            swift::zone::FriendSearchResponsePayload resp;
+            if (!resp.ParseFromArray(data.data(), data.size())) {
+                hintLabel->setText("搜索结果解析失败");
+                return;
+            }
+            int shown = 0;
+            for (const auto& u : resp.users()) {
+                const QString uid = QString::fromStdString(u.user_id()).trimmed();
+                if (uid.isEmpty()) continue;
+                if (m_contactWidget && !m_contactWidget->friendById(uid).friendId.isEmpty()) continue;
+                const QString username = QString::fromStdString(u.username()).trimmed();
+                const QString nickname = QString::fromStdString(u.nickname()).trimmed();
+                const QString signature = QString::fromStdString(u.signature()).trimmed();
+                const QString showName = nickname.isEmpty() ? (username.isEmpty() ? uid : username) : nickname;
+
+                auto* item = new QListWidgetItem(resultList);
+                auto* row = new QWidget(resultList);
+                auto* rowLayout = new QHBoxLayout(row);
+                rowLayout->setContentsMargins(10, 4, 10, 4);
+                rowLayout->setSpacing(8);
+                auto* name = new QLabel(QString("%1 (%2)").arg(showName, uid), row);
+                name->setStyleSheet("color:#2a2f3a;font-size:13px;");
+                auto* source = new QLabel(signature.isEmpty() ? "可添加" : signature, row);
+                source->setStyleSheet("color:#7f8694;font-size:11px;");
+                source->setWordWrap(true);
+                auto* textWrap = new QVBoxLayout();
+                textWrap->setSpacing(2);
+                textWrap->setContentsMargins(0, 0, 0, 0);
+                textWrap->addWidget(name);
+                textWrap->addWidget(source);
+                auto* addBtn = new QPushButton("添加", row);
+                addBtn->setCursor(Qt::PointingHandCursor);
+                addBtn->setFixedHeight(28);
+                addBtn->setStyleSheet(
+                    "QPushButton{background:#07c160;color:#fff;border:none;border-radius:6px;padding:0 12px;font-size:12px;font-weight:600;}"
+                    "QPushButton:hover{background:#06ad56;}"
+                    "QPushButton:disabled{background:#97d9b5;color:#e7f8ee;}"
+                );
+                rowLayout->addLayout(textWrap, 1);
+                rowLayout->addWidget(addBtn);
+                resultList->setItemWidget(item, row);
+                QObject::connect(addBtn, &QPushButton::clicked, dialogGuard.data(), [this, uid, addBtn]() {
+                    addBtn->setEnabled(false);
+                    swift::zone::FriendAddPayload req;
+                    req.set_user_id(m_currentUserId.toStdString());
+                    req.set_friend_id(uid.toStdString());
+                    req.set_remark(QString("来自 %1 的好友申请").arg(m_currentUserId).toStdString());
+                    std::string payload;
+                    if (!req.SerializeToString(&payload)) {
+                        addBtn->setEnabled(true);
+                        return;
+                    }
+                    m_protocol->sendRequest("friend.add",
+                                            QByteArray(payload.data(), static_cast<int>(payload.size())),
+                                            [this, uid, addBtn](int code, const QByteArray&, const QString& message) {
+                        if (code != 0) {
+                            addBtn->setEnabled(true);
+                            const QString err = message.trimmed().isEmpty()
+                                ? QString("发送好友申请失败，错误码: %1").arg(code)
+                                : message;
+                            QMessageBox::warning(this, "添加好友失败", err);
+                            return;
+                        }
+                        addBtn->setText("已发送");
+                        QMessageBox::information(this, "添加好友", QString("已向 %1 发送好友申请。").arg(uid));
+                        loadFriendRequests();
+                    });
+                });
+                ++shown;
+            }
+            hintLabel->setText(shown > 0 ? QString("找到 %1 个用户").arg(shown) : QString("没有匹配结果"));
+        });
+    };
+
+    connect(searchBtn, &QPushButton::clicked, &dialog, [renderResults]() {
+        renderResults();
+    });
+    connect(keywordEdit, &QLineEdit::returnPressed, &dialog, [renderResults]() {
+        renderResults();
+    });
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+    buttons->button(QDialogButtonBox::Close)->setText("关闭");
+    root->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    dialog.exec();
+}
+
+QString MainWindow::pickUserForAction(const QString& title,
+                                      const QString& hint,
+                                      const QList<QPair<QString, QString>>& candidates) const {
+    if (candidates.isEmpty()) {
+        QMessageBox::information(const_cast<MainWindow*>(this), title, "没有可选成员。");
+        return QString();
+    }
+    QDialog dialog(const_cast<MainWindow*>(this));
+    dialog.setWindowTitle(title);
+    dialog.resize(420, 440);
+    auto* root = new QVBoxLayout(&dialog);
+    root->setContentsMargins(16, 16, 16, 12);
+    root->setSpacing(8);
+    root->addWidget(new QLabel(hint, &dialog));
+    auto* list = new QListWidget(&dialog);
+    list->setSelectionMode(QAbstractItemView::SingleSelection);
+    for (const auto& c : candidates) {
+        auto* item = new QListWidgetItem(QString("%1 (%2)").arg(c.second, c.first), list);
+        item->setData(Qt::UserRole, c.first);
+    }
+    root->addWidget(list, 1);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    buttons->button(QDialogButtonBox::Ok)->setText("确定");
+    buttons->button(QDialogButtonBox::Cancel)->setText("取消");
+    root->addWidget(buttons);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    if (dialog.exec() != QDialog::Accepted || !list->currentItem()) return QString();
+    return list->currentItem()->data(Qt::UserRole).toString();
+}
+
+QStringList MainWindow::pickUsersForAction(const QString& title,
+                                           const QString& hint,
+                                           const QList<QPair<QString, QString>>& candidates) const {
+    QStringList result;
+    if (candidates.isEmpty()) {
+        QMessageBox::information(const_cast<MainWindow*>(this), title, "没有可选成员。");
+        return result;
+    }
+    QDialog dialog(const_cast<MainWindow*>(this));
+    dialog.setWindowTitle(title);
+    dialog.resize(420, 500);
+    auto* root = new QVBoxLayout(&dialog);
+    root->setContentsMargins(16, 16, 16, 12);
+    root->setSpacing(8);
+    root->addWidget(new QLabel(hint, &dialog));
+    auto* list = new QListWidget(&dialog);
+    list->setSelectionMode(QAbstractItemView::NoSelection);
+    for (const auto& c : candidates) {
+        auto* item = new QListWidgetItem(list);
+        auto* box = new QCheckBox(QString("%1 (%2)").arg(c.second, c.first), list);
+        box->setProperty("userId", c.first);
+        list->setItemWidget(item, box);
+    }
+    root->addWidget(list, 1);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    buttons->button(QDialogButtonBox::Ok)->setText("确定");
+    buttons->button(QDialogButtonBox::Cancel)->setText("取消");
+    root->addWidget(buttons);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    if (dialog.exec() != QDialog::Accepted) return result;
+    for (int i = 0; i < list->count(); ++i) {
+        QListWidgetItem* item = list->item(i);
+        auto* box = qobject_cast<QCheckBox*>(list->itemWidget(item));
+        if (box && box->isChecked()) {
+            const QString id = box->property("userId").toString().trimmed();
+            if (!id.isEmpty()) result.append(id);
+        }
+    }
+    return result;
 }
 
 void MainWindow::loadHistory(const QString& chatId, int chatType) {
@@ -1404,6 +1798,47 @@ void MainWindow::onGroupSelected(const QString& groupId) {
     }
     loadGroupInfo(groupId);
     loadGroupMembers(groupId);
+}
+
+void MainWindow::onConversationMoreRequested(const QPoint& globalPos) {
+    if (m_currentChatId.isEmpty()) return;
+    QMenu menu(this);
+    if (m_currentChatType == 1) {
+        QAction* deleteFriendAction = menu.addAction("删除好友");
+        QAction* deleteConvAction = menu.addAction("删除会话");
+        QAction* picked = menu.exec(globalPos);
+        if (!picked) return;
+        if (picked == deleteFriendAction) {
+            m_profileUserId = m_currentChatId;
+            removeCurrentFriend();
+            return;
+        }
+        if (picked == deleteConvAction) {
+            deleteConversation(m_currentChatId, m_currentChatType);
+            return;
+        }
+        return;
+    }
+
+    QAction* inviteAction = menu.addAction("邀请成员");
+    QAction* kickAction = menu.addAction("移出成员");
+    QAction* leaveAction = menu.addAction("退出群聊");
+    QAction* dismissAction = menu.addAction("删除群聊");
+    menu.addSeparator();
+    QAction* deleteConvAction = menu.addAction("删除会话");
+    QAction* picked = menu.exec(globalPos);
+    if (!picked) return;
+    if (picked == inviteAction) {
+        inviteGroupMembers(m_currentChatId);
+    } else if (picked == kickAction) {
+        removeGroupMember(m_currentChatId);
+    } else if (picked == leaveAction) {
+        leaveGroup(m_currentChatId);
+    } else if (dismissAction && picked == dismissAction) {
+        dismissGroup(m_currentChatId);
+    } else if (picked == deleteConvAction) {
+        deleteConversation(m_currentChatId, m_currentChatType);
+    }
 }
 
 void MainWindow::onPushNewMessage(const QByteArray& payload) {

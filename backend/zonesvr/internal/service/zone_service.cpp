@@ -768,6 +768,48 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleFriend(
         result.code = swift::ErrorCodeToInt(swift::ErrorCode::OK);
         return result;
     }
+    if (cmd == "friend.search") {
+        FriendSearchPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        if (user_id.empty()) {
+            SetResultError(result, swift::ErrorCode::SESSION_INVALID, request_id);
+            return result;
+        }
+        auto* auth = manager_->GetAuthSystem();
+        if (!auth) {
+            SetResultError(result, swift::ErrorCode::SERVICE_UNAVAILABLE, request_id);
+            return result;
+        }
+        std::vector<SearchUserResult> users;
+        std::string err;
+        const int limit = req.limit() > 0 ? req.limit() : 20;
+        bool ok = auth->SearchUsers(req.keyword(), limit, &users, &err, token);
+        if (!ok) {
+            result.code = swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
+            result.message = err.empty() ? "search users failed" : err;
+            return result;
+        }
+        FriendSearchResponsePayload resp_pb;
+        for (const auto& u : users) {
+            if (u.user_id == user_id) continue;
+            auto* out = resp_pb.add_users();
+            out->set_user_id(u.user_id);
+            out->set_username(u.username);
+            out->set_nickname(u.nickname);
+            out->set_avatar_url(u.avatar_url);
+            out->set_signature(u.signature);
+            out->set_gender(u.gender);
+        }
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        result.code = swift::ErrorCodeToInt(swift::ErrorCode::OK);
+        return result;
+    }
     return NotImplemented(cmd, request_id);
 }
 

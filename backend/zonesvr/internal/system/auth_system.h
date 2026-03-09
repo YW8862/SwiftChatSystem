@@ -13,9 +13,11 @@
 #pragma once
 
 #include "base_system.h"
+#include "../rpc/auth_rpc_client.h"
 #include <memory>
 #include <string>
 #include <cstdint>
+#include <vector>
 
 namespace swift {
 namespace zone {
@@ -78,6 +80,11 @@ public:
 
     /// 验证 Token：OnlineSvr.ValidateToken，返回 user_id
     std::string ValidateToken(const std::string& token);
+
+    /// 按 user_id / username / nickname 搜索用户
+    bool SearchUsers(const std::string& keyword, int limit,
+                     std::vector<SearchUserResult>* out_users,
+                     std::string* out_error, const std::string& token);
 
 private:
     std::unique_ptr<AuthRpcClient> auth_rpc_client_;

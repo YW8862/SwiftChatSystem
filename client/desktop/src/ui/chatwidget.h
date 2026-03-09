@@ -10,6 +10,7 @@ class QPushButton;
 class QLabel;
 class QFrame;
 class QSplitter;
+class QPoint;
 
 /**
  * 聊天组件
@@ -44,6 +45,7 @@ signals:
     void recallMessageRequested(const QString& msgId);
     void messageListReachedBottom();
     void fileMessageOpenRequested(const QString& msgId);
+    void conversationMoreRequested(const QPoint& globalPos);
     
 private slots:
     void onSendClicked();

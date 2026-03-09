@@ -46,6 +46,17 @@ message UpdateProfileRequest {
     string signature = 4;
 }
 
+message SearchUsersRequest {
+    string keyword = 1;
+    int32 limit = 2;
+}
+
+message SearchUsersResponse {
+    int32 code = 1;
+    string message = 2;
+    repeated UserProfile users = 3;
+}
+
 // ============== 数据结构 ==============
 
 message UserProfile {
@@ -72,4 +83,7 @@ service AuthService {
     
     // 更新用户资料
     rpc UpdateProfile(UpdateProfileRequest) returns (swift.common.CommonResponse);
+
+    // 按 user_id / username / nickname 搜索用户
+    rpc SearchUsers(SearchUsersRequest) returns (SearchUsersResponse);
 }

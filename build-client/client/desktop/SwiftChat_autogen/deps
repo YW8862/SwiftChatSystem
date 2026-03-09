@@ -9,6 +9,8 @@ SwiftChat_autogen/timestamp: \
 	/home/yw/SwiftChatSystem/client/desktop/src/models/message.h \
 	/home/yw/SwiftChatSystem/client/desktop/src/models/user.cpp \
 	/home/yw/SwiftChatSystem/client/desktop/src/models/user.h \
+	/home/yw/SwiftChatSystem/client/desktop/src/network/app_service.cpp \
+	/home/yw/SwiftChatSystem/client/desktop/src/network/app_service.h \
 	/home/yw/SwiftChatSystem/client/desktop/src/network/protocol_handler.cpp \
 	/home/yw/SwiftChatSystem/client/desktop/src/network/protocol_handler.h \
 	/home/yw/SwiftChatSystem/client/desktop/src/network/websocket_client.cpp \
@@ -338,6 +340,8 @@ SwiftChat_autogen/timestamp: \
 	/usr/include/x86_64-linux-gnu/qt5/QtCore/QList \
 	/usr/include/x86_64-linux-gnu/qt5/QtCore/QMap \
 	/usr/include/x86_64-linux-gnu/qt5/QtCore/QObject \
+	/usr/include/x86_64-linux-gnu/qt5/QtCore/QPair \
+	/usr/include/x86_64-linux-gnu/qt5/QtCore/QPoint \
 	/usr/include/x86_64-linux-gnu/qt5/QtCore/QSet \
 	/usr/include/x86_64-linux-gnu/qt5/QtCore/QSharedDataPointer \
 	/usr/include/x86_64-linux-gnu/qt5/QtCore/QString \

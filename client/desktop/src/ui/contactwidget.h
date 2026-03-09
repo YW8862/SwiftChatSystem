@@ -77,6 +77,9 @@ public:
     void setCurrentGroupInfo(const GroupItem& groupInfo);
     void setGroupMembers(const QList<GroupMemberItem>& members);
     QString currentSelectedGroupId() const { return m_currentGroupId; }
+    QList<FriendItem> friends() const { return m_friends; }
+    QList<GroupMemberItem> groupMembers() const { return m_groupMembers; }
+    GroupItem currentGroupInfo() const { return m_currentGroupInfo; }
     FriendItem friendById(const QString& userId) const;
     void updateFriendRemark(const QString& userId, const QString& remark);
     void removeFriendById(const QString& userId);

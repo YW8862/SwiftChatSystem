@@ -194,6 +194,18 @@ AuthServiceCore::UpdateProfileResult AuthServiceCore::UpdateProfile(
   return result;
 }
 
+std::vector<AuthProfile> AuthServiceCore::SearchUsers(const std::string &keyword, int limit) {
+  std::vector<AuthProfile> result;
+  if (keyword.empty()) return result;
+  int capped_limit = limit <= 0 ? 20 : std::min(limit, 100);
+  auto users = store_->SearchUsers(keyword, capped_limit);
+  result.reserve(users.size());
+  for (const auto& user : users) {
+    result.push_back(ToProfile(user));
+  }
+  return result;
+}
+
 // ============================================================================
 // 私有方法
 // ============================================================================

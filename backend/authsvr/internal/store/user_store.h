@@ -3,6 +3,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace swift::auth {
 
@@ -47,6 +48,10 @@ public:
 
   // 检查用户名是否存在
   virtual bool UsernameExists(const std::string &username) = 0;
+
+  // 按 user_id / username / nickname 模糊搜索用户
+  virtual std::vector<UserData> SearchUsers(const std::string &keyword,
+                                            int limit) = 0;
 };
 
 /**
@@ -62,6 +67,8 @@ public:
   std::optional<UserData> GetByUsername(const std::string &username) override;
   bool Update(const UserData &user) override;
   bool UsernameExists(const std::string &username) override;
+  std::vector<UserData> SearchUsers(const std::string &keyword,
+                                    int limit) override;
 
 private:
   struct Impl;

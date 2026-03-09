@@ -114,4 +114,29 @@ AuthHandler::UpdateProfile(::grpc::ServerContext *context,
   return ::grpc::Status::OK;
 }
 
+::grpc::Status AuthHandler::SearchUsers(
+    ::grpc::ServerContext *context,
+    const ::swift::auth::SearchUsersRequest *request,
+    ::swift::auth::SearchUsersResponse *response) {
+  std::string uid = swift::GetAuthenticatedUserId(context, jwt_secret_);
+  if (uid.empty()) {
+    response->set_code(swift::ErrorCodeToInt(swift::ErrorCode::TOKEN_INVALID));
+    response->set_message("token invalid or missing");
+    return ::grpc::Status::OK;
+  }
+  const auto users = service_->SearchUsers(request->keyword(), request->limit());
+  response->set_code(static_cast<int>(swift::ErrorCode::OK));
+  for (const auto& user : users) {
+    auto* out = response->add_users();
+    out->set_user_id(user.user_id);
+    out->set_username(user.username);
+    out->set_nickname(user.nickname);
+    out->set_avatar_url(user.avatar_url);
+    out->set_signature(user.signature);
+    out->set_gender(user.gender);
+    out->set_created_at(user.created_at);
+  }
+  return ::grpc::Status::OK;
+}
+
 } // namespace swift::auth

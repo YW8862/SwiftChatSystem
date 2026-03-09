@@ -272,6 +272,24 @@ message FriendGetRequestsResponsePayload {
     repeated FriendRequestInfoPayload requests = 1;
 }
 
+message FriendSearchPayload {
+    string keyword = 1;
+    int32 limit = 2;
+}
+
+message FriendSearchUserPayload {
+    string user_id = 1;
+    string username = 2;
+    string nickname = 3;
+    string avatar_url = 4;
+    string signature = 5;
+    int32 gender = 6;
+}
+
+message FriendSearchResponsePayload {
+    repeated FriendSearchUserPayload users = 1;
+}
+
 // ---------- group.* ----------
 message GroupCreatePayload {
     string creator_id = 1;

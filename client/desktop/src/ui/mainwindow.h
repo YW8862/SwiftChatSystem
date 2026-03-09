@@ -5,6 +5,7 @@
 #include <QList>
 #include <QSet>
 #include <QPair>
+#include <QPoint>
 #include <memory>
 #include "models/conversation.h"
 #include "models/message.h"
@@ -51,6 +52,11 @@ private:
     void inviteGroupMembers(const QString& groupId);
     void removeGroupMember(const QString& groupId);
     void leaveGroup(const QString& groupId);
+    void dismissGroup(const QString& groupId);
+    void deleteConversation(const QString& chatId, int chatType);
+    void showAddFriendDialog();
+    QString pickUserForAction(const QString& title, const QString& hint, const QList<QPair<QString, QString>>& candidates) const;
+    QStringList pickUsersForAction(const QString& title, const QString& hint, const QList<QPair<QString, QString>>& candidates) const;
     void loadHistory(const QString& chatId, int chatType);
     void pullOfflineMessages(int limit = 100);
     bool mergeOfflineMessage(const Message& msg);
@@ -76,6 +82,7 @@ private:
     void onPushReadReceipt(const QByteArray& payload);
     void onPushFriendRequest(const QByteArray& payload);
     void onPushFriendAccepted(const QByteArray& payload);
+    void onConversationMoreRequested(const QPoint& globalPos);
 
     ProtocolHandler* m_protocol = nullptr;
     QString m_currentUserId;

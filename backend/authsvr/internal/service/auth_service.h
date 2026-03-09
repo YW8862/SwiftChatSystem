@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace swift::auth {
 
@@ -70,6 +71,9 @@ public:
                                     const std::string &nickname,
                                     const std::string &avatar_url,
                                     const std::string &signature);
+
+  // 按 user_id / username / nickname 搜索用户
+  std::vector<AuthProfile> SearchUsers(const std::string &keyword, int limit);
 
 private:
   std::string GenerateUserId();

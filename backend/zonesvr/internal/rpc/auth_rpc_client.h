@@ -9,9 +9,19 @@
 #include "auth.grpc.pb.h"
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace swift {
 namespace zone {
+
+struct SearchUserResult {
+    std::string user_id;
+    std::string username;
+    std::string nickname;
+    std::string avatar_url;
+    std::string signature;
+    int32_t gender = 0;
+};
 
 /**
  * @class AuthRpcClient
@@ -42,6 +52,11 @@ public:
     bool UpdateProfile(const std::string& user_id, const std::string& nickname,
                       const std::string& avatar_url, const std::string& signature,
                       std::string* out_error);
+
+    /// 按 user_id / username / nickname 搜索用户
+    bool SearchUsers(const std::string& keyword, int limit,
+                     std::vector<SearchUserResult>* out_users,
+                     std::string* out_error, const std::string& token = "");
 
 private:
     std::unique_ptr<swift::auth::AuthService::Stub> stub_;

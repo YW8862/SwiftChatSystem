@@ -122,6 +122,7 @@ ChatWidget::ChatWidget(QWidget *parent) : QWidget(parent) {
     auto* moreBtn = new QPushButton("...", m_headerFrame);
     moreBtn->setObjectName("chatMoreBtn");
     moreBtn->setFixedSize(30, 30);
+    moreBtn->setCursor(Qt::PointingHandCursor);
     headerLayout->addWidget(moreBtn);
     root->addWidget(m_headerFrame);
 
@@ -230,6 +231,9 @@ ChatWidget::ChatWidget(QWidget *parent) : QWidget(parent) {
 
     connect(m_sendBtn, &QPushButton::clicked, this, &ChatWidget::onSendClicked);
     connect(fileBtn, &QPushButton::clicked, this, &ChatWidget::onFileClicked);
+    connect(moreBtn, &QPushButton::clicked, this, [this, moreBtn]() {
+        emit conversationMoreRequested(moreBtn->mapToGlobal(QPoint(0, moreBtn->height())));
+    });
     connect(m_messageList->verticalScrollBar(), &QScrollBar::valueChanged, this, [this](int value) {
         if (!m_messageList || m_chatId.isEmpty()) return;
         if (value >= m_messageList->verticalScrollBar()->maximum()) {

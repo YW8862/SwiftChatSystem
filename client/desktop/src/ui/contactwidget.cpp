@@ -130,20 +130,6 @@ ContactWidget::ContactWidget(QWidget *parent) : QWidget(parent) {
     groupLayout->setSpacing(8);
     auto* groupTitle = new QLabel("我的群聊", groupPage);
     groupTitle->setObjectName("sectionTitle");
-    auto* groupActionRow = new QHBoxLayout();
-    groupActionRow->setSpacing(6);
-    auto* createGroupBtn = new QPushButton("创建群", groupPage);
-    auto* inviteBtn = new QPushButton("邀请", groupPage);
-    auto* kickBtn = new QPushButton("踢人", groupPage);
-    auto* leaveBtn = new QPushButton("退群", groupPage);
-    for (auto* btn : {createGroupBtn, inviteBtn, kickBtn, leaveBtn}) {
-        btn->setCursor(Qt::PointingHandCursor);
-    }
-    groupActionRow->addWidget(createGroupBtn);
-    groupActionRow->addWidget(inviteBtn);
-    groupActionRow->addWidget(kickBtn);
-    groupActionRow->addWidget(leaveBtn);
-    groupActionRow->addStretch();
     m_groupListWidget = new QListWidget(groupPage);
     m_groupListWidget->setSelectionMode(QAbstractItemView::SingleSelection);
     m_groupListWidget->setFrameShape(QFrame::NoFrame);
@@ -186,7 +172,6 @@ ContactWidget::ContactWidget(QWidget *parent) : QWidget(parent) {
     m_groupMemberListWidget->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     m_groupMemberListWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     groupLayout->addWidget(groupTitle);
-    groupLayout->addLayout(groupActionRow);
     groupLayout->addWidget(m_groupListWidget);
     groupLayout->addWidget(infoCard);
     groupLayout->addWidget(memberTitle);
@@ -221,25 +206,6 @@ ContactWidget::ContactWidget(QWidget *parent) : QWidget(parent) {
     connect(m_groupMemberSearchEdit, &QLineEdit::textChanged, this, &ContactWidget::onGroupMemberSearchChanged);
     connect(m_groupRoleFilter, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &ContactWidget::onGroupRoleFilterChanged);
-    connect(createGroupBtn, &QPushButton::clicked, this, [this]() {
-        emit createGroupRequested();
-    });
-    connect(inviteBtn, &QPushButton::clicked, this, [this]() {
-        if (!m_currentGroupId.isEmpty()) {
-            emit inviteGroupMembersRequested(m_currentGroupId);
-        }
-    });
-    connect(kickBtn, &QPushButton::clicked, this, [this]() {
-        if (!m_currentGroupId.isEmpty()) {
-            emit removeGroupMemberRequested(m_currentGroupId);
-        }
-    });
-    connect(leaveBtn, &QPushButton::clicked, this, [this]() {
-        if (!m_currentGroupId.isEmpty()) {
-            emit leaveGroupRequested(m_currentGroupId);
-        }
-    });
-
     setViewMode(ViewMode::Conversations);
 }
 

@@ -101,5 +101,15 @@ std::string AuthSystem::ValidateToken(const std::string& token) {
     return r.valid ? r.user_id : "";
 }
 
+bool AuthSystem::SearchUsers(const std::string& keyword, int limit,
+                             std::vector<SearchUserResult>* out_users,
+                             std::string* out_error, const std::string& token) {
+    if (!auth_rpc_client_) {
+        if (out_error) *out_error = "auth not configured";
+        return false;
+    }
+    return auth_rpc_client_->SearchUsers(keyword, limit, out_users, out_error, token);
+}
+
 }  // namespace zone
 }  // namespace swift

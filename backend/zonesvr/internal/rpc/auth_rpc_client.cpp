@@ -111,5 +111,43 @@ bool AuthRpcClient::UpdateProfile(const std::string& user_id,
     return resp.code() == 0;
 }
 
+bool AuthRpcClient::SearchUsers(const std::string& keyword, int limit,
+                                std::vector<SearchUserResult>* out_users,
+                                std::string* out_error, const std::string& token) {
+    if (!stub_) return false;
+    if (keyword.empty()) {
+        if (out_users) out_users->clear();
+        return true;
+    }
+    swift::auth::SearchUsersRequest req;
+    req.set_keyword(keyword);
+    req.set_limit(limit > 0 ? limit : 20);
+    swift::auth::SearchUsersResponse resp;
+    auto ctx = CreateContext(5000, token);
+    grpc::Status status = stub_->SearchUsers(ctx.get(), req, &resp);
+    if (!status.ok()) {
+        if (out_error) *out_error = status.error_message();
+        return false;
+    }
+    if (resp.code() != 0) {
+        if (out_error) *out_error = resp.message().empty() ? "search users failed" : resp.message();
+        return false;
+    }
+    if (out_users) {
+        out_users->clear();
+        for (const auto& user : resp.users()) {
+            SearchUserResult out;
+            out.user_id = user.user_id();
+            out.username = user.username();
+            out.nickname = user.nickname();
+            out.avatar_url = user.avatar_url();
+            out.signature = user.signature();
+            out.gender = user.gender();
+            out_users->push_back(std::move(out));
+        }
+    }
+    return true;
+}
+
 }  // namespace zone
 }  // namespace swift

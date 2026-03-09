@@ -37,6 +37,10 @@ public:
                 const ::swift::auth::UpdateProfileRequest *request,
                 ::swift::common::CommonResponse *response) override;
 
+  ::grpc::Status SearchUsers(::grpc::ServerContext *context,
+                             const ::swift::auth::SearchUsersRequest *request,
+                             ::swift::auth::SearchUsersResponse *response) override;
+
 private:
   std::shared_ptr<AuthServiceCore> service_;
   std::string jwt_secret_;

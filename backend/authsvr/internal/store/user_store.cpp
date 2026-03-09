@@ -10,7 +10,10 @@
 #include "user_store.h"
 #include <nlohmann/json.hpp>
 #include <rocksdb/db.h>
+#include <rocksdb/iterator.h>
 #include <rocksdb/write_batch.h>
+#include <algorithm>
+#include <cctype>
 #include <stdexcept>
 
 using json = nlohmann::json;
@@ -202,6 +205,41 @@ bool RocksDBUserStore::UsernameExists(const std::string &username) {
       rocksdb::ReadOptions(), KEY_PREFIX_USERNAME + username, &value);
 
   return status.ok();
+}
+
+std::vector<UserData> RocksDBUserStore::SearchUsers(const std::string &keyword,
+                                                    int limit) {
+  std::vector<UserData> result;
+  if (!impl_->db || keyword.empty() || limit <= 0) {
+    return result;
+  }
+
+  std::string key = keyword;
+  std::transform(key.begin(), key.end(), key.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+  std::unique_ptr<rocksdb::Iterator> it(impl_->db->NewIterator(rocksdb::ReadOptions()));
+  const std::string user_prefix = std::string(KEY_PREFIX_USER);
+  const rocksdb::Slice user_prefix_slice(user_prefix);
+
+  for (it->Seek(user_prefix); it->Valid() && static_cast<int>(result.size()) < limit; it->Next()) {
+    if (!it->key().starts_with(user_prefix_slice)) {
+      break;
+    }
+    try {
+      UserData user = DeserializeUser(it->value().ToString());
+      std::string haystack = user.user_id + " " + user.username + " " + user.nickname;
+      std::transform(haystack.begin(), haystack.end(), haystack.begin(),
+                     [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+      if (haystack.find(key) != std::string::npos) {
+        result.push_back(std::move(user));
+      }
+    } catch (...) {
+      // skip malformed record
+    }
+  }
+
+  return result;
 }
 
 } // namespace swift::auth
