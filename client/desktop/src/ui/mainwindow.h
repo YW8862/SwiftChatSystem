@@ -120,7 +120,7 @@ private:
     QMap<QString, QString> m_readReceiptMap;  // key: chatId, value: userId:lastMsgId
     QString m_offlineCursor;
     bool m_offlinePullInFlight = false;
-    bool m_sessionReady = true;
+    bool m_sessionReady = false;
     bool m_sessionValidationInFlight = false;
     QNetworkAccessManager* m_networkManager = nullptr;
     std::unique_ptr<client::AppService> m_appService;

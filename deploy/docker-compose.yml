@@ -158,6 +158,7 @@ services:
       - "9091:9091"
     environment:
       - GATESVR_HOST=0.0.0.0
+      - GATESVR_ADVERTISE_HOST=gatesvr
       - GATESVR_WEBSOCKET_PORT=9090
       - GATESVR_GRPC_PORT=9091
       - GATESVR_ZONE_SVR_ADDR=zonesvr:9092

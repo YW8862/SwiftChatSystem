@@ -6,6 +6,8 @@ namespace swift::gate {
 
 struct GateConfig {
     std::string host = "0.0.0.0";
+    // 对外上报给 ZoneSvr 的可路由地址（仅主机/IP，不含端口）；为空时自动推断
+    std::string advertise_host;
     int websocket_port = 9090;
     int grpc_port = 9091;      // 供 ZoneSvr 调用
 

@@ -62,6 +62,7 @@ MainWindow::MainWindow(ProtocolHandler* protocol,
     m_networkManager = new QNetworkAccessManager(this);
     m_appService = std::make_unique<client::AppService>(m_protocol);
     wireSignals();
+    triggerSessionValidation();
     syncConversations();
     loadFriends();
     loadFriendRequests();
@@ -1254,6 +1255,11 @@ void MainWindow::sendChatMessage(const QString& content) {
         if (idx < 0) return;
 
         if (code != 0) {
+            if (code == 307 || message.contains("token invalid", Qt::CaseInsensitive)) {
+                m_sessionReady = false;
+                LogWarning("[MainWindow] text message hit session invalid, trigger re-validation");
+                triggerSessionValidation();
+            }
             LogWarning("[MainWindow] send text message failed, code=" << code
                        << ", client_msg_id=" << localMsgId.toStdString()
                        << ", message=" << message.toStdString());
@@ -1521,6 +1527,11 @@ void MainWindow::sendFileMessage(const QString& filePath) {
                     return;
                 }
                 if (sendCode != 0) {
+                    if (sendCode == 307 || sendMessage.contains("token invalid", Qt::CaseInsensitive)) {
+                        m_sessionReady = false;
+                        LogWarning("[MainWindow] file message hit session invalid, trigger re-validation");
+                        triggerSessionValidation();
+                    }
                     LogWarning("[MainWindow] send file message failed, code=" << sendCode
                                << ", message=" << sendMessage.toStdString());
                     const QString err = sendMessage.trimmed().isEmpty()
@@ -2162,6 +2173,10 @@ bool MainWindow::ensureSessionReady(const QString& actionText) {
 
 void MainWindow::triggerSessionValidation() {
     if (!m_protocol || m_sessionValidationInFlight) return;
+    if (m_wsClient && !m_wsClient->isConnected()) {
+        LogWarning("[MainWindow] skip auth.validate_token: websocket not connected");
+        return;
+    }
     const QString token = Settings::instance().savedToken().trimmed();
     if (token.isEmpty()) {
         m_sessionReady = false;

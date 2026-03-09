@@ -16,6 +16,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <unistd.h>
 
 #include <grpcpp/security/server_credentials.h>
 #include <grpcpp/server.h>
@@ -132,6 +133,25 @@ bool RegisterGateWithRetry(const std::shared_ptr<swift::gate::GateService>& gate
     return false;
 }
 
+bool IsWildcardHost(const std::string& host) {
+    return host.empty() || host == "0.0.0.0" || host == "::";
+}
+
+std::string ResolveAdvertiseHost(const swift::gate::GateConfig& config) {
+    if (!config.advertise_host.empty()) return config.advertise_host;
+
+    const char* pod_ip = std::getenv("POD_IP");
+    if (pod_ip && *pod_ip) return std::string(pod_ip);
+
+    if (!IsWildcardHost(config.host)) return config.host;
+
+    char hostname[256];
+    if (gethostname(hostname, sizeof(hostname)) == 0 && hostname[0] != '\0') {
+        return std::string(hostname);
+    }
+    return config.host;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -154,8 +174,10 @@ int main(int argc, char* argv[]) {
     auto ws_handler = std::make_shared<swift::gate::WebSocketHandler>(gate_svc);
     auto grpc_handler = std::make_shared<swift::gate::GateInternalGrpcHandler>(gate_svc);
 
-    // gRPC 服务：9091
+    // gRPC 服务监听地址（可为 0.0.0.0），以及对 Zone 上报地址（必须可路由）
     std::string grpc_addr = config.host + ":" + std::to_string(config.grpc_port);
+    const std::string advertise_host = ResolveAdvertiseHost(config);
+    const std::string register_addr = advertise_host + ":" + std::to_string(config.grpc_port);
     grpc::ServerBuilder builder;
     builder.AddListeningPort(grpc_addr, grpc::InsecureServerCredentials());
     builder.RegisterService(grpc_handler.get());
@@ -165,6 +187,12 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     std::cout << "GateSvr gRPC listening on " << grpc_addr << std::endl;
+    LogInfo("GateSvr register address resolved to " << register_addr
+            << " (listen=" << grpc_addr << ")");
+    if (IsWildcardHost(advertise_host)) {
+        LogWarning("GateSvr register address host is wildcard (" << advertise_host
+                   << "); ZoneSvr may fail to callback this gate");
+    }
 
     // 先等待 ZoneSvr 就绪（gRPC 端口可连），再注册；超时则报错
     const int zone_ready_timeout_sec = 30;
@@ -174,7 +202,7 @@ int main(int argc, char* argv[]) {
         LogInfo("GateSvr waiting for ZoneSvr at " << config.zone_svr_addr
                   << " (timeout " << zone_ready_timeout_sec << "s) ...");
         if (WaitForZoneSvrReady(config.zone_svr_addr, zone_ready_timeout_sec, zone_ready_poll_interval_sec)) {
-            if (RegisterGateWithRetry(gate_svc, grpc_addr, gate_register_retry_timeout_sec)) {
+            if (RegisterGateWithRetry(gate_svc, register_addr, gate_register_retry_timeout_sec)) {
                 LogInfo("GateSvr registration flow completed");
             } else {
                 LogError("GateSvr ZoneSvr GateRegister failed after retries (ZoneSvr ready but register RPC failed)");

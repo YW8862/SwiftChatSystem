@@ -24,6 +24,11 @@ spec:
         envFrom:
         - configMapRef:
             name: swift-config
+        env:
+        - name: GATESVR_ADVERTISE_HOST
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
         volumeMounts:
         - name: logs
           mountPath: /data/logs

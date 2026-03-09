@@ -8,6 +8,7 @@ GateConfig LoadConfig(const std::string& config_file) {
     auto kv = swift::LoadKeyValueConfig(config_file, "GATESVR_");
     GateConfig c;
     c.host = kv.Get("host", c.host);
+    c.advertise_host = kv.Get("advertise_host", c.advertise_host);
     c.websocket_port = kv.GetInt("websocket_port", c.websocket_port);
     c.grpc_port = kv.GetInt("grpc_port", c.grpc_port);
     c.gate_id = kv.Get("gate_id", c.gate_id);
