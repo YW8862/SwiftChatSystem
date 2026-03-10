@@ -18,10 +18,16 @@
 
 namespace {
 
+constexpr int kPreviewMaxLength = 36;  // 会话栏预览单行最大字符数
+
 QString BuildPreview(const Conversation& c) {
     if (c.lastMessage.status == 1) return QStringLiteral("[消息已撤回]");
-    const QString text = c.lastMessage.content.trimmed();
-    return text.isEmpty() ? QStringLiteral("暂无消息") : text;
+    QString text = c.lastMessage.content.trimmed();
+    if (text.isEmpty()) return QStringLiteral("暂无消息");
+    text = text.replace(QLatin1Char('\n'), QLatin1Char(' '));
+    if (text.length() > kPreviewMaxLength)
+        text = text.left(kPreviewMaxLength) + QStringLiteral("...");
+    return text;
 }
 
 QString BuildTimeText(qint64 timestamp) {
@@ -495,6 +501,8 @@ QWidget* ContactWidget::buildConversationItemWidget(const Conversation& conversa
     auto* bottom = new QHBoxLayout();
     auto* preview = new QLabel(BuildPreview(conversation), container);
     preview->setObjectName("conversationPreview");
+    preview->setWordWrap(false);
+    preview->setMaximumHeight(preview->fontMetrics().height() + 2);
     bottom->addWidget(preview, 1);
     if (conversation.unreadCount > 0) {
         auto* unread = new QLabel(QString::number(conversation.unreadCount > 99 ? 99 : conversation.unreadCount), container);
