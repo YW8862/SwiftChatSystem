@@ -50,9 +50,6 @@ signals:
     void fileMessageOpenRequested(const QString& msgId);
     void conversationMoreRequested(const QPoint& globalPos);
     
-    // @提醒相关
-    void sendMentionMessage(const QString& content, const QStringList& mentionedUsers);
-    
 private slots:
     void onSendClicked();
     void onFileClicked();

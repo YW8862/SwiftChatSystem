@@ -604,11 +604,3 @@ void ChatWidget::onUserSelected(const QString& userId, const QString& userName) 
     // 这里可以添加其他逻辑，比如记录被@的用户
     m_input->setFocus();
 }
-
-void ChatWidget::sendMentionMessage(const QString& content, const QStringList& mentionedUsers) {
-    // 发送带@的消息
-    emit messageSent(content);
-    
-    // TODO: 将 mentionedUsers 传递给后端，用于通知被@的用户
-    Q_UNUSED(mentionedUsers);
-}
