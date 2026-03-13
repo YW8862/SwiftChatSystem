@@ -38,6 +38,7 @@ set(SOURCES
     src/utils/settings.cpp
     src/utils/chat_storage.cpp
     src/utils/image_utils.cpp
+    src/utils/imageloader.cpp
     src/utils/client_logger.cpp
 )
 
@@ -53,6 +54,7 @@ set(HEADERS
     src/utils/settings.h
     src/utils/chat_storage.h
     src/utils/image_utils.h
+    src/utils/imageloader.h
     src/utils/client_logger.h
     src/swift/log_helper.h
 )

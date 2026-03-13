@@ -1,4 +1,5 @@
 #include "chatwidget.h"
+#include "mentionpopup.h"
 
 #include <QDateTime>
 #include <QFileDialog>
@@ -15,6 +16,9 @@
 #include <QTextEdit>
 #include <QVBoxLayout>
 #include <algorithm>
+#include "imagepreviewdialog.h"
+#include "imageviewerdialog.h"
+#include "messageitem.h"
 
 namespace {
 
@@ -170,10 +174,15 @@ ChatWidget::ChatWidget(QWidget *parent) : QWidget(parent) {
     auto* emojiBtn = new QPushButton("😊", inputCard);
     emojiBtn->setObjectName("inputToolBtn");
     emojiBtn->setFixedSize(30, 30);
+    auto* imageBtn = new QPushButton("🖼️", inputCard);  // 新增图片按钮
+    imageBtn->setObjectName("inputToolBtn");
+    imageBtn->setToolTip(QStringLiteral("发送图片"));
+    imageBtn->setFixedSize(30, 30);
     auto* fileBtn = new QPushButton("+", inputCard);
     fileBtn->setObjectName("inputToolBtn");
     fileBtn->setFixedSize(30, 30);
     inputTools->addWidget(emojiBtn);
+    inputTools->addWidget(imageBtn);
     inputTools->addWidget(fileBtn);
     inputTools->addStretch();
     inputRoot->addLayout(inputTools);
@@ -187,6 +196,7 @@ ChatWidget::ChatWidget(QWidget *parent) : QWidget(parent) {
         "QTextEdit { background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px 10px; font-size: 14px; }"
         "QTextEdit:focus { border-color: #84b9ff; }"
     );
+    connect(m_input, &QTextEdit::textChanged, this, &ChatWidget::onInputTextChanged);
     inputRoot->addWidget(m_input);
 
     auto* actionRow = new QHBoxLayout();
@@ -231,9 +241,38 @@ ChatWidget::ChatWidget(QWidget *parent) : QWidget(parent) {
 
     connect(m_sendBtn, &QPushButton::clicked, this, &ChatWidget::onSendClicked);
     connect(fileBtn, &QPushButton::clicked, this, &ChatWidget::onFileClicked);
+    connect(imageBtn, &QPushButton::clicked, this, [this]() {
+        if (!m_imagePreviewDialog) {
+            m_imagePreviewDialog = new ImagePreviewDialog(this);
+        }
+        
+        // 打开文件选择对话框（支持多选图片）
+        QStringList imagePaths = QFileDialog::getOpenFileNames(
+            this,
+            QStringLiteral("选择图片"),
+            QString(),
+            QStringLiteral("图片文件 (*.jpg *.jpeg *.png *.gif *.bmp *.webp)")
+        );
+        
+        if (imagePaths.isEmpty()) return;
+        
+        // 显示预览对话框
+        m_imagePreviewDialog->setImages(imagePaths);
+        if (m_imagePreviewDialog->exec() == QDialog::Accepted) {
+            // 用户确认发送选中的图片
+            QStringList selectedImages = m_imagePreviewDialog->selectedImages();
+            for (const QString& imagePath : selectedImages) {
+                emit fileSelected(imagePath);  // 复用 fileSelected 信号
+            }
+        }
+    });
     connect(moreBtn, &QPushButton::clicked, this, [this, moreBtn]() {
         emit conversationMoreRequested(moreBtn->mapToGlobal(QPoint(0, moreBtn->height())));
     });
+    
+    // 连接消息列表的图片点击信号（通过 MessageItem 的信号）
+    // 注意：需要在 buildMessageItemWidget 中连接信号
+    
     connect(m_messageList->verticalScrollBar(), &QScrollBar::valueChanged, this, [this](int value) {
         if (!m_messageList || m_chatId.isEmpty()) return;
         if (value >= m_messageList->verticalScrollBar()->maximum()) {
@@ -420,90 +459,47 @@ void ChatWidget::addMessageItem(const Message& message) {
     m_messageList->setItemWidget(item, row);
 }
 
-QWidget* ChatWidget::buildMessageItemWidget(const Message& message) const {
-    auto* container = new QWidget();
-    auto* row = new QHBoxLayout(container);
-    row->setContentsMargins(2, 0, 2, 0);
-    row->setSpacing(10);
-
-    auto* bubble = new QFrame(container);
-    bubble->setObjectName("msgBubble");
-    bubble->setProperty("self", message.isSelf);
-    bubble->setProperty("recalled", message.status == 1);
-    bubble->setProperty("sending", message.sending);
-    bubble->setProperty("sendFailed", message.sendFailed);
-    bubble->setMaximumWidth(520);
-
-    auto* bubbleLayout = new QVBoxLayout(bubble);
-    bubbleLayout->setContentsMargins(12, 8, 12, 8);
-    bubbleLayout->setSpacing(4);
-
-    auto* sender = new QLabel(BuildSenderName(message), bubble);
-    sender->setObjectName("msgSender");
-    auto* meta = new QLabel(BuildMetaText(message), bubble);
-    meta->setObjectName("msgMeta");
-
-    bubbleLayout->addWidget(sender);
-    if (message.status != 1 && IsFileMessage(message)) {
-        auto* fileCard = new QFrame(bubble);
-        fileCard->setObjectName("fileCard");
-        auto* fileLayout = new QHBoxLayout(fileCard);
-        fileLayout->setContentsMargins(10, 8, 10, 8);
-        fileLayout->setSpacing(10);
-
-        auto* icon = new QLabel("FILE", fileCard);
-        icon->setObjectName("fileIcon");
-        icon->setAlignment(Qt::AlignCenter);
-        icon->setFixedSize(40, 40);
-
-        auto* textWrap = new QVBoxLayout();
-        textWrap->setContentsMargins(0, 0, 0, 0);
-        textWrap->setSpacing(2);
-        auto* fileName = new QLabel(BuildFileName(message), fileCard);
-        fileName->setObjectName("fileName");
-        fileName->setWordWrap(true);
-        auto* fileHint = new QLabel("文件消息", fileCard);
-        fileHint->setObjectName("fileHint");
-        textWrap->addWidget(fileName);
-        textWrap->addWidget(fileHint);
-
-        fileLayout->addWidget(icon);
-        fileLayout->addLayout(textWrap, 1);
-        bubbleLayout->addWidget(fileCard);
-    } else {
-        auto* content = new QLabel(BuildMessageBody(message), bubble);
-        content->setObjectName("msgContent");
-        content->setWordWrap(true);
-        bubbleLayout->addWidget(content);
-    }
-    bubbleLayout->addWidget(meta, 0, message.isSelf ? Qt::AlignRight : Qt::AlignLeft);
-
-    bubble->setStyleSheet(
-        "QFrame#msgBubble { border-radius: 10px; border: 1px solid #e4e4e4; background: #ffffff; }"
-        "QFrame#msgBubble[self='true'] { background: #d9fdd3; border-color: #bae6b0; }"
-        "QFrame#msgBubble[sending='true'] { background: #edf5ff; border-color: #bfd6ff; }"
-        "QFrame#msgBubble[sendFailed='true'] { background: #fff1f0; border-color: #ffb3ad; }"
-        "QFrame#msgBubble[recalled='true'] { background: #f6f7f9; border-color: #e6e8ed; }"
-        "QLabel#msgSender { color: #7a7a7a; font-size: 11px; font-weight: 600; }"
-        "QLabel#msgContent { color: #222222; font-size: 14px; line-height: 1.4; }"
-        "QFrame#msgBubble[recalled='true'] QLabel#msgContent { color: #9aa2b2; font-style: italic; }"
-        "QLabel#msgMeta { color: #9b9b9b; font-size: 11px; }"
-        "QFrame#msgBubble[sendFailed='true'] QLabel#msgMeta { color: #d34c4c; font-weight: 600; }"
-        "QFrame#fileCard { background: rgba(255, 255, 255, 0.72); border: 1px solid #d7dde9; border-radius: 8px; }"
-        "QFrame#msgBubble[self='true'] QFrame#fileCard { background: rgba(255, 255, 255, 0.78); border-color: #c5d9ff; }"
-        "QLabel#fileIcon { color: #2f6ff4; background: #eaf1ff; border-radius: 6px; font-size: 10px; font-weight: 700; }"
-        "QLabel#fileName { color: #1f2a3d; font-size: 13px; font-weight: 600; }"
-        "QLabel#fileHint { color: #7d8798; font-size: 11px; }"
+QWidget* ChatWidget::buildMessageItemWidget(const Message& message) {
+    // 使用新的 MessageItem 组件
+    auto* messageItem = new MessageItem();
+    
+    // 设置消息内容
+    messageItem->setMessage(
+        message.msgId,
+        message.content,
+        message.isSelf ? QString() : message.fromUserId,  // 自己的消息不显示昵称
+        message.isSelf,
+        message.timestamp,
+        message.mediaUrl,
+        message.mediaType
     );
-
-    if (message.isSelf) {
-        row->addStretch();
-        row->addWidget(bubble, 0, Qt::AlignRight);
-    } else {
-        row->addWidget(bubble, 0, Qt::AlignLeft);
-        row->addStretch();
+    
+    // 设置状态
+    if (message.status == 1) {
+        messageItem->setRecalled(true);
     }
-    return container;
+    if (message.sending) {
+        messageItem->setSendingState(true);
+    }
+    if (message.sendFailed) {
+        messageItem->setFailedState(true);
+    }
+    
+    // 连接图片点击信号
+    connect(messageItem, &MessageItem::imageClicked, this, [this](const QString& msgId, const QString& imageUrl) {
+        if (!m_imageViewerDialog) {
+            m_imageViewerDialog = new ImageViewerDialog(this);
+        }
+        m_imageViewerDialog->setImage(imageUrl);
+        m_imageViewerDialog->exec();
+    });
+    
+    // 连接重发信号
+    connect(messageItem, &MessageItem::retrySendRequested, this, [this](const QString& msgId) {
+        emit retryMessageRequested(msgId);
+    });
+    
+    return messageItem;
 }
 
 void ChatWidget::updateHeader() {
@@ -526,4 +522,93 @@ void ChatWidget::updateConversationVisibility() {
 QString ChatWidget::buildChatTitle() const {
     if (m_chatId.isEmpty()) return QStringLiteral("未选择会话");
     return QString("与 %1 聊天").arg(m_chatId);
+}
+
+// ========= @提醒相关功能 =========
+
+void ChatWidget::onInputTextChanged() {
+    if (!m_input) return;
+    
+    QString text = m_input->toPlainText();
+    QTextCursor cursor = m_input->textCursor();
+    int pos = cursor.position();
+    
+    // 检查是否输入了@
+    if (pos > 0 && text[pos - 1] == '@') {
+        // 只在群聊时显示@弹窗
+        if (m_chatType == 2) {  // 2=群聊
+            showMentionPopup();
+        }
+    } else if (m_mentionPopup && m_mentionPopup->isVisible()) {
+        // 更新过滤
+        // 查找当前@后面的文本
+        int atPos = -1;
+        for (int i = pos - 1; i >= 0; --i) {
+            if (text[i] == '@') {
+                atPos = i;
+                break;
+            } else if (text[i] == ' ' || text[i] == '\n') {
+                break;
+            }
+        }
+        
+        if (atPos >= 0) {
+            QString searchText = text.mid(atPos + 1, pos - atPos - 1);
+            m_mentionPopup->filterMembers(searchText);
+        } else {
+            hideMentionPopup();
+        }
+    }
+}
+
+void ChatWidget::showMentionPopup() {
+    if (!m_input) return;
+    
+    if (!m_mentionPopup) {
+        m_mentionPopup = new MentionPopupDialog(this);
+        
+        // 设置成员列表（这里使用示例数据，实际应该从服务器获取）
+        QStringList members = {"user1", "user2", "user3", "张三", "李四", "王五"};
+        QMap<QString, QString> memberNames;
+        for (const QString& userId : members) {
+            memberNames[userId] = userId;  // 实际应该有映射关系
+        }
+        m_mentionPopup->setMembers(members, memberNames);
+        
+        connect(m_mentionPopup, &MentionPopupDialog::userSelected,
+                this, &ChatWidget::onUserSelected);
+        connect(m_mentionPopup, &MentionPopupDialog::canceled,
+                this, &ChatWidget::hideMentionPopup);
+    }
+    
+    // 计算弹窗位置（在输入框光标处）
+    QTextCursor cursor = m_input->textCursor();
+    QRect cursorRect = m_input->cursorRect(cursor);
+    QPoint globalPos = m_input->mapToGlobal(QPoint(cursorRect.x(), cursorRect.bottom()));
+    
+    m_mentionPopup->setInputContext(m_input, m_input->toPlainText(), cursor.position());
+    m_mentionPopup->showAt(globalPos);
+}
+
+void ChatWidget::hideMentionPopup() {
+    if (m_mentionPopup) {
+        m_mentionPopup->hide();
+    }
+}
+
+void ChatWidget::onUserSelected(const QString& userId, const QString& userName) {
+    Q_UNUSED(userId);
+    Q_UNUSED(userName);
+    
+    // 用户已选中，输入框已经被自动更新
+    // 这里可以添加其他逻辑，比如记录被@的用户
+    m_input->setFocus();
+}
+
+void ChatWidget::sendMentionMessage(const QString& content, const QStringList& mentionedUsers) {
+    // 发送带@的消息
+    emit messageSent(content);
+    
+    // TODO: 将 mentionedUsers 传递给后端，用于通知被@的用户
+    Q_UNUSED(mentionedUsers);
 }

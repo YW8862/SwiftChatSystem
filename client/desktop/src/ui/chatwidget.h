@@ -11,6 +11,9 @@ class QLabel;
 class QFrame;
 class QSplitter;
 class QPoint;
+class ImagePreviewDialog;
+class ImageViewerDialog;
+class MentionPopupDialog;
 
 /**
  * 聊天组件
@@ -47,6 +50,9 @@ signals:
     void fileMessageOpenRequested(const QString& msgId);
     void conversationMoreRequested(const QPoint& globalPos);
     
+    // @提醒相关
+    void sendMentionMessage(const QString& content, const QStringList& mentionedUsers);
+    
 private slots:
     void onSendClicked();
     void onFileClicked();
@@ -56,14 +62,22 @@ private:
     void refreshMessageList(bool scrollToBottom = true, int preserveScrollValue = -1, int preserveScrollMax = -1);
     void addTimeSeparatorItem(const QString& text);
     void addMessageItem(const Message& message);
-    QWidget* buildMessageItemWidget(const Message& message) const;
+    QWidget* buildMessageItemWidget(const Message& message);
     void updateHeader();
     void updateConversationVisibility();
     QString buildChatTitle() const;
+    
+    // @提醒相关
+    void onInputTextChanged();
+    void showMentionPopup();
+    void hideMentionPopup();
+    void onUserSelected(const QString& userId, const QString& userName);
 
     QString m_chatId;
-    int m_chatType = 1;  // 1=私聊, 2=群聊
+    int m_chatType = 1;  // 1=私聊，2=群聊
     QString m_currentUserId;
+    ImagePreviewDialog* m_imagePreviewDialog = nullptr;
+    ImageViewerDialog* m_imageViewerDialog = nullptr;
     QFrame* m_headerFrame = nullptr;
     QFrame* m_bodyFrame = nullptr;
     QLabel* m_titleLabel = nullptr;
@@ -73,5 +87,6 @@ private:
     QTextEdit* m_input = nullptr;
     QPushButton* m_sendBtn = nullptr;
     QLabel* m_readReceiptLabel = nullptr;
+    MentionPopupDialog* m_mentionPopup = nullptr;  // @提醒弹窗
     QList<Message> m_messages;
 };
