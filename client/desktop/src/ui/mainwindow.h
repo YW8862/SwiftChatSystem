@@ -60,6 +60,10 @@ private:
     void dismissGroup(const QString& groupId);
     void deleteConversation(const QString& chatId, int chatType);
     void showAddFriendDialog();
+    void showBlacklistDialog();
+    void loadBlacklist();
+    void blockUser(const QString& userId);
+    void unblockUser(const QString& userId);
     QString pickUserForAction(const QString& title, const QString& hint, const QList<QPair<QString, QString>>& candidates) const;
     QStringList pickUsersForAction(const QString& title, const QString& hint, const QList<QPair<QString, QString>>& candidates) const;
     void loadHistory(const QString& chatId, int chatType);
@@ -121,6 +125,7 @@ private:
     QMap<QString, Conversation> m_conversationMap;
     QMap<QString, QList<Message>> m_messageMap;
     QMap<QString, QString> m_readReceiptMap;  // key: chatId, value: userId:lastMsgId
+    QMap<QString, QString> m_blacklistMap;    // key: userId, value: userName
     QString m_offlineCursor;
     bool m_offlinePullInFlight = false;
     bool m_sessionReady = false;

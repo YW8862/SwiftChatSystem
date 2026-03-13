@@ -11,6 +11,8 @@
 #include <QScreen>
 #include <QCursor>
 #include <QDateTime>
+#include <QMenu>
+#include <QContextMenuEvent>
 #include "../utils/imageloader.h"
 #include "filemessageitem.h"
 
@@ -45,6 +47,28 @@ void MessageItem::setupUI() {
     m_nameLabel->setStyleSheet("color: #888; font-size: 12px; padding-left: 4px;");
     m_nameLabel->setVisible(false);  // 私聊时隐藏
     m_bubbleLayout->addWidget(m_nameLabel);
+    
+    // 引用消息容器
+    m_replyFrame = new QFrame(bubbleContainer);
+    m_replyFrame->setObjectName("replyBubble");
+    m_replyFrame->setStyleSheet(
+        "QFrame#replyBubble { background: rgba(0, 0, 0, 0.05); border-left: 3px solid #07c160; "
+        "border-radius: 4px; padding: 6px 8px; margin: 2px 0; }"
+    );
+    m_replyFrame->setVisible(false);
+    auto* replyLayout = new QVBoxLayout(m_replyFrame);
+    replyLayout->setContentsMargins(0, 0, 0, 0);
+    replyLayout->setSpacing(2);
+    
+    m_replyLabel = new QLabel(m_replyFrame);
+    m_replyLabel->setWordWrap(true);
+    m_replyLabel->setStyleSheet("color: #666; font-size: 13px; padding-left: 6px;");
+    m_replyLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_replyLabel->setCursor(Qt::PointingHandCursor);
+    // 安装事件过滤器以支持点击跳转
+    m_replyLabel->installEventFilter(this);
+    replyLayout->addWidget(m_replyLabel);
+    m_bubbleLayout->addWidget(m_replyFrame);
     
     // 消息气泡
     m_bubbleFrame = new QFrame(bubbleContainer);
@@ -131,13 +155,19 @@ void MessageItem::setupUI() {
 void MessageItem::setMessage(const QString& msgId, const QString& content,
                               const QString& senderName, bool isSelf, qint64 timestamp,
                               const QString& mediaUrl, const QString& mediaType,
-                              const QStringList& mentions) {
+                              const QStringList& mentions,
+                              const QString& replyToMsgId, 
+                              const QString& replyToContent,
+                              const QString& replyToSender) {
     m_msgId = msgId;
     m_senderName = senderName;
     m_isSelf = isSelf;
     m_mediaUrl = mediaUrl;
     m_mediaType = mediaType;
     m_mentions = mentions;  // 保存@列表
+    m_replyToMsgId = replyToMsgId;
+    m_replyToContent = replyToContent;
+    m_replyToSender = replyToSender;
     
     // 更新昵称
     if (m_nameLabel) {
@@ -213,6 +243,13 @@ void MessageItem::setMessage(const QString& msgId, const QString& content,
                 m_contentLabel->setTextFormat(Qt::PlainText);
             }
         }
+    }
+    
+    // 更新引用消息显示
+    if (!replyToMsgId.isEmpty()) {
+        setupReplyView(replyToMsgId, replyToContent, replyToSender);
+    } else {
+        if (m_replyFrame) m_replyFrame->hide();
     }
     
     updateMessageStyle();
@@ -291,6 +328,37 @@ void MessageItem::updateMessageStyle() {
     }
 }
 
+void MessageItem::setupReplyView(const QString& replyToMsgId, const QString& replyToContent, 
+                                  const QString& replyToSender) {
+    if (!m_replyFrame || !m_replyLabel) return;
+    
+    if (replyToMsgId.isEmpty()) {
+        m_replyFrame->hide();
+        return;
+    }
+    
+    m_replyFrame->show();
+    
+    // 构建引用显示文本
+    QString displayText;
+    if (!replyToSender.isEmpty()) {
+        displayText = QString("回复 %1：%2").arg(replyToSender, replyToContent);
+    } else {
+        displayText = QString("回复：%1").arg(replyToContent);
+    }
+    
+    m_replyLabel->setText(displayText);
+    
+    // 存储原消息 ID 以便点击时跳转
+    m_replyLabel->setProperty("targetMsgId", replyToMsgId);
+}
+
+void MessageItem::onReplyActionTriggered() {
+    // 发出回复信号，由父组件处理
+    emit replyRequested(m_msgId, m_contentLabel ? m_contentLabel->text() : "",
+                       m_senderName, m_msgId);  // 这里用 msgId 临时作为 senderId
+}
+
 void MessageItem::onImageLabelClicked() {
     if (m_mediaUrl.isEmpty() || m_mediaType != "image") return;
     
@@ -302,11 +370,41 @@ void MessageItem::onRetryButtonClicked() {
     emit retrySendRequested(m_msgId);
 }
 
-// 重写 eventFilter 以支持点击图片
+// 重写 eventFilter 以支持点击图片和引用消息
 bool MessageItem::eventFilter(QObject* obj, QEvent* event) {
     if (obj == m_imageLoader && event->type() == QEvent::MouseButtonRelease) {
         onImageLabelClicked();
         return true;
     }
+    
+    // 处理引用消息的点击事件
+    if (obj == m_replyLabel && event->type() == QEvent::MouseButtonRelease) {
+        QString targetMsgId = m_replyLabel->property("targetMsgId").toString();
+        if (!targetMsgId.isEmpty()) {
+            // 发出信号，请求跳转到目标消息
+            emit replyRequested(targetMsgId, QString(), QString(), QString());
+        }
+        return true;
+    }
+    
     return QWidget::eventFilter(obj, event);
+}
+
+// 右键菜单事件
+void MessageItem::contextMenuEvent(QContextMenuEvent* event) {
+    QMenu menu(this);
+    
+    // 添加"回复"选项
+    QAction* replyAction = menu.addAction(QStringLiteral("回复"));
+    connect(replyAction, &QAction::triggered, this, &MessageItem::onReplyActionTriggered);
+    
+    // 如果是自己发送的消息，添加撤回选项
+    if (m_isSelf && !m_recalled) {
+        QAction* recallAction = menu.addAction(QStringLiteral("撤回"));
+        connect(recallAction, &QAction::triggered, this, [this]() {
+            // 这里可以发出撤回信号，暂时不实现
+        });
+    }
+    
+    menu.exec(event->globalPos());
 }

@@ -2,6 +2,7 @@
 
 #include "contactwidget.h"
 #include "chatwidget.h"
+#include "blacklistdialog.h"
 #include "network/app_service.h"
 #include "network/protocol_handler.h"
 #include "network/websocket_client.h"
@@ -131,6 +132,8 @@ void MainWindow::setupUi() {
     );
     QAction* addFriendAction = quickMenu->addAction("添加好友");
     QAction* createGroupAction = quickMenu->addAction("创建群聊");
+    quickMenu->addSeparator();
+    QAction* blacklistAction = quickMenu->addAction("黑名单管理");
     quickActionBtn->setMenu(quickMenu);
     navLayout->addWidget(quickActionBtn, 0, Qt::AlignHCenter);
     navLayout->addStretch();
@@ -255,6 +258,10 @@ void MainWindow::setupUi() {
     });
     connect(createGroupAction, &QAction::triggered, this, [this]() {
         createGroup();
+    });
+    connect(blacklistAction, &QAction::triggered, this, [this]() {
+        loadBlacklist();  // 先加载黑名单
+        showBlacklistDialog();
     });
     connect(m_profileSendMsgBtn, &QPushButton::clicked, this, [this]() {
         if (m_profileUserId.isEmpty()) return;
@@ -1055,6 +1062,86 @@ void MainWindow::showAddFriendDialog() {
     root->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     dialog.exec();
+}
+
+void MainWindow::showBlacklistDialog() {
+    BlacklistDialog* dialog = new BlacklistDialog(this);
+    dialog->setBlockedUsers(m_blacklistMap);
+    
+    connect(dialog, &BlacklistDialog::addUserRequested, this, [this](const QString& userId, const QString& userName) {
+        blockUser(userId);
+    });
+    
+    connect(dialog, &BlacklistDialog::removeUserRequested, this, [this](const QString& userId) {
+        unblockUser(userId);
+    });
+    
+    connect(dialog, &QDialog::finished, this, [this, dialog]() {
+        dialog->deleteLater();
+    });
+    
+    dialog->exec();
+}
+
+void MainWindow::loadBlacklist() {
+    if (!m_protocol) return;
+    
+    // 暂时简化处理，直接从好友列表中过滤被拉黑的用户
+    // 实际应该调用 friend.get_block_list 接口
+    m_blacklistMap.clear();
+}
+
+void MainWindow::blockUser(const QString& userId) {
+    if (!m_protocol || userId.isEmpty()) return;
+    
+    swift::zone::FriendBlockPayload req;
+    req.set_user_id(m_currentUserId.toStdString());
+    req.set_target_id(userId.toStdString());
+    std::string payload;
+    if (!req.SerializeToString(&payload)) return;
+    
+    m_protocol->sendRequest("friend.block",
+                            QByteArray(payload.data(), static_cast<int>(payload.size())),
+                            [this, userId](int code, const QByteArray&, const QString& message) {
+        if (code != 0) {
+            const QString err = message.trimmed().isEmpty()
+                ? QString("拉黑用户失败，错误码：%1").arg(code)
+                : message;
+            QMessageBox::warning(this, "操作失败", err);
+            return;
+        }
+        
+        // 更新本地黑名单
+        m_blacklistMap[userId] = userId;
+        QMessageBox::information(this, "操作成功", QString("已将 %1 加入黑名单。").arg(userId));
+    });
+}
+
+void MainWindow::unblockUser(const QString& userId) {
+    if (!m_protocol || userId.isEmpty()) return;
+    
+    // 使用 FriendBlockPayload 的相反操作
+    swift::zone::FriendBlockPayload req;
+    req.set_user_id(m_currentUserId.toStdString());
+    req.set_target_id(userId.toStdString());
+    std::string payload;
+    if (!req.SerializeToString(&payload)) return;
+    
+    m_protocol->sendRequest("friend.unblock",
+                            QByteArray(payload.data(), static_cast<int>(payload.size())),
+                            [this, userId](int code, const QByteArray&, const QString& message) {
+        if (code != 0) {
+            const QString err = message.trimmed().isEmpty()
+                ? QString("移除黑名单失败，错误码：%1").arg(code)
+                : message;
+            QMessageBox::warning(this, "操作失败", err);
+            return;
+        }
+        
+        // 从本地黑名单中移除
+        m_blacklistMap.remove(userId);
+        QMessageBox::information(this, "操作成功", QString("已将 %1 从黑名单移除。").arg(userId));
+    });
 }
 
 QString MainWindow::pickUserForAction(const QString& title,
@@ -2114,7 +2201,8 @@ void MainWindow::onPushReadReceipt(const QByteArray& payload) {
     if (chatId.isEmpty() || userId.isEmpty() || lastMsgId.isEmpty()) return;
 
     m_readReceiptMap[chatId] = QString("%1:%2").arg(userId, lastMsgId);
-    if (chatId == m_currentChatId) {
+    if (chatId == m_currentChatId && m_chatWidget) {
+        // 简单的已读显示：显示谁读了最后一条消息
         m_chatWidget->setReadReceipt(userId, lastMsgId);
     }
 }

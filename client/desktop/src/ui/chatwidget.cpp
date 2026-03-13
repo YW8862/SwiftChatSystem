@@ -1,5 +1,6 @@
 #include "chatwidget.h"
 #include "mentionpopup.h"
+#include "readreceiptdetaildialog.h"
 
 #include <QDateTime>
 #include <QFileDialog>
@@ -15,6 +16,7 @@
 #include <QSplitter>
 #include <QTextEdit>
 #include <QVBoxLayout>
+#include <QTimer>
 #include <algorithm>
 #include "imagepreviewdialog.h"
 #include "imageviewerdialog.h"
@@ -161,6 +163,21 @@ ChatWidget::ChatWidget(QWidget *parent) : QWidget(parent) {
     m_readReceiptLabel->setStyleSheet("color: #8d8d8d; font-size: 12px; padding-left: 4px;");
     m_readReceiptLabel->setText("");
     messageLayout->addWidget(m_readReceiptLabel);
+    
+    // 加载更多提示标签
+    m_loadMoreLabel = new QLabel(messagePanel);
+    m_loadMoreLabel->setObjectName("loadMoreLabel");
+    m_loadMoreLabel->setStyleSheet(
+        "QLabel#loadMoreLabel { "
+        "background: transparent; color: #07c160; font-size: 13px; "
+        "padding: 8px; border-radius: 4px; }"
+        "QLabel#loadMoreLabel:hover { background: #e8f5e9; }"
+    );
+    m_loadMoreLabel->setText(QStringLiteral("↓ 点击加载更多历史消息 ↓"));
+    m_loadMoreLabel->setAlignment(Qt::AlignCenter);
+    m_loadMoreLabel->setCursor(Qt::PointingHandCursor);
+    m_loadMoreLabel->setVisible(false);  // 默认隐藏
+    messageLayout->addWidget(m_loadMoreLabel);
 
     auto* inputCard = new QFrame(m_verticalSplitter);
     inputCard->setObjectName("inputCard");
@@ -311,6 +328,10 @@ void ChatWidget::setConversation(const QString& chatId, int chatType) {
     updateConversationVisibility();
     refreshMessageList(true);
     clearReadReceipt();
+    
+    // 清空已读用户列表
+    m_readUsers.clear();
+    m_unreadUsers.clear();
 }
 
 void ChatWidget::setCurrentUserId(const QString& userId) {
@@ -365,11 +386,84 @@ void ChatWidget::clearReadReceipt() {
     m_readReceiptLabel->clear();
 }
 
+void ChatWidget::updateReadReceiptDisplay(int chatType, const QMap<QString, QString>& readUsers,
+                                           const QMap<QString, QString>& unreadUsers) {
+    m_readUsers = readUsers;
+    m_unreadUsers = unreadUsers;
+    
+    if (!m_readReceiptLabel) return;
+    
+    if (chatType == 1) {  // 私聊
+        // 私聊：显示对方是否已读
+        if (!readUsers.isEmpty()) {
+            auto it = readUsers.begin();
+            m_readReceiptLabel->setText(QString("%1 已读").arg(it.value().isEmpty() ? it.key() : it.value()));
+        } else if (!unreadUsers.isEmpty()) {
+            auto it = unreadUsers.begin();
+            m_readReceiptLabel->setText(QString("%1 未读").arg(it.value().isEmpty() ? it.key() : it.value()));
+        } else {
+            m_readReceiptLabel->clear();
+        }
+    } else {  // 群聊
+        // 群聊：显示已读/未读人数
+        int readCount = readUsers.size();
+        int unreadCount = unreadUsers.size();
+        
+        if (readCount > 0 || unreadCount > 0) {
+            m_readReceiptLabel->setText(QString("%1 人已读，%2 人未读").arg(readCount).arg(unreadCount));
+        } else {
+            m_readReceiptLabel->clear();
+        }
+    }
+    
+    // 使标签可点击
+    m_readReceiptLabel->setCursor(Qt::PointingHandCursor);
+    m_readReceiptLabel->installEventFilter(this);
+}
+
+void ChatWidget::showReadReceiptDetail() {
+    if (!m_readReceiptDetailDialog) {
+        m_readReceiptDetailDialog = new ReadReceiptDetailDialog(this);
+    }
+    
+    // 根据聊天类型显示不同的详情
+    if (m_chatType == 1) {  // 私聊
+        bool hasRead = !m_readUsers.isEmpty();
+        QString userName;
+        
+        if (hasRead) {
+            auto it = m_readUsers.begin();
+            userName = it.value().isEmpty() ? it.key() : it.value();
+        } else {
+            auto it = m_unreadUsers.begin();
+            userName = it.value().isEmpty() ? it.key() : it.value();
+        }
+        
+        m_readReceiptDetailDialog->setPrivateChatReceipt(userName, hasRead);
+    } else {  // 群聊
+        m_readReceiptDetailDialog->setGroupChatReceipt(m_readUsers, m_unreadUsers);
+    }
+    
+    m_readReceiptDetailDialog->exec();
+}
+
 void ChatWidget::onSendClicked() {
     if (m_chatId.isEmpty() || !m_input) return;
     const QString content = m_input->toPlainText().trimmed();
     if (content.isEmpty()) return;
-    emit messageSent(content);
+    
+    // 如果有引用信息，需要在发送时包含
+    if (!m_replyToMsgId.isEmpty()) {
+        // 这里暂时直接发送内容，实际应该将引用信息也包含在消息中
+        // 并设置 Message 的 replyToMsgId 字段
+        emit messageSent(content);
+        
+        // 清除引用状态
+        clearReplyState();
+    } else {
+        emit messageSent(content);
+    }
+    
     m_input->setPlainText("");
 }
 
@@ -463,7 +557,20 @@ QWidget* ChatWidget::buildMessageItemWidget(const Message& message) {
     // 使用新的 MessageItem 组件
     auto* messageItem = new MessageItem();
     
-    // 设置消息内容
+    // 查找引用消息的内容和发送者
+    QString replyToContent;
+    QString replyToSender;
+    if (!message.replyToMsgId.isEmpty()) {
+        for (const auto& msg : m_messages) {
+            if (msg.msgId == message.replyToMsgId) {
+                replyToContent = msg.content;
+                replyToSender = msg.isSelf ? QStringLiteral("我") : msg.fromUserId;
+                break;
+            }
+        }
+    }
+    
+    // 设置消息内容，包含引用信息
     messageItem->setMessage(
         message.msgId,
         message.content,
@@ -471,7 +578,11 @@ QWidget* ChatWidget::buildMessageItemWidget(const Message& message) {
         message.isSelf,
         message.timestamp,
         message.mediaUrl,
-        message.mediaType
+        message.mediaType,
+        message.mentions,
+        message.replyToMsgId,  // 传递引用消息 ID
+        replyToContent,        // 引用内容
+        replyToSender          // 引用发送者
     );
     
     // 设置状态
@@ -497,6 +608,18 @@ QWidget* ChatWidget::buildMessageItemWidget(const Message& message) {
     // 连接重发信号
     connect(messageItem, &MessageItem::retrySendRequested, this, [this](const QString& msgId) {
         emit retryMessageRequested(msgId);
+    });
+    
+    // 连接回复信号
+    connect(messageItem, &MessageItem::replyRequested, this, [this](const QString& msgId, const QString& content,
+                                                                     const QString& senderName, const QString& senderId) {
+        if (content.isEmpty()) {
+            // 如果内容为空，说明是点击引用跳转，直接滚动到目标消息
+            scrollToMessage(msgId);
+        } else {
+            // 否则是右键菜单回复，设置引用信息
+            onReplyMessageRequested(msgId, content, senderName, senderId);
+        }
     });
     
     return messageItem;
@@ -603,4 +726,103 @@ void ChatWidget::onUserSelected(const QString& userId, const QString& userName) 
     // 用户已选中，输入框已经被自动更新
     // 这里可以添加其他逻辑，比如记录被@的用户
     m_input->setFocus();
+}
+
+// ========= 引用消息相关功能 =========
+
+void ChatWidget::onReplyMessageRequested(const QString& targetMsgId, const QString& targetContent,
+                                         const QString& targetSender, const QString& targetSenderId) {
+    Q_UNUSED(targetSenderId);
+    
+    // 保存引用信息
+    m_replyToMsgId = targetMsgId;
+    m_replyToContent = targetContent;
+    m_replyToSender = targetSender;
+    
+    // 在输入框上方显示"回复 XXX: 原消息内容"
+    QString replyHint = QString("回复 %1：%2").arg(targetSender, targetContent);
+    
+    // 检查是否已有提示标签
+    QLabel* replyHintLabel = findChild<QLabel*>("replyHintLabel");
+    if (!replyHintLabel) {
+        // 创建提示标签
+        replyHintLabel = new QLabel(m_input->parentWidget());
+        replyHintLabel->setObjectName("replyHintLabel");
+        replyHintLabel->setStyleSheet(
+            "QLabel#replyHintLabel { "
+            "background: #f0f0f0; border: 1px solid #e0e0e0; border-radius: 6px; "
+            "padding: 6px 10px; color: #666; font-size: 13px; "
+            "}"
+        );
+        
+        // 添加到输入框上方
+        auto* inputCard = m_input->parentWidget();
+        auto* inputRoot = qobject_cast<QVBoxLayout*>(inputCard->layout());
+        if (inputRoot) {
+            // 找到工具栏和输入框之间的位置
+            int inputIndex = inputRoot->indexOf(m_input);
+            inputRoot->insertWidget(inputIndex, replyHintLabel);
+        }
+    }
+    
+    replyHintLabel->setText(replyHint);
+    replyHintLabel->setVisible(true);
+    
+    // 聚焦输入框
+    m_input->setFocus();
+}
+
+void ChatWidget::scrollToMessage(const QString& msgId) {
+    if (!m_messageList || msgId.isEmpty()) return;
+    
+    // 查找目标消息项
+    for (int i = 0; i < m_messageList->count(); ++i) {
+        QListWidgetItem* item = m_messageList->item(i);
+        if (item && item->data(Qt::UserRole).toString() == msgId) {
+            // 滚动到该消息
+            m_messageList->scrollToItem(item, QAbstractItemView::PositionAtCenter);
+            
+            // 高亮显示（通过临时背景色）
+            QWidget* itemWidget = m_messageList->itemWidget(item);
+            if (itemWidget) {
+                // 保存原始样式
+                QString originalStyle = itemWidget->styleSheet();
+                
+                // 设置高亮样式
+                itemWidget->setStyleSheet(
+                    "background: #fff3cd; border: 2px solid #ffc107; border-radius: 8px;"
+                );
+                
+                // 2 秒后恢复原始样式
+                QTimer::singleShot(2000, this, [itemWidget, originalStyle]() {
+                    itemWidget->setStyleSheet(originalStyle);
+                });
+            }
+            
+            break;
+        }
+    }
+}
+
+void ChatWidget::clearReplyState() {
+    m_replyToMsgId.clear();
+    m_replyToContent.clear();
+    m_replyToSender.clear();
+    
+    // 隐藏并删除提示标签
+    QLabel* replyHintLabel = findChild<QLabel*>("replyHintLabel");
+    if (replyHintLabel) {
+        replyHintLabel->deleteLater();
+    }
+}
+
+// 重写 eventFilter 支持点击已读标签
+bool ChatWidget::eventFilter(QObject* obj, QEvent* event) {
+    // 处理引用消息的点击事件（从 MessageItem 继承的逻辑）
+    if (obj == m_readReceiptLabel && event->type() == QEvent::MouseButtonRelease) {
+        showReadReceiptDetail();
+        return true;
+    }
+    
+    return QWidget::eventFilter(obj, event);
 }

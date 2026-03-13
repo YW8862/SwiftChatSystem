@@ -3,6 +3,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace swift::file {
 
@@ -57,6 +58,12 @@ public:
     virtual std::optional<UploadSessionData> GetUploadSession(const std::string& upload_id) = 0;
     virtual bool UpdateUploadSessionBytes(const std::string& upload_id, int64_t bytes_written) = 0;
     virtual bool DeleteUploadSession(const std::string& upload_id) = 0;
+    
+    /**
+     * 列出所有上传会话（用于清理过期会话）
+     * @return 所有上传会话列表
+     */
+    virtual std::vector<UploadSessionData> ListAllUploadSessions() = 0;
 };
 
 /**
@@ -76,6 +83,7 @@ public:
     std::optional<UploadSessionData> GetUploadSession(const std::string& upload_id) override;
     bool UpdateUploadSessionBytes(const std::string& upload_id, int64_t bytes_written) override;
     bool DeleteUploadSession(const std::string& upload_id) override;
+    std::vector<UploadSessionData> ListAllUploadSessions() override;
 
 private:
     struct Impl;

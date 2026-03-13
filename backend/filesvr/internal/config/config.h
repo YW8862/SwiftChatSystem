@@ -30,6 +30,8 @@ struct FileConfig {
     std::string allowed_types = "image/*,video/*,audio/*,application/pdf";
     // 上传会话过期时间（秒）；超时未续传完成则放弃上传、删除已传数据，并通知 ChatSvr 将关联消息标为发送失败
     int64_t upload_session_expire_seconds = 24 * 3600;  // 默认 24 小时
+    // 清理间隔时间（秒）；定时清理过期上传会话的临时文件
+    int64_t cleanup_interval_seconds = 3600;  // 默认 1 小时
     
     std::string log_dir = "/data/logs";
     std::string log_level = "INFO";

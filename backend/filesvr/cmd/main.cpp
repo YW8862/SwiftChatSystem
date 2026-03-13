@@ -101,6 +101,9 @@ int main(int argc, char* argv[]) {
   auto file_service = std::make_shared<swift::file::FileServiceCore>(store, config);
   swift::file::FileHandler handler(file_service, config.jwt_secret);
 
+  // 启动清理线程
+  file_service->StartCleanupThread();
+
   std::string addr = config.host + ":" + std::to_string(config.grpc_port);
   grpc::ServerBuilder builder;
   builder.AddListeningPort(addr, grpc::InsecureServerCredentials());
@@ -117,6 +120,9 @@ int main(int argc, char* argv[]) {
   LogInfo("HTTP download (GET /files/{file_id}) can be wired via HttpDownloadHandler when HTTP server is added.");
 
   g_server->Wait();
+
+  // 停止清理线程
+  file_service->StopCleanupThread();
 
   g_server.reset();
   LogInfo("FileSvr shut down.");

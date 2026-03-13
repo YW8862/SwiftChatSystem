@@ -38,11 +38,17 @@ public:
      * @param mediaUrl 媒体文件 URL（图片/文件等）
      * @param mediaType 媒体类型（text/image/file/voice/video）
      * @param mentions 被@的用户 ID 列表
+     * @param replyToMsgId 回复的消息 ID
+     * @param replyToContent 回复的消息内容
+     * @param replyToSender 回复的消息发送者
      */
     void setMessage(const QString& msgId, const QString& content, 
                     const QString& senderName, bool isSelf, qint64 timestamp,
                     const QString& mediaUrl = QString(), const QString& mediaType = "text",
-                    const QStringList& mentions = QStringList());
+                    const QStringList& mentions = QStringList(),
+                    const QString& replyToMsgId = QString(), 
+                    const QString& replyToContent = QString(),
+                    const QString& replyToSender = QString());
     
     /**
      * 设置撤回状态
@@ -80,24 +86,36 @@ signals:
      */
     void fileOpenRequested(const QString& filePath);
     
+    /**
+     * 请求回复消息
+     */
+    void replyRequested(const QString& msgId, const QString& content, 
+                       const QString& senderName, const QString& senderId);
+    
 private slots:
     void onImageLabelClicked();
     void onRetryButtonClicked();
+    void onReplyActionTriggered();
     
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
+    void contextMenuEvent(QContextMenuEvent* event) override;
     
 private:
     void setupUI();
     void updateMessageStyle();
     void showImagePreview(const QString& imageUrl);
     QLabel* createTextLabel(const QString& text, const QString& styleSheet = QString());
+    void setupReplyView(const QString& replyToMsgId, const QString& replyToContent, 
+                       const QString& replyToSender);
     
     // UI 组件
     QFrame* m_bubbleFrame = nullptr;        // 消息气泡容器
     QVBoxLayout* m_bubbleLayout = nullptr;  // 气泡布局
     QLabel* m_avatarLabel = nullptr;        // 头像
     QLabel* m_nameLabel = nullptr;          // 昵称
+    QFrame* m_replyFrame = nullptr;         // 引用消息容器
+    QLabel* m_replyLabel = nullptr;         // 引用消息标签
     QLabel* m_contentLabel = nullptr;       // 内容标签
     ImageLoader* m_imageLoader = nullptr;   // 图片加载器（带进度条）
     FileMessageItem* m_fileMessageItem = nullptr;  // 文件消息项
@@ -115,4 +133,9 @@ private:
     bool m_sendFailed = false;
     bool m_recalled = false;
     QStringList m_mentions;  // 被@的用户 ID 列表
+    
+    // 引用消息相关
+    QString m_replyToMsgId;      // 回复的目标消息 ID
+    QString m_replyToContent;    // 回复的目标消息内容
+    QString m_replyToSender;     // 回复的目标消息发送者
 };

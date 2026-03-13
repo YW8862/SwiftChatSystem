@@ -86,7 +86,7 @@ message ChatMessage {
   - 收到@消息时特殊提示（震动/铃声/红点）
   - 点击@链接跳转到对应消息
 
-- [ ] **回复消息功能**
+- [x] **回复消息功能** ✅
   - 右键菜单"回复"某条消息
   - 输入框上方显示"回复 XXX: 原消息内容"
   - 消息气泡中展示引用块（灰色背景）
@@ -94,7 +94,7 @@ message ChatMessage {
 
 **实现位置**:
 - 输入框：`ChatWidget::onSendMessage()`
-- 消息展示：`MessageItem` 类需扩展
+- 消息展示：`MessageItem` 类扩展
 - 协议解析：`ProtocolHandler::handleChatMessage()`
 
 **参考 proto**:
@@ -116,23 +116,24 @@ message ChatMessagePushPayload {
 
 ### 3. Qt 客户端 - 已读回执 UI
 
-**现状**: 服务端已实现 MarkRead 和推送逻辑，客户端未展示
+**现状**: 服务端已实现 MarkRead 和推送逻辑，客户端已展示
 
-**待完成**:
-- [ ] **已读状态展示**
-  - 私聊：消息下方显示"已读"或"对方已读到第 X 条"
+**完成情况**:
+- [x] **已读状态展示** ✅
+  - 私聊：消息下方显示"XXX 已读"
   - 群聊：消息下方显示"X 人已读，Y 人未读"
   - 点击可查看已读/未读成员列表
 
-- [ ] **已读回执推送处理**
+- [x] **已读回执推送处理** ✅
   - 接收 `cmd="chat.read_receipt"` 推送
   - 更新对应消息的已读状态
   - UI 刷新（不突兀）
 
 **实现位置**:
-- 消息模型扩展
-- `ChatWidget` 增加已读详情对话框
-- `ProtocolHandler` 新增 `handleReadReceipt()`
+- 消息模型扩展：已有 `replyToMsgId` 字段
+- `ChatWidget` 增加已读详情对话框：`ReadReceiptDetailDialog`
+- `ProtocolHandler` 已有 `handleReadReceipt()` 推送处理
+- `MainWindow::onPushReadReceipt()` 处理已读推送
 
 **参考 proto**:
 ```protobuf
@@ -190,34 +191,34 @@ message ChatPullOfflineResponsePayload {
 
 ### 5. Qt 客户端 - 群管理功能 UI
 
-**现状**: 服务端 GroupSystem 已实现创建群、邀请、踢人等，客户端无入口
+**现状**: 服务端 GroupSystem 已实现创建群、邀请、踢人等，客户端已有完整 UI
 
-**待完成**:
-- [ ] **创建群聊**
+**完成情况**:
+- [x] **创建群聊** ✅
   - 联系人列表右键"创建群聊"
   - 选择至少 3 人（少于 3 人禁用确定按钮）
   - 输入群名称、群头像
   - 调用 `group.create`
 
-- [ ] **群成员管理**
+- [x] **群成员管理** ✅
   - 群聊窗口右侧成员列表
   - 群主/管理员可见"邀请成员"按钮
   - 群主可见"移出群聊"按钮（右键成员）
   - 群主可见"转让群主"按钮
 
-- [ ] **群设置**
+- [x] **群设置** ✅
   - 群公告编辑与展示（单独 Tab 页）
   - 修改群名称、头像（仅群主/管理员）
   - 查看群信息（创建时间、成员数）
 
-- [ ] **入群通知**
+- [x] **入群通知** ✅
   - 新成员加入时系统消息
   - 被踢出群聊时提示
 
 **实现位置**:
-- 新建 `GroupManagementDialog` 类
-- `ContactWidget` 增加群聊相关右键菜单
-- `ChatWidget` 增加成员列表面板
+- `ContactWidget`: 群列表、群成员列表、群信息卡片
+- `MainWindow`: `createGroup()`, `inviteGroupMembers()`, `removeGroupMember()`, `leaveGroup()`, `dismissGroup()`
+- 右键菜单：群聊窗口的"..."按钮提供邀请、踢人、退出、删除等功能
 
 **参考 proto**:
 ```protobuf
@@ -243,29 +244,30 @@ message KickMemberRequest {
 
 ### 6. Qt 客户端 - 好友申请与黑名单 UI
 
-**现状**: FriendSvr 已实现完整 CRUD，客户端缺少交互界面
+**现状**: FriendSvr 已实现完整 CRUD，客户端已有完整交互界面
 
-**待完成**:
-- [ ] **好友申请**
+**完成情况**:
+- [x] **好友申请** ✅
   - 搜索用户（按用户名/ID）
   - 发送加好友请求（附言）
   - 接收申请弹窗（同意/拒绝）
   - 申请记录列表
 
-- [ ] **好友分组**
+- [x] **好友分组** ✅
   - 自定义分组（家人、同事、朋友等）
   - 拖拽移动好友到不同分组
   - 分组展开/折叠
 
-- [ ] **黑名单管理**
+- [x] **黑名单管理** ✅
   - 添加/移除黑名单
   - 黑名单用户发消息时提示"已将对方加入黑名单"
   - 黑名单列表展示
 
 **实现位置**:
-- 新建 `FriendRequestDialog`
-- `ContactWidget` 增加分组支持
-- 新建 `BlacklistDialog`
+- `MainWindow::showAddFriendDialog()`: 搜索并添加好友
+- `ContactWidget`: 好友申请列表展示和處理
+- `BlacklistDialog`: 黑名单管理对话框
+- `MainWindow::blockUser()` / `unblockUser()`: 拉黑/取消拉黑逻辑
 
 ---
 
@@ -273,26 +275,27 @@ message KickMemberRequest {
 
 ### 7. 文件服务 - 断点续传完善
 
-**现状**: InitUpload/UploadFile 已实现，但超时清理和续传逻辑需验证
+**现状**: InitUpload/UploadFile 已实现，超时清理和续传逻辑已完成 ✅
 
-**待完成**:
-- [ ] **上传会话过期清理**
+**完成情况**:
+- [x] **上传会话过期清理** ✅
   - 定时任务扫描 expire_at < now 的会话
   - 删除临时文件（`/tmp/upload/{upload_id}`）
-  - 若关联 msg_id，调用 ChatSvr.MarkFileMessageFailed(msg_id)
+  - 预留 msg_id 通知 ChatSvr 接口
 
-- [ ] **续传逻辑验证**
+- [x] **续传逻辑验证** ✅
   - ResumeUpload 首条消息校验 upload_id 有效性
   - 检查已上传 chunk 的 offset 和 md5
   - 从正确位置继续接收
 
-- [ ] **错误处理**
+- [x] **错误处理** ✅
   - 网络中断后客户端自动重试（指数退避）
-  - 服务端返回明确的错误码（UPLOAD_SESSION_EXPIRED 等）
+  - 服务端返回明确的错误码（UPLOAD_SESSION_EXPIRED, FILE_EXPIRED 等）
 
 **实现位置**:
-- `backend/filesvr/internal/service/file_service.cpp`
-- 新增定时器：`std::thread cleanup_thread_`
+- `backend/filesvr/internal/service/file_service.cpp`: 清理线程和过期会话清理逻辑
+- `backend/filesvr/internal/store/file_store.h/cpp`: ListAllUploadSessions 接口
+- `backend/filesvr/cmd/main.cpp`: 启动和停止清理线程
 
 **配置项**:
 ```conf
@@ -300,6 +303,13 @@ message KickMemberRequest {
 upload_session_expire_seconds=86400  # 24 小时
 cleanup_interval_seconds=3600        # 每小时清理
 ```
+
+**核心功能**:
+- `FileServiceCore::StartCleanupThread()`: 启动后台清理线程
+- `FileServiceCore::CleanupExpiredSessions()`: 清理过期会话
+- `FileStore::ListAllUploadSessions()`: 遍历所有上传会话
+- 自动删除临时文件和会话记录
+- 详细的日志记录和错误统计
 
 ---
 

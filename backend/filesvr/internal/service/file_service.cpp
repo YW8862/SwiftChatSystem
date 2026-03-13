@@ -5,6 +5,7 @@
 
 #include "file_service.h"
 #include "swift/error_code.h"
+#include <swift/log_helper.h>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -12,6 +13,8 @@
 #include <fstream>
 #include <random>
 #include <sstream>
+#include <thread>
+#include <optional>
 
 namespace fs = std::filesystem;
 
@@ -22,6 +25,30 @@ FileServiceCore::FileServiceCore(std::shared_ptr<FileStore> store,
     : store_(std::move(store)), config_(config) {}
 
 FileServiceCore::~FileServiceCore() = default;
+
+void FileServiceCore::StartCleanupThread() {
+    cleanup_running_ = true;
+    cleanup_thread_ = std::thread([this]() {
+        LogInfo("Cleanup thread started, interval: " << config_.cleanup_interval_seconds << "s");
+        while (cleanup_running_) {
+            // 等待清理间隔时间，但每秒检查一次是否应该停止
+            for (int i = 0; i < config_.cleanup_interval_seconds && cleanup_running_; ++i) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+            if (!cleanup_running_) break;
+            
+            CleanupExpiredSessions();
+        }
+        LogInfo("Cleanup thread stopped");
+    });
+}
+
+void FileServiceCore::StopCleanupThread() {
+    cleanup_running_ = false;
+    if (cleanup_thread_.joinable()) {
+        cleanup_thread_.join();
+    }
+}
 
 namespace {
 
@@ -444,6 +471,58 @@ std::optional<std::string> FileServiceCore::CheckMd5(const std::string &md5) {
   if (!meta)
     return std::nullopt;
   return meta->file_id;
+}
+
+// -----------------------------------------------------------------------------
+// CleanupExpiredSessions
+// -----------------------------------------------------------------------------
+void FileServiceCore::CleanupExpiredSessions() {
+  LogInfo("Starting cleanup of expired upload sessions...");
+  
+  int64_t now = NowSeconds();
+  int cleaned_count = 0;
+  int failed_count = 0;
+  
+  // 获取所有上传会话
+  auto sessions = store_->ListAllUploadSessions();
+  
+  for (const auto& session : sessions) {
+    // 检查是否过期
+    if (session.expire_at > now) {
+      continue;  // 未过期，跳过
+    }
+    
+    // 删除临时文件
+    std::error_code ec;
+    if (fs::exists(session.temp_path, ec)) {
+      fs::remove(session.temp_path, ec);
+      if (ec) {
+        LogWarning("Failed to delete temp file " << session.temp_path << ": " << ec.message());
+        failed_count++;
+        continue;
+      }
+    }
+    
+    // 删除会话记录
+    if (!store_->DeleteUploadSession(session.upload_id)) {
+      LogWarning("Failed to delete upload session " << session.upload_id);
+      failed_count++;
+      continue;
+    }
+    
+    // TODO: 如果有 msg_id，通知 ChatSvr 标记消息为失败
+    // if (!session.msg_id.empty()) {
+    //     NotifyChatSvrMessageFailed(session.msg_id);
+    // }
+    
+    cleaned_count++;
+    LogDebug("Cleaned up expired session: " << session.upload_id 
+             << ", user: " << session.user_id 
+             << ", file: " << session.file_name);
+  }
+  
+  LogInfo("Cleanup finished: " << cleaned_count << " sessions cleaned, " 
+          << failed_count << " failures");
 }
 
 // -----------------------------------------------------------------------------

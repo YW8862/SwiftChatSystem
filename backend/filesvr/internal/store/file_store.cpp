@@ -8,6 +8,7 @@
  */
 
 #include "file_store.h"
+#include "swift/log_helper.h"
 #include <nlohmann/json.hpp>
 #include <rocksdb/db.h>
 #include <rocksdb/write_batch.h>
@@ -224,6 +225,28 @@ bool RocksDBFileStore::DeleteUploadSession(const std::string& upload_id) {
   rocksdb::WriteOptions write_opts;
   write_opts.sync = true;
   return impl_->db->Delete(write_opts, KEY_PREFIX_UPLOAD + upload_id).ok();
+}
+
+std::vector<UploadSessionData> RocksDBFileStore::ListAllUploadSessions() {
+  std::vector<UploadSessionData> sessions;
+  if (!impl_->db)
+    return sessions;
+  
+  rocksdb::Iterator* it = impl_->db->NewIterator(rocksdb::ReadOptions());
+  std::string prefix = KEY_PREFIX_UPLOAD;
+  
+  for (it->Seek(prefix); it->Valid() && it->key().starts_with(prefix); it->Next()) {
+    try {
+      UploadSessionData session = DeserializeSession(it->value().ToString());
+      sessions.push_back(session);
+    } catch (const std::exception& e) {
+      // 忽略解析错误的会话
+      LogWarning("Failed to deserialize session: " << std::string(e.what()));
+    }
+  }
+  
+  delete it;
+  return sessions;
 }
 
 }  // namespace swift::file

@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <thread>
 #include "../config/config.h"
 #include "../store/file_store.h"
 #include "swift/error_code.h"
@@ -193,15 +194,30 @@ public:
     UploadTokenResult GetUploadToken(const std::string& user_id, const std::string& file_name,
                                      int64_t file_size);
 
+    /**
+     * 启动清理线程（定时清理过期的上传会话）
+     */
+    void StartCleanupThread();
+
+    /**
+     * 停止清理线程
+     */
+    void StopCleanupThread();
+
 private:
     std::string GenerateFileId(); // 生成文件 ID
     std::string BuildStoragePath(const std::string& file_id); // 构建存储路径
     std::string BuildFileUrl(const std::string& file_id); // 构建文件 URL
     std::string GetTempPath(const std::string& upload_id); // 获取临时路径
     int64_t NowSeconds() const; // 获取当前时间戳
+    void CleanupExpiredSessions(); // 清理过期会话
 
     std::shared_ptr<FileStore> store_;
     FileConfig config_;
+    
+    // 清理线程
+    bool cleanup_running_ = false;
+    std::thread cleanup_thread_;
 };
 
 }  // namespace swift::file
