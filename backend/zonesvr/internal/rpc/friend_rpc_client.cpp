@@ -204,5 +204,114 @@ bool FriendRpcClient::GetBlockList(const std::string& user_id,
     return true;
 }
 
+bool FriendRpcClient::CreateFriendGroup(const std::string& user_id, const std::string& group_name,
+                                        std::string* out_group_id, std::string* out_error,
+                                        const std::string& token) {
+    if (!stub_) return false;
+    swift::relation::CreateFriendGroupRequest req;
+    req.set_user_id(user_id);
+    req.set_group_name(group_name);
+    swift::common::CommonResponse resp;
+    auto ctx = CreateContext(5000, token);
+    grpc::Status status = stub_->CreateFriendGroup(ctx.get(), req, &resp);
+    if (!status.ok()) {
+        if (out_error) *out_error = status.error_message();
+        return false;
+    }
+    if (resp.code() != 0 && out_error)
+        *out_error = resp.message().empty() ? "create friend group failed" : resp.message();
+    if (resp.code() != 0) return false;
+    // 注：CreateFriendGroupResponse 没有返回 group_id，需要的话可以补充
+    return true;
+}
+
+bool FriendRpcClient::GetFriendGroups(const std::string& user_id,
+                                      std::vector<FriendGroupResult>* out_groups,
+                                      std::string* out_error, const std::string& token) {
+    if (!stub_) return false;
+    swift::relation::GetFriendGroupsRequest req;
+    req.set_user_id(user_id);
+    swift::relation::FriendGroupListResponse resp;
+    auto ctx = CreateContext(5000, token);
+    grpc::Status status = stub_->GetFriendGroups(ctx.get(), req, &resp);
+    if (!status.ok()) {
+        if (out_error) *out_error = status.error_message();
+        return false;
+    }
+    if (resp.code() != 0 && out_error)
+        *out_error = resp.message().empty() ? "get friend groups failed" : resp.message();
+    if (resp.code() != 0) return false;
+    if (out_groups) {
+        out_groups->clear();
+        for (const auto& g : resp.groups()) {
+            FriendGroupResult r;
+            r.group_id = g.group_id();
+            r.group_name = g.group_name();
+            r.friend_count = g.friend_count();
+            r.sort_order = g.sort_order();
+            out_groups->push_back(r);
+        }
+    }
+    return true;
+}
+
+bool FriendRpcClient::MoveFriendToGroup(const std::string& user_id, const std::string& friend_id,
+                                        const std::string& group_id, std::string* out_error,
+                                        const std::string& token) {
+    if (!stub_) return false;
+    swift::relation::MoveFriendRequest req;
+    req.set_user_id(user_id);
+    req.set_friend_id(friend_id);
+    req.set_to_group_id(group_id);
+    swift::common::CommonResponse resp;
+    auto ctx = CreateContext(5000, token);
+    grpc::Status status = stub_->MoveFriend(ctx.get(), req, &resp);
+    if (!status.ok()) {
+        if (out_error) *out_error = status.error_message();
+        return false;
+    }
+    if (resp.code() != 0 && out_error)
+        *out_error = resp.message().empty() ? "move friend to group failed" : resp.message();
+    return resp.code() == 0;
+}
+
+bool FriendRpcClient::DeleteFriendGroup(const std::string& user_id, const std::string& group_id,
+                                        std::string* out_error, const std::string& token) {
+    if (!stub_) return false;
+    swift::relation::DeleteFriendGroupRequest req;
+    req.set_user_id(user_id);
+    req.set_group_id(group_id);
+    swift::common::CommonResponse resp;
+    auto ctx = CreateContext(5000, token);
+    grpc::Status status = stub_->DeleteFriendGroup(ctx.get(), req, &resp);
+    if (!status.ok()) {
+        if (out_error) *out_error = status.error_message();
+        return false;
+    }
+    if (resp.code() != 0 && out_error)
+        *out_error = resp.message().empty() ? "delete friend group failed" : resp.message();
+    return resp.code() == 0;
+}
+
+bool FriendRpcClient::SetRemark(const std::string& user_id, const std::string& friend_id,
+                                const std::string& remark, std::string* out_error,
+                                const std::string& token) {
+    if (!stub_) return false;
+    swift::relation::SetRemarkRequest req;
+    req.set_user_id(user_id);
+    req.set_friend_id(friend_id);
+    req.set_remark(remark);
+    swift::common::CommonResponse resp;
+    auto ctx = CreateContext(5000, token);
+    grpc::Status status = stub_->SetRemark(ctx.get(), req, &resp);
+    if (!status.ok()) {
+        if (out_error) *out_error = status.error_message();
+        return false;
+    }
+    if (resp.code() != 0 && out_error)
+        *out_error = resp.message().empty() ? "set remark failed" : resp.message();
+    return resp.code() == 0;
+}
+
 }  // namespace zone
 }  // namespace swift

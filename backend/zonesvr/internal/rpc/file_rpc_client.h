@@ -39,6 +39,18 @@ struct GetUploadTokenResult {
     std::string error;
 };
 
+struct FileInfoResult {
+    bool success = false;
+    std::string file_id;
+    std::string file_name;
+    int64_t file_size = 0;
+    std::string content_type;
+    std::string uploader_id;
+    int64_t uploaded_at = 0;
+    std::string md5;
+    std::string error;
+};
+
 /**
  * @class FileRpcClient
  * @brief FileSvr 的 gRPC 客户端封装
@@ -56,6 +68,7 @@ public:
     GetFileUrlResult GetFileUrl(const std::string& file_id, const std::string& user_id);
     GetUploadTokenResult GetUploadToken(const std::string& user_id, const std::string& file_name,
                                         int64_t file_size);
+    FileInfoResult GetFileInfo(const std::string& file_id);
     bool DeleteFile(const std::string& file_id, const std::string& user_id, std::string* out_error);
 
 private:

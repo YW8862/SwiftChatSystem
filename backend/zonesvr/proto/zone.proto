@@ -290,6 +290,82 @@ message FriendSearchResponsePayload {
     repeated FriendSearchUserPayload users = 1;
 }
 
+// 获取黑名单请求
+message FriendGetBlockListPayload {
+    string user_id = 1;
+}
+
+message FriendGetBlockListResponsePayload {
+    bool success = 1;
+    repeated string blocked_ids = 2;
+    string error = 3;
+}
+
+// 创建好友分组请求
+message FriendCreateGroupPayload {
+    string user_id = 1;
+    string group_name = 2;
+}
+
+message FriendCreateGroupResponsePayload {
+    bool success = 1;
+    string group_id = 2;
+    string error = 3;
+}
+
+// 获取好友分组列表请求
+message FriendGetGroupsPayload {
+    string user_id = 1;
+}
+
+message FriendGroupPayload {
+    string group_id = 1;
+    string group_name = 2;
+    int32 friend_count = 3;
+    int32 sort_order = 4;
+}
+
+message FriendGetGroupsResponsePayload {
+    bool success = 1;
+    repeated FriendGroupPayload groups = 2;
+    string error = 3;
+}
+
+// 移动好友到分组请求
+message FriendMoveToGroupPayload {
+    string user_id = 1;
+    string friend_id = 2;
+    string group_id = 3;
+}
+
+message FriendMoveToGroupResponsePayload {
+    bool success = 1;
+    string error = 2;
+}
+
+// 删除好友分组请求
+message FriendDeleteGroupPayload {
+    string user_id = 1;
+    string group_id = 2;
+}
+
+message FriendDeleteGroupResponsePayload {
+    bool success = 1;
+    string error = 2;
+}
+
+// 设置好友备注请求
+message FriendSetRemarkPayload {
+    string user_id = 1;
+    string friend_id = 2;
+    string remark = 3;
+}
+
+message FriendSetRemarkResponsePayload {
+    bool success = 1;
+    string error = 2;
+}
+
 // ---------- group.* ----------
 message GroupCreatePayload {
     string creator_id = 1;
@@ -417,6 +493,40 @@ message FileGetUploadTokenResponsePayload {
     string upload_url = 3;
     int64 expire_at = 4;
     string error = 5;
+}
+
+// 初始化上传请求
+message FileInitUploadPayload {
+    string user_id = 1;
+    string file_name = 2;
+    string content_type = 3;
+    int64 file_size = 4;
+    string md5 = 5;                // 可选，用于秒传
+    string msg_id = 6;             // 可选，关联的聊天文件消息 ID
+}
+
+message FileInitUploadResponsePayload {
+    bool success = 1;
+    string upload_id = 2;          // 上传会话 ID
+    int64 expire_at = 3;           // 会话过期时间
+    string error = 4;
+}
+
+// 获取文件信息请求
+message FileGetFileInfoPayload {
+    string file_id = 1;
+}
+
+message FileGetFileInfoResponsePayload {
+    bool success = 1;
+    string file_id = 2;
+    string file_name = 3;
+    int64 file_size = 4;
+    string content_type = 5;
+    string uploader_id = 6;
+    int64 uploaded_at = 7;
+    string md5 = 8;
+    string error = 9;
 }
 
 message FileGetFileUrlPayload {

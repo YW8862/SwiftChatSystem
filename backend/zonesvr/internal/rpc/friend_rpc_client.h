@@ -35,6 +35,13 @@ struct FriendRequestInfoResult {
     std::string from_avatar_url;
 };
 
+struct FriendGroupResult {
+    std::string group_id;
+    std::string group_name;
+    int32_t friend_count = 0;
+    int32_t sort_order = 0;
+};
+
 /**
  * @class FriendRpcClient
  * @brief FriendSvr 的 gRPC 客户端封装
@@ -67,6 +74,24 @@ public:
     /// 获取黑名单 ID 列表，用于 IsBlocked 等
     bool GetBlockList(const std::string& user_id, std::vector<std::string>* out_blocked_ids,
                       std::string* out_error, const std::string& token = "");
+    /// 创建好友分组
+    bool CreateFriendGroup(const std::string& user_id, const std::string& group_name,
+                           std::string* out_group_id, std::string* out_error,
+                           const std::string& token = "");
+    /// 获取好友分组列表
+    bool GetFriendGroups(const std::string& user_id, std::vector<FriendGroupResult>* out_groups,
+                         std::string* out_error, const std::string& token = "");
+    /// 移动好友到分组
+    bool MoveFriendToGroup(const std::string& user_id, const std::string& friend_id,
+                           const std::string& group_id, std::string* out_error,
+                           const std::string& token = "");
+    /// 删除好友分组
+    bool DeleteFriendGroup(const std::string& user_id, const std::string& group_id,
+                           std::string* out_error, const std::string& token = "");
+    /// 设置好友备注
+    bool SetRemark(const std::string& user_id, const std::string& friend_id,
+                   const std::string& remark, std::string* out_error,
+                   const std::string& token = "");
 
 private:
     std::unique_ptr<swift::relation::FriendService::Stub> stub_;

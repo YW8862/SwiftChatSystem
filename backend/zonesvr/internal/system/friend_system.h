@@ -77,6 +77,32 @@ public:
     /// 检查是否被拉黑
     bool IsBlocked(const std::string& user_id, const std::string& target_id);
 
+    /// 获取黑名单列表
+    bool GetBlockList(const std::string& user_id, std::vector<std::string>* out_blocked_ids,
+                      std::string* out_error, const std::string& token = "");
+
+    /// 创建好友分组
+    bool CreateFriendGroup(const std::string& user_id, const std::string& group_name,
+                           std::string* out_error, const std::string& token = "");
+
+    /// 获取好友分组列表
+    bool GetFriendGroups(const std::string& user_id, std::vector<FriendGroupResult>* out_groups,
+                         std::string* out_error, const std::string& token = "");
+
+    /// 移动好友到分组
+    bool MoveFriendToGroup(const std::string& user_id, const std::string& friend_id,
+                           const std::string& group_id, std::string* out_error,
+                           const std::string& token = "");
+
+    /// 删除好友分组
+    bool DeleteFriendGroup(const std::string& user_id, const std::string& group_id,
+                           std::string* out_error, const std::string& token = "");
+
+    /// 设置好友备注
+    bool SetRemark(const std::string& user_id, const std::string& friend_id,
+                   const std::string& remark, std::string* out_error,
+                   const std::string& token = "");
+
 private:
     std::unique_ptr<FriendRpcClient> rpc_client_;
 };

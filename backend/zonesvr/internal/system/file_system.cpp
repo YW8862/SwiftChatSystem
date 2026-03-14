@@ -28,6 +28,25 @@ void FileSystem::Shutdown() {
     }
 }
 
+FileSystem::InitUploadResult FileSystem::InitUpload(const std::string& user_id,
+                                                     const std::string& file_name,
+                                                     const std::string& content_type,
+                                                     int64_t file_size,
+                                                     const std::string& md5,
+                                                     const std::string& msg_id) {
+    FileSystem::InitUploadResult out;
+    if (!rpc_client_) return out;
+    auto r = rpc_client_->InitUpload(user_id, file_name, content_type, file_size, md5, msg_id);
+    if (!r.success) {
+        out.error = r.error;
+        return out;
+    }
+    out.success = true;
+    out.upload_id = r.upload_id;
+    out.expire_at = r.expire_at;
+    return out;
+}
+
 FileSystem::UploadToken FileSystem::GetUploadToken(const std::string& user_id,
                                                    const std::string& file_name,
                                                    int64_t file_size) {
@@ -52,6 +71,25 @@ FileSystem::FileUrl FileSystem::GetFileUrl(const std::string& file_id,
     out.file_size = r.file_size;
     out.content_type = r.content_type;
     out.expire_at = r.expire_at;
+    return out;
+}
+
+FileSystem::FileInfo FileSystem::GetFileInfo(const std::string& file_id) {
+    FileSystem::FileInfo out;
+    if (!rpc_client_) return out;
+    auto r = rpc_client_->GetFileInfo(file_id);
+    if (!r.success) {
+        out.error = r.error;
+        return out;
+    }
+    out.success = true;
+    out.file_id = r.file_id;
+    out.file_name = r.file_name;
+    out.file_size = r.file_size;
+    out.content_type = r.content_type;
+    out.uploader_id = r.uploader_id;
+    out.uploaded_at = r.uploaded_at;
+    out.md5 = r.md5;
     return out;
 }
 

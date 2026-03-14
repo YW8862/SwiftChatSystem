@@ -109,5 +109,64 @@ bool FriendSystem::IsBlocked(const std::string& user_id, const std::string& targ
     return false;
 }
 
+bool FriendSystem::GetBlockList(const std::string& user_id,
+                                 std::vector<std::string>* out_blocked_ids,
+                                 std::string* out_error, const std::string& token) {
+    if (!rpc_client_) {
+        if (out_error) *out_error = "FriendSystem not available";
+        return false;
+    }
+    return rpc_client_->GetBlockList(user_id, out_blocked_ids, out_error, token);
+}
+
+bool FriendSystem::CreateFriendGroup(const std::string& user_id, const std::string& group_name,
+                                     std::string* out_error, const std::string& token) {
+    if (!rpc_client_) {
+        if (out_error) *out_error = "FriendSystem not available";
+        return false;
+    }
+    std::string group_id;  // 暂时不使用返回值
+    return rpc_client_->CreateFriendGroup(user_id, group_name, &group_id, out_error, token);
+}
+
+bool FriendSystem::GetFriendGroups(const std::string& user_id,
+                                   std::vector<FriendGroupResult>* out_groups,
+                                   std::string* out_error, const std::string& token) {
+    if (!rpc_client_) {
+        if (out_error) *out_error = "FriendSystem not available";
+        return false;
+    }
+    return rpc_client_->GetFriendGroups(user_id, out_groups, out_error, token);
+}
+
+bool FriendSystem::MoveFriendToGroup(const std::string& user_id, const std::string& friend_id,
+                                     const std::string& group_id, std::string* out_error,
+                                     const std::string& token) {
+    if (!rpc_client_) {
+        if (out_error) *out_error = "FriendSystem not available";
+        return false;
+    }
+    return rpc_client_->MoveFriendToGroup(user_id, friend_id, group_id, out_error, token);
+}
+
+bool FriendSystem::DeleteFriendGroup(const std::string& user_id, const std::string& group_id,
+                                     std::string* out_error, const std::string& token) {
+    if (!rpc_client_) {
+        if (out_error) *out_error = "FriendSystem not available";
+        return false;
+    }
+    return rpc_client_->DeleteFriendGroup(user_id, group_id, out_error, token);
+}
+
+bool FriendSystem::SetRemark(const std::string& user_id, const std::string& friend_id,
+                             const std::string& remark, std::string* out_error,
+                             const std::string& token) {
+    if (!rpc_client_) {
+        if (out_error) *out_error = "FriendSystem not available";
+        return false;
+    }
+    return rpc_client_->SetRemark(user_id, friend_id, remark, out_error, token);
+}
+
 }  // namespace zone
 }  // namespace swift

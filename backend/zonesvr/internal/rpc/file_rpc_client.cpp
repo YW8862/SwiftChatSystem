@@ -112,5 +112,32 @@ bool FileRpcClient::DeleteFile(const std::string& file_id, const std::string& us
     return resp.code() == 0;
 }
 
+FileInfoResult FileRpcClient::GetFileInfo(const std::string& file_id) {
+    FileInfoResult result;
+    if (!stub_) return result;
+    swift::file::GetFileInfoRequest req;
+    req.set_file_id(file_id);
+    swift::file::FileInfoResponse resp;
+    auto ctx = CreateContext(5000);
+    grpc::Status status = stub_->GetFileInfo(ctx.get(), req, &resp);
+    if (!status.ok()) {
+        result.error = status.error_message();
+        return result;
+    }
+    if (resp.code() != 0) {
+        result.error = resp.message().empty() ? "get file info failed" : resp.message();
+        return result;
+    }
+    result.success = true;
+    result.file_id = resp.file_info().file_id();
+    result.file_name = resp.file_info().file_name();
+    result.file_size = resp.file_info().file_size();
+    result.content_type = resp.file_info().content_type();
+    result.uploader_id = resp.file_info().uploader_id();
+    result.uploaded_at = resp.file_info().uploaded_at();
+    result.md5 = resp.file_info().md5();
+    return result;
+}
+
 }  // namespace zone
 }  // namespace swift

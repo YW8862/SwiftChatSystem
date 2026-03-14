@@ -40,6 +40,20 @@ public:
 
     // ============ 业务接口 ============
 
+    /// 初始化上传会话
+    struct InitUploadResult {
+        bool success = false;
+        std::string upload_id;
+        int64_t expire_at = 0;
+        std::string error;
+    };
+    InitUploadResult InitUpload(const std::string& user_id,
+                                const std::string& file_name,
+                                const std::string& content_type,
+                                int64_t file_size,
+                                const std::string& md5,
+                                const std::string& msg_id);
+
     /// 获取上传凭证
     /// @return 上传Token和URL
     struct UploadToken {
@@ -51,7 +65,7 @@ public:
                                const std::string& file_name,
                                int64_t file_size);
 
-    /// 获取文件下载URL
+    /// 获取文件下载 URL
     struct FileUrl {
         std::string url;
         std::string file_name;
@@ -60,10 +74,21 @@ public:
         int64_t expire_at;
     };
     FileUrl GetFileUrl(const std::string& file_id, const std::string& user_id);
-
+    
     /// 获取文件信息
-    // FileInfo GetFileInfo(const std::string& file_id);
-
+    struct FileInfo {
+        bool success = false;
+        std::string file_id;
+        std::string file_name;
+        int64_t file_size;
+        std::string content_type;
+        std::string uploader_id;
+        int64_t uploaded_at;
+        std::string md5;
+        std::string error;
+    };
+    FileInfo GetFileInfo(const std::string& file_id);
+    
     /// 删除文件
     bool DeleteFile(const std::string& file_id, const std::string& user_id);
 

@@ -560,38 +560,43 @@ python tests/integration/test_chat_flow.py
 **现状**: `zone_service.cpp` 中存在多个 `return NotImplemented(cmd, request_id)` 调用
 
 **待完成**:
-- [ ] **auth.* 命令完整性检查**
+- [x] **auth.* 命令完整性检查** ✅
   - 当前已实现：`auth.register`, `auth.login`, `auth.logout`, `auth.validate_token`
-  - 需确认是否有遗漏的 auth 相关命令
+  - 状态：已全部实现，无遗漏
 
-- [ ] **chat.* 命令完整性检查**
-  - 当前已实现：`chat.send_message`, `chat.mark_read`, `chat.pull_offline`
-  - 待确认：`chat.get_history`, `chat.recalled`, `chat.search` 等是否需补充
+- [x] **chat.* 命令完整性检查** ✅
+  - 当前已实现：`chat.send_message`, `chat.mark_read`, `chat.pull_offline`, `chat.recall_message`, `chat.get_history`, `chat.sync_conversations`, `chat.delete_conversation`
+  - 状态：核心命令已全部实现
 
-- [ ] **friend.* 命令路由**
-  - HandleFriend 方法中需确认所有 friend 命令是否完整支持
-  - 包括：`friend.add`, `friend.accept`, `friend.remove`, `friend.list` 等
+- [x] **friend.* 命令路由** ✅
+  - 已实现：`friend.add`, `friend.handle_request`, `friend.remove`, `friend.block`, `friend.unblock`, `friend.get_friends`, `friend.get_requests`, `friend.search`
+  - 新增实现：`friend.get_block_list`, `friend.create_group`, `friend.get_groups`, `friend.move_to_group`, `friend.delete_group`, `friend.set_remark`
+  - 状态：全部实现
 
-- [ ] **group.* 命令路由**
-  - HandleGroup 方法中需确认所有 group 命令是否完整支持
-  - 包括：`group.create`, `group.invite`, `group.kick`, `group.quit` 等
+- [x] **group.* 命令路由** ✅
+  - 已实现：`group.create`, `group.dismiss`, `group.invite_members`, `group.remove_member`, `group.leave`, `group.get_info`, `group.get_members`, `group.get_user_groups`
+  - 状态：全部实现
 
-- [ ] **file.* 命令路由**
-  - HandleFile 方法中需确认所有 file 命令是否完整支持
-  - 包括：`file.init_upload`, `file.upload_file`, `file.download`, `file.get_metadata`
+- [x] **file.* 命令路由** ✅
+  - 已实现：`file.get_upload_token`, `file.get_file_url`, `file.delete`
+  - 新增实现：`file.init_upload`, `file.get_file_info`
+  - 注：`file.upload_file` 为流式上传，通过 HTTP/gRPC 流直接处理，不在 HandleClientRequest 中处理
+  - 状态：全部实现
+
+**完成情况**:
+- ✅ 所有核心命令已在 `zone_service.cpp` 中实现
+- ✅ 新增 Proto 定义：`FileInitUploadPayload`, `FileGetFileInfoPayload`, `FriendGetBlockListPayload`, `FriendCreateGroupPayload`, `FriendGetGroupsPayload`, `FriendMoveToGroupPayload`, `FriendDeleteGroupPayload`, `FriendSetRemarkPayload` 等
+- ✅ 新增 RPC 客户端方法：`FileRpcClient::GetFileInfo`, `FriendRpcClient::CreateFriendGroup`, `FriendRpcClient::GetFriendGroups`, `FriendRpcClient::MoveFriendToGroup`, `FriendRpcClient::DeleteFriendGroup`, `FriendRpcClient::SetRemark`
+- ✅ 新增 System 层接口：`FileSystem::InitUpload`, `FileSystem::GetFileInfo`, `FriendSystem::GetBlockList`, `FriendSystem::CreateFriendGroup`, `FriendSystem::GetFriendGroups`, `FriendSystem::MoveFriendToGroup`, `FriendSystem::DeleteFriendGroup`, `FriendSystem::SetRemark`
+- ✅ 编译测试通过
 
 **实现位置**:
-- `backend/zonesvr/internal/service/zone_service.cpp` 第 280-500 行
-- 各 Handler 方法（HandleAuth, HandleChat, HandleFriend, HandleGroup, HandleFile）
-
-**建议**:
-```cpp
-// 在每个 Handler 方法的末尾，添加更详细的日志
-LogWarning(TAG("service", "zonesvr"), 
-           "Unsupported cmd in HandleXxx: cmd=" << cmd 
-           << ", user_id=" << user_id 
-           << ", request_id=" << request_id);
-```
+- `backend/zonesvr/internal/service/zone_service.cpp` - HandleFile, HandleFriend 方法
+- `backend/zonesvr/internal/system/file_system.h/.cpp` - InitUpload, GetFileInfo
+- `backend/zonesvr/internal/system/friend_system.h/.cpp` - 新增好友分组和黑名单管理方法
+- `backend/zonesvr/internal/rpc/file_rpc_client.h/.cpp` - GetFileInfo
+- `backend/zonesvr/internal/rpc/friend_rpc_client.h/.cpp` - 好友分组相关方法
+- `backend/zonesvr/proto/zone.proto` - 新增消息定义
 
 ---
 
@@ -717,15 +722,10 @@ CMD ["./authsvr"]
 
 ### 20. 配置管理优化
 
-**现状**: 仅 `deploy/docker/Dockerfile` 一个通用 Dockerfile，各服务无独立 Dockerfile
+**现状**: ✅ 已完成 - 每个服务都有独立的 Dockerfile，支持灵活构建
 
-**影响**:
-- 无法单独构建某个服务的镜像
-- 无法使用多阶段构建优化镜像大小
-- 生产环境部署不便
-
-**待完成**:
-- [ ] **为每个服务创建 Dockerfile**
+**已实现功能**:
+- ✅ **为每个服务创建独立 Dockerfile**
   - `backend/authsvr/Dockerfile`
   - `backend/onlinesvr/Dockerfile`
   - `backend/friendsvr/Dockerfile`
@@ -734,29 +734,107 @@ CMD ["./authsvr"]
   - `backend/zonesvr/Dockerfile`
   - `backend/gatesvr/Dockerfile`
 
-- [ ] **统一使用多阶段构建**
-```dockerfile
-# 编译阶段
-FROM ubuntu:22.04 AS builder
-RUN apt-get update && apt-get install -y \
-    build-essential cmake libssl-dev \
-    protobuf-compiler-grpc libgrpc++-dev \
-    libboost-all-dev librocksdb-dev
-COPY . /src
-WORKDIR /src/build
-cmake .. && make -j4
+- ✅ **统一使用多阶段构建**
+  - 编译阶段：安装全部开发依赖，编译源代码
+  - 运行阶段：仅包含运行时依赖，镜像体积更小
+  - 所有服务均采用相同的构建流程，便于维护
 
-# 运行阶段
-FROM ubuntu:22.04
-RUN apt-get update && apt-get install -y \
-    libssl-dev libprotobuf-dev \
+- ✅ **Makefile 支持灵活的构建命令**
+```bash
+# 构建所有后端服务镜像
+make docker/all
+make build/all          # 同 docker/all
+
+# 构建单个服务镜像
+make authsvr            # 构建 swift/authsvr:latest
+make onlinesvr          # 构建 swift/onlinesvr:latest
+make friendsvr          # 构建 swift/friendsvr:latest
+make chatsvr            # 构建 swift/chatsvr:latest
+make filesvr            # 构建 swift/filesvr:latest
+make zonesvr            # 构建 swift/zonesvr:latest
+make gatesvr            # 构建 swift/gatesvr:latest
+
+# 客户端构建
+make client             # 构建 Linux 客户端
+make client-windows     # 构建 Windows 客户端（交叉编译）
+make docker/client      # 构建客户端 Docker 镜像
+
+# 清理
+make clean              # 清理构建产物
+docker-clean            # 删除所有 SwiftChat 相关镜像
+```
+
+- ✅ **保留原有统一 Dockerfile**
+  - `deploy/docker/Dockerfile` 仍然可用
+  - 通过 `--build-arg BUILD_TARGET=xxx` 参数选择构建的服务
+  - 适合快速测试或一次性构建多个服务
+
+**Dockerfile 示例结构** (以 authsvr 为例):
+```dockerfile
+# AuthSvr 服务 Docker 镜像构建
+# 使用多阶段构建优化镜像大小
+# 从仓库根目录构建：docker build -f backend/authsvr/Dockerfile -t swift/authsvr:latest .
+
+ARG BASE_IMAGE=docker.1ms.run/library/ubuntu:22.04
+
+# ========== 编译阶段 ==========
+FROM ${BASE_IMAGE} AS builder
+
+# 安装构建工具和依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake ninja-build git ... \
+    libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
+    librocksdb-dev ... \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /src/build/backend/authsvr/authsvr /app/authsvr
-COPY config/authsvr.conf.example /app/config/authsvr.conf
+
+# jwt-cpp（头文件库）
+RUN git clone --depth 1 https://gitee.com/mirrors/jwt-cpp.git /opt/jwt-cpp || \
+    git clone --depth 1 https://ghproxy.com/https://github.com/Thalhammer/jwt-cpp.git /opt/jwt-cpp
+
 WORKDIR /app
+COPY . .
+
+# 编译 authsvr
+RUN mkdir -p build && cd build \
+    && cmake .. -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_CXX_FLAGS="-I/opt/jwt-cpp/include" \
+        -DBUILD_AUTHSVR_TESTS=OFF ... \
+    && make authsvr -j$(nproc) \
+    && cp /app/build/backend/authsvr/authsvr /app/outbin
+
+# ========== 运行阶段 ==========
+FROM ${BASE_IMAGE}
+
+# 运行时依赖（精简）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates libstdc++6 curl iproute2 procps netcat-openbsd \
+    libgrpc++-dev libprotobuf-dev librocksdb-dev ... \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=builder /app/outbin ./authsvr
+COPY config/authsvr.conf.example ./config/authsvr.conf
+
+RUN mkdir -p /data/logs /data/data && chmod +x /app/authsvr
 EXPOSE 9094
 CMD ["./authsvr"]
 ```
+
+**优势对比**:
+| 特性 | 旧方案 (单一 Dockerfile) | 新方案 (独立 Dockerfile) |
+|------|------------------------|------------------------|
+| 单独构建 | ❌ 不支持 | ✅ 支持 (`make authsvr`) |
+| 并行构建 | ❌ 不支持 | ✅ 支持 (`make docker/all`) |
+| 镜像优化 | ⚠️ 一般 | ✅ 多阶段构建，体积更小 |
+| 可维护性 | ⚠️ 集中修改，易冲突 | ✅ 各自独立，互不影响 |
+| 灵活性 | ⚠️ 低 | ✅ 高 (可为不同服务定制) |
+| 向后兼容 | - | ✅ 保留原统一 Dockerfile |
+
+**使用场景**:
+1. **开发环境**: `make authsvr` 快速构建单个服务镜像
+2. **CI/CD**: `make docker/all` 并行构建所有服务镜像
+3. **生产部署**: 每个服务独立版本控制，按需更新
+4. **调试排障**: 镜像内置调试工具 (curl/ss/ps/nc)
 
 ---
 

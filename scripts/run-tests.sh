@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 单测入口：配置加载、AuthSvr、ZoneSvr、GateSvr。由 Makefile 的 make test 调用。
+# 单测入口：配置加载、AuthSvr、OnlineSvr、FriendSvr、ChatSvr、FileSvr、ZoneSvr、GateSvr。由 Makefile 的 make test 调用。
 set -e
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -76,6 +76,61 @@ run_test_authsvr() {
   echo "==> AuthSvr gRPC checks passed."
 }
 
+# ---------- 3. OnlineSvr 测试 ----------
+run_test_onlinesvr() {
+  echo "===== test: OnlineSvr ====="
+  local ONLINESVR_BIN="${BIN_DIR:-build/backend/onlinesvr}/onlinesvr"
+  local PORT="${ONLINESVR_PORT:-9095}"
+  local DATA_DIR="${TMPDIR:-/tmp}/onlinesvr_test_$$"
+  local GRPCURL_OPTS=(-plaintext -import-path backend/common/proto -import-path backend/onlinesvr/proto -proto backend/onlinesvr/proto/online.proto)
+  local SVC="swift.online.OnlineService"
+
+  if [[ ! -x "$ONLINESVR_BIN" ]]; then
+    echo "==> $ONLINESVR_BIN not found, building..."
+    (cd build 2>/dev/null && cmake .. -DCMAKE_BUILD_TYPE=Debug && make onlinesvr) || \
+    (mkdir -p build && (cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make onlinesvr))
+  fi
+  [[ -x "$ONLINESVR_BIN" ]] || { echo "Error: onlinesvr not found at $ONLINESVR_BIN" >&2; return 1; }
+
+  mkdir -p "$DATA_DIR"
+  export ONLINESVR_PORT="$PORT" ONLINESVR_ROCKSDB_PATH="$DATA_DIR"
+  "$ONLINESVR_BIN" &
+  local ONLINE_PID=$!
+  cleanup() { kill -TERM "$ONLINE_PID" 2>/dev/null || true; wait "$ONLINE_PID" 2>/dev/null || true; rm -rf "$DATA_DIR"; }
+  trap cleanup EXIT
+  sleep 2
+  kill -0 "$ONLINE_PID" 2>/dev/null || { echo "Error: OnlineSvr exited early" >&2; return 1; }
+
+  if ! command -v grpcurl >/dev/null 2>&1; then
+    echo "grpcurl not installed; OnlineSvr is running."; wait "$ONLINE_PID"; return 0
+  fi
+
+  local LOGIN LOGOUT TOKEN VALIDATE CODE
+  # 测试登录
+  LOGIN=$(grpcurl "${GRPCURL_OPTS[@]}" -d '{"user_id":"u_test","device_id":"d1","device_type":"web"}' "localhost:$PORT" "$SVC/Login")
+  echo "Login: $LOGIN"
+  CODE=$(echo "$LOGIN" | grep -oE '"code":[0-9]+' | head -1 | cut -d: -f2)
+  [[ -z "$CODE" || "$CODE" == "0" ]] || { echo "Login failed (code=$CODE)" >&2; return 1; }
+  TOKEN=$(echo "$LOGIN" | grep -oE '"token":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+  # 测试验证 token
+  if [[ -n "$TOKEN" ]]; then
+    VALIDATE=$(grpcurl "${GRPCURL_OPTS[@]}" -d "{\"token\":\"$TOKEN\"}" "localhost:$PORT" "$SVC/ValidateToken")
+    CODE=$(echo "$VALIDATE" | grep -oE '"code":[0-9]+' | head -1 | cut -d: -f2)
+    [[ -z "$CODE" || "$CODE" == "0" ]] || { echo "ValidateToken failed (code=$CODE)" >&2; return 1; }
+    echo "$VALIDATE" | grep -qE '"valid"\s*:\s*true' || { echo "ValidateToken: token should be valid" >&2; return 1; }
+  fi
+
+  # 测试登出
+  if [[ -n "$TOKEN" ]]; then
+    LOGOUT=$(grpcurl "${GRPCURL_OPTS[@]}" -d "{\"user_id\":\"u_test\",\"token\":\"$TOKEN\"}" "localhost:$PORT" "$SVC/Logout")
+    CODE=$(echo "$LOGOUT" | grep -oE '"code":[0-9]+' | head -1 | cut -d: -f2)
+    [[ -z "$CODE" || "$CODE" == "0" ]] || { echo "Logout failed (code=$CODE)" >&2; return 1; }
+  fi
+
+  echo "==> OnlineSvr gRPC checks passed."
+}
+
 # ---------- 3. ZoneSvr 测试 ----------
 run_test_zonesvr() {
   echo "===== test: ZoneSvr ====="
@@ -134,7 +189,154 @@ EOF
   echo "==> ZoneSvr gRPC checks passed."
 }
 
-# ---------- 4. GateSvr 测试 ----------
+# ---------- 4. FriendSvr 测试 ----------
+run_test_friendsvr() {
+  echo "===== test: FriendSvr ====="
+  local FRIENDSVR_BIN="${BIN_DIR:-build/backend/friendsvr}/friendsvr"
+  local PORT="${FRIENDSVR_PORT:-9096}"
+  local DATA_DIR="${TMPDIR:-/tmp}/friendsvr_test_$$"
+  local GRPCURL_OPTS=(-plaintext -import-path backend/common/proto -import-path backend/authsvr/proto -import-path backend/friendsvr/proto -proto backend/friendsvr/proto/friend.proto)
+  local SVC="swift.relation.FriendService"
+
+  if [[ ! -x "$FRIENDSVR_BIN" ]]; then
+    echo "==> $FRIENDSVR_BIN not found, building..."
+    (cd build 2>/dev/null && cmake .. -DCMAKE_BUILD_TYPE=Debug && make friendsvr) || \
+    (mkdir -p build && (cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make friendsvr))
+  fi
+  [[ -x "$FRIENDSVR_BIN" ]] || { echo "Error: friendsvr not found at $FRIENDSVR_BIN" >&2; return 1; }
+
+  mkdir -p "$DATA_DIR"
+  export FRIENDSVR_PORT="$PORT" FRIENDSVR_ROCKSDB_PATH="$DATA_DIR"
+  "$FRIENDSVR_BIN" &
+  local FRIEND_PID=$!
+  cleanup() { kill -TERM "$FRIEND_PID" 2>/dev/null || true; wait "$FRIEND_PID" 2>/dev/null || true; rm -rf "$DATA_DIR"; }
+  trap cleanup EXIT
+  sleep 2
+  kill -0 "$FRIEND_PID" 2>/dev/null || { echo "Error: FriendSvr exited early" >&2; return 1; }
+
+  if ! command -v grpcurl >/dev/null 2>&1; then
+    echo "grpcurl not installed; FriendSvr is running."; wait "$FRIEND_PID"; return 0
+  fi
+
+  local ADD HANDLE GET BLOCK CODE
+  # 测试添加好友
+  ADD=$(grpcurl "${GRPCURL_OPTS[@]}" -d '{"user_id":"u1","friend_id":"u2","remark":"test friend"}' "localhost:$PORT" "$SVC/AddFriend")
+  echo "AddFriend: $ADD"
+  CODE=$(echo "$ADD" | grep -oE '"code":[0-9]+' | head -1 | cut -d: -f2)
+  [[ -z "$CODE" || "$CODE" == "0" ]] || { echo "AddFriend failed (code=$CODE)" >&2; return 1; }
+
+  # 测试获取好友列表
+  GET=$(grpcurl "${GRPCURL_OPTS[@]}" -d '{"user_id":"u1"}' "localhost:$PORT" "$SVC/GetFriends")
+  echo "GetFriends: $GET"
+  CODE=$(echo "$GET" | grep -oE '"code":[0-9]+' | head -1 | cut -d: -f2)
+  [[ -z "$CODE" || "$CODE" == "0" ]] || { echo "GetFriends failed (code=$CODE)" >&2; return 1; }
+
+  # 测试拉黑用户
+  BLOCK=$(grpcurl "${GRPCURL_OPTS[@]}" -d '{"user_id":"u1","target_id":"u3"}' "localhost:$PORT" "$SVC/BlockUser")
+  CODE=$(echo "$BLOCK" | grep -oE '"code":[0-9]+' | head -1 | cut -d: -f2)
+  [[ -z "$CODE" || "$CODE" == "0" ]] || { echo "BlockUser failed (code=$CODE)" >&2; return 1; }
+
+  echo "==> FriendSvr gRPC checks passed."
+}
+
+# ---------- 5. ChatSvr 测试 ----------
+run_test_chatsvr() {
+  echo "===== test: ChatSvr ====="
+  local CHATSVR_BIN="${BIN_DIR:-build/backend/chatsvr}/chatsvr"
+  local PORT="${CHATSVR_PORT:-9097}"
+  local DATA_DIR="${TMPDIR:-/tmp}/chatsvr_test_$$"
+  local GRPCURL_OPTS=(-plaintext -import-path backend/common/proto -import-path backend/authsvr/proto -import-path backend/chatsvr/proto -proto backend/chatsvr/proto/chat.proto)
+  local SVC="swift.chat.ChatService"
+
+  if [[ ! -x "$CHATSVR_BIN" ]]; then
+    echo "==> $CHATSVR_BIN not found, building..."
+    (cd build 2>/dev/null && cmake .. -DCMAKE_BUILD_TYPE=Debug && make chatsvr) || \
+    (mkdir -p build && (cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make chatsvr))
+  fi
+  [[ -x "$CHATSVR_BIN" ]] || { echo "Error: chatsvr not found at $CHATSVR_BIN" >&2; return 1; }
+
+  mkdir -p "$DATA_DIR"
+  export CHATSVR_PORT="$PORT" CHATSVR_ROCKSDB_PATH="$DATA_DIR"
+  "$CHATSVR_BIN" &
+  local CHAT_PID=$!
+  cleanup() { kill -TERM "$CHAT_PID" 2>/dev/null || true; wait "$CHAT_PID" 2>/dev/null || true; rm -rf "$DATA_DIR"; }
+  trap cleanup EXIT
+  sleep 2
+  kill -0 "$CHAT_PID" 2>/dev/null || { echo "Error: ChatSvr exited early" >&2; return 1; }
+
+  if ! command -v grpcurl >/dev/null 2>&1; then
+    echo "grpcurl not installed; ChatSvr is running."; wait "$CHAT_PID"; return 0
+  fi
+
+  local SEND PULL HISTORY MARK CODE
+  # 测试发送消息
+  SEND=$(grpcurl "${GRPCURL_OPTS[@]}" -d '{"from_user_id":"u1","to_id":"u2","chat_type":1,"content":"hello"}' "localhost:$PORT" "$SVC/SendMessage")
+  echo "SendMessage: $SEND"
+  CODE=$(echo "$SEND" | grep -oE '"code":[0-9]+' | head -1 | cut -d: -f2)
+  [[ -z "$CODE" || "$CODE" == "0" ]] || { echo "SendMessage failed (code=$CODE)" >&2; return 1; }
+
+  # 测试拉取离线消息
+  PULL=$(grpcurl "${GRPCURL_OPTS[@]}" -d '{"user_id":"u2","limit":10}' "localhost:$PORT" "$SVC/PullOffline")
+  echo "PullOffline: $PULL"
+  CODE=$(echo "$PULL" | grep -oE '"code":[0-9]+' | head -1 | cut -d: -f2)
+  [[ -z "$CODE" || "$CODE" == "0" ]] || { echo "PullOffline failed (code=$CODE)" >&2; return 1; }
+
+  # 测试获取历史消息
+  HISTORY=$(grpcurl "${GRPCURL_OPTS[@]}" -d '{"chat_id":"u2","chat_type":1,"user_id":"u1","limit":10}' "localhost:$PORT" "$SVC/GetHistory")
+  echo "GetHistory: $HISTORY"
+  CODE=$(echo "$HISTORY" | grep -oE '"code":[0-9]+' | head -1 | cut -d: -f2)
+  [[ -z "$CODE" || "$CODE" == "0" ]] || { echo "GetHistory failed (code=$CODE)" >&2; return 1; }
+
+  echo "==> ChatSvr gRPC checks passed."
+}
+
+# ---------- 6. FileSvr 测试 ----------
+run_test_filesvr() {
+  echo "===== test: FileSvr ====="
+  local FILESVR_BIN="${BIN_DIR:-build/backend/filesvr}/filesvr"
+  local PORT="${FILESVR_PORT:-9098}"
+  local DATA_DIR="${TMPDIR:-/tmp}/filesvr_test_$$"
+  local STORAGE_DIR="$DATA_DIR/storage"
+  local GRPCURL_OPTS=(-plaintext -import-path backend/common/proto -import-path backend/filesvr/proto -proto backend/filesvr/proto/file.proto)
+  local SVC="swift.file.FileService"
+
+  if [[ ! -x "$FILESVR_BIN" ]]; then
+    echo "==> $FILESVR_BIN not found, building..."
+    (cd build 2>/dev/null && cmake .. -DCMAKE_BUILD_TYPE=Debug && make filesvr) || \
+    (mkdir -p build && (cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make filesvr))
+  fi
+  [[ -x "$FILESVR_BIN" ]] || { echo "Error: filesvr not found at $FILESVR_BIN" >&2; return 1; }
+
+  mkdir -p "$DATA_DIR" "$STORAGE_DIR"
+  export FILESVR_PORT="$PORT" FILESVR_ROCKSDB_PATH="$DATA_DIR" FILESVR_STORAGE_PATH="$STORAGE_DIR"
+  "$FILESVR_BIN" &
+  local FILE_PID=$!
+  cleanup() { kill -TERM "$FILE_PID" 2>/dev/null || true; wait "$FILE_PID" 2>/dev/null || true; rm -rf "$DATA_DIR" "$STORAGE_DIR"; }
+  trap cleanup EXIT
+  sleep 2
+  kill -0 "$FILE_PID" 2>/dev/null || { echo "Error: FileSvr exited early" >&2; return 1; }
+
+  if ! command -v grpcurl >/dev/null 2>&1; then
+    echo "grpcurl not installed; FileSvr is running."; wait "$FILE_PID"; return 0
+  fi
+
+  local INIT UPLOAD TOKEN INFO CODE
+  # 测试初始化上传
+  INIT=$(grpcurl "${GRPCURL_OPTS[@]}" -d '{"user_id":"u1","file_name":"test.txt","content_type":"text/plain","file_size":1024}' "localhost:$PORT" "$SVC/InitUpload")
+  echo "InitUpload: $INIT"
+  CODE=$(echo "$INIT" | grep -oE '"code":[0-9]+' | head -1 | cut -d: -f2)
+  [[ -z "$CODE" || "$CODE" == "0" ]] || { echo "InitUpload failed (code=$CODE)" >&2; return 1; }
+
+  # 测试获取上传凭证
+  TOKEN=$(grpcurl "${GRPCURL_OPTS[@]}" -d '{"user_id":"u1","file_name":"test.txt","file_size":1024}' "localhost:$PORT" "$SVC/GetUploadToken")
+  echo "GetUploadToken: $TOKEN"
+  CODE=$(echo "$TOKEN" | grep -oE '"code":[0-9]+' | head -1 | cut -d: -f2)
+  [[ -z "$CODE" || "$CODE" == "0" ]] || { echo "GetUploadToken failed (code=$CODE)" >&2; return 1; }
+
+  echo "==> FileSvr gRPC checks passed."
+}
+
+# ---------- 7. GateSvr 测试 ----------
 run_test_gatesvr() {
   echo "===== test: GateSvr ====="
   local ZONESVR_BIN="${BIN_DIR:-build/backend/zonesvr}/zonesvr"
@@ -203,9 +405,13 @@ EOF
   echo "==> GateSvr gRPC checks passed."
 }
 
-# ---------- 执行全部 ----------
+# ---------- 执行全部测试 ----------
 run_test_config_load
 run_test_authsvr
+run_test_onlinesvr
+run_test_friendsvr
+run_test_chatsvr
+run_test_filesvr
 run_test_zonesvr
 run_test_gatesvr
 echo ""

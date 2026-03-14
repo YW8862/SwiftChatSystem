@@ -822,6 +822,165 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleFriend(
         result.code = swift::ErrorCodeToInt(swift::ErrorCode::OK);
         return result;
     }
+    if (cmd == "friend.get_block_list") {
+        FriendGetBlockListPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        if (user_id.empty()) {
+            SetResultError(result, swift::ErrorCode::SESSION_INVALID, request_id);
+            return result;
+        }
+        std::vector<std::string> blocked_ids;
+        std::string err;
+        bool ok = fr->GetBlockList(user_id, &blocked_ids, &err, token);
+        if (!ok) {
+            result.code = swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
+            result.message = err.empty() ? "get block list failed" : err;
+            return result;
+        }
+        FriendGetBlockListResponsePayload resp_pb;
+        resp_pb.set_success(true);
+        for (const auto& id : blocked_ids)
+            resp_pb.add_blocked_ids(id);
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        result.code = swift::ErrorCodeToInt(swift::ErrorCode::OK);
+        return result;
+    }
+    if (cmd == "friend.create_group") {
+        FriendCreateGroupPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        if (user_id.empty()) {
+            SetResultError(result, swift::ErrorCode::SESSION_INVALID, request_id);
+            return result;
+        }
+        std::string err;
+        bool ok = fr->CreateFriendGroup(user_id, req.group_name(), &err, token);
+        FriendCreateGroupResponsePayload resp_pb;
+        resp_pb.set_success(ok);
+        if (!ok) resp_pb.set_error(err.empty() ? "create group failed" : err);
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        result.code = ok ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
+                        : swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
+        if (!ok && !err.empty()) result.message = err;
+        return result;
+    }
+    if (cmd == "friend.get_groups") {
+        FriendGetGroupsPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        if (user_id.empty()) {
+            SetResultError(result, swift::ErrorCode::SESSION_INVALID, request_id);
+            return result;
+        }
+        std::vector<FriendGroupResult> groups;
+        std::string err;
+        bool ok = fr->GetFriendGroups(user_id, &groups, &err, token);
+        if (!ok) {
+            result.code = swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
+            result.message = err.empty() ? "get groups failed" : err;
+            return result;
+        }
+        FriendGetGroupsResponsePayload resp_pb;
+        resp_pb.set_success(true);
+        for (const auto& g : groups) {
+            auto* out = resp_pb.add_groups();
+            out->set_group_id(g.group_id);
+            out->set_group_name(g.group_name);
+            out->set_friend_count(g.friend_count);
+            out->set_sort_order(g.sort_order);
+        }
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        result.code = swift::ErrorCodeToInt(swift::ErrorCode::OK);
+        return result;
+    }
+    if (cmd == "friend.move_to_group") {
+        FriendMoveToGroupPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        if (user_id.empty()) {
+            SetResultError(result, swift::ErrorCode::SESSION_INVALID, request_id);
+            return result;
+        }
+        std::string err;
+        bool ok = fr->MoveFriendToGroup(user_id, req.friend_id(), req.group_id(), &err, token);
+        FriendMoveToGroupResponsePayload resp_pb;
+        resp_pb.set_success(ok);
+        if (!ok) resp_pb.set_error(err.empty() ? "move to group failed" : err);
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        result.code = ok ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
+                        : swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
+        if (!ok && !err.empty()) result.message = err;
+        return result;
+    }
+    if (cmd == "friend.delete_group") {
+        FriendDeleteGroupPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        if (user_id.empty()) {
+            SetResultError(result, swift::ErrorCode::SESSION_INVALID, request_id);
+            return result;
+        }
+        std::string err;
+        bool ok = fr->DeleteFriendGroup(user_id, req.group_id(), &err, token);
+        FriendDeleteGroupResponsePayload resp_pb;
+        resp_pb.set_success(ok);
+        if (!ok) resp_pb.set_error(err.empty() ? "delete group failed" : err);
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        result.code = ok ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
+                        : swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
+        if (!ok && !err.empty()) result.message = err;
+        return result;
+    }
+    if (cmd == "friend.set_remark") {
+        FriendSetRemarkPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        if (user_id.empty()) {
+            SetResultError(result, swift::ErrorCode::SESSION_INVALID, request_id);
+            return result;
+        }
+        std::string err;
+        bool ok = fr->SetRemark(user_id, req.friend_id(), req.remark(), &err, token);
+        FriendSetRemarkResponsePayload resp_pb;
+        resp_pb.set_success(ok);
+        if (!ok) resp_pb.set_error(err.empty() ? "set remark failed" : err);
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        result.code = ok ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
+                        : swift::ErrorCodeToInt(swift::ErrorCode::INTERNAL_ERROR);
+        if (!ok && !err.empty()) result.message = err;
+        return result;
+    }
     return NotImplemented(cmd, request_id);
 }
 
@@ -1040,6 +1199,54 @@ ZoneServiceImpl::HandleClientRequestResult ZoneServiceImpl::HandleFile(
         result.code = tok.token.empty() ? swift::ErrorCodeToInt(swift::ErrorCode::UPLOAD_FAILED)
                                         : swift::ErrorCodeToInt(swift::ErrorCode::OK);
         if (tok.token.empty()) result.message = swift::ErrorCodeToString(swift::ErrorCode::UPLOAD_FAILED);
+        return result;
+    }
+    if (cmd == "file.init_upload") {
+        FileInitUploadPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        auto r = file->InitUpload(req.user_id(), req.file_name(), req.content_type(),
+                                  req.file_size(), req.md5(), req.msg_id());
+        FileInitUploadResponsePayload resp_pb;
+        resp_pb.set_success(r.success);
+        resp_pb.set_upload_id(r.upload_id);
+        resp_pb.set_expire_at(r.expire_at);
+        resp_pb.set_error(r.error);
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        result.code = r.success ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
+                                : swift::ErrorCodeToInt(swift::ErrorCode::UPLOAD_FAILED);
+        if (!r.success && !r.error.empty()) result.message = r.error;
+        return result;
+    }
+    if (cmd == "file.get_file_info") {
+        FileGetFileInfoPayload req;
+        if (!req.ParseFromString(payload)) {
+            SetResultError(result, swift::ErrorCode::INVALID_PARAM, request_id);
+            return result;
+        }
+        auto r = file->GetFileInfo(req.file_id());
+        FileGetFileInfoResponsePayload resp_pb;
+        resp_pb.set_success(r.success);
+        resp_pb.set_file_id(r.file_id);
+        resp_pb.set_file_name(r.file_name);
+        resp_pb.set_file_size(r.file_size);
+        resp_pb.set_content_type(r.content_type);
+        resp_pb.set_uploader_id(r.uploader_id);
+        resp_pb.set_uploaded_at(r.uploaded_at);
+        resp_pb.set_md5(r.md5);
+        resp_pb.set_error(r.error);
+        if (!resp_pb.SerializeToString(&result.payload)) {
+            SetResultError(result, swift::ErrorCode::INTERNAL_ERROR, request_id);
+            return result;
+        }
+        result.code = r.success ? swift::ErrorCodeToInt(swift::ErrorCode::OK)
+                                : swift::ErrorCodeToInt(swift::ErrorCode::FILE_NOT_FOUND);
+        if (!r.success && !r.error.empty()) result.message = r.error;
         return result;
     }
     if (cmd == "file.get_file_url") {
