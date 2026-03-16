@@ -265,19 +265,20 @@ void MainWindow::setupUi() {
     });
     connect(m_profileSendMsgBtn, &QPushButton::clicked, this, [this]() {
         if (m_profileUserId.isEmpty()) return;
-        Conversation conv;
         const QString key = convKey(m_profileUserId, 1);
-        if (m_conversationMap.contains(key)) {
-            conv = m_conversationMap.value(key);
-        } else {
+        // 先检查会话是否已存在
+        if (!m_conversationMap.contains(key)) {
+            // 会话不存在时才创建
+            Conversation conv;
             conv.chatId = m_profileUserId;
             conv.chatType = 1;
             conv.peerId = m_profileUserId;
-            conv.peerName = m_profileUserId;
+            conv.peerName = m_profileNickname.isEmpty() ? m_profileUserId : m_profileNickname;
             conv.updatedAt = QDateTime::currentMSecsSinceEpoch();
             m_conversationMap[key] = conv;
             m_contactWidget->upsertConversation(conv);
         }
+        // 切换到会话列表并打开该会话
         m_contactWidget->setViewMode(ContactWidget::ViewMode::Conversations);
         m_rightStack->setCurrentWidget(m_chatWidget);
         onConversationSelected(m_profileUserId, 1);

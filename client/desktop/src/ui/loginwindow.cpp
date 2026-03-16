@@ -70,11 +70,13 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
     m_refreshBtn = new QToolButton(disconnectedCard);
     m_refreshBtn->setObjectName("refreshButton");
     m_refreshIcon = QPixmap(":/icons/reflash.png");
+    // 使用静态图标，不旋转
     m_refreshBtn->setIcon(QIcon(m_refreshIcon));
-    m_refreshBtn->setIconSize(QSize(54, 54));
-    m_refreshBtn->setToolTip("刷新并重连");
+    m_refreshBtn->setIconSize(QSize(48, 48));
+    m_refreshBtn->setToolTip("点击重新连接");
     m_refreshBtn->setCursor(Qt::PointingHandCursor);
-    m_refreshBtn->setMinimumSize(96, 96);
+    m_refreshBtn->setMinimumSize(80, 80);
+    m_refreshBtn->setMaximumSize(80, 80);
     disconnectedCardLayout->addWidget(m_refreshBtn, 0, Qt::AlignHCenter);
 
     auto* disconnectedHint = new QLabel("点击图标尝试重新连接", disconnectedCard);
@@ -94,13 +96,13 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
     auto *card = new QFrame(m_loginPage);
     card->setObjectName("loginCard");
     auto *cardLayout = new QVBoxLayout(card);
-    cardLayout->setContentsMargins(28, 26, 28, 24);
-    cardLayout->setSpacing(12);
+    cardLayout->setContentsMargins(36, 32, 36, 30);  // 增加左右边距，确保内容不贴边
+    cardLayout->setSpacing(14);  // 增加间距
 
     auto *titleLabel = new QLabel("SwiftChat", card);
     titleLabel->setObjectName("loginTitle");
     QFont titleFont = titleLabel->font();
-    titleFont.setPointSize(24);
+    titleFont.setPointSize(22);  // 稍微减小字体，确保完整显示
     titleFont.setWeight(QFont::Bold);
     titleLabel->setFont(titleFont);
     titleLabel->setAlignment(Qt::AlignCenter);
@@ -109,6 +111,8 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
     auto *subtitleLabel = new QLabel("欢迎回来，登录后即可开始聊天", card);
     subtitleLabel->setObjectName("loginSubtitle");
     subtitleLabel->setAlignment(Qt::AlignCenter);
+    subtitleLabel->setWordWrap(true);
+    subtitleLabel->setStyleSheet("padding: 0 10px;");  // 添加左右内边距，防止文字贴边
     cardLayout->addWidget(subtitleLabel);
 
     cardLayout->addSpacing(6);
@@ -116,6 +120,7 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
     m_statusLabel = new QLabel("连接中...", card);
     m_statusLabel->setObjectName("statusLabel");
     m_statusLabel->setAlignment(Qt::AlignCenter);
+    m_statusLabel->setWordWrap(true);  // 允许自动换行
     cardLayout->addWidget(m_statusLabel);
 
     cardLayout->addSpacing(10);
@@ -182,8 +187,8 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
     setStyleSheet(
         "LoginWindow { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #edf3ff, stop:1 #d8e7ff); }"
         "QFrame#loginCard { background: #ffffff; border: 1px solid #dbe5f5; border-radius: 18px; }"
-        "QLabel#loginTitle { color: #1f2f4a; }"
-        "QLabel#loginSubtitle { color: #6b7790; font-size: 13px; }"
+        "QLabel#loginTitle { color: #1f2f4a; padding: 8px 0; }"
+        "QLabel#loginSubtitle { color: #6b7790; font-size: 13px; padding: 4px 0; }"
         "QLabel#statusLabel { color: #4f6ea8; font-size: 13px; background: #eef4ff; border: 1px solid #d5e4ff; border-radius: 10px; padding: 6px 8px; }"
         "QLabel#fieldLabel { color: #2f3b50; font-size: 13px; font-weight: 600; }"
         "QLabel#tipLabel { color: #8a95ab; font-size: 12px; }"
@@ -201,10 +206,10 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
         "QLabel#disconnectTitle { color: #2b3d5d; font-size: 20px; font-weight: 700; }"
         "QLabel#disconnectReason { color: #60718f; font-size: 13px; line-height: 1.4; background: #f3f7ff; border: 1px solid #dde9ff; border-radius: 10px; padding: 10px 12px; }"
         "QLabel#disconnectHint { color: #8192ad; font-size: 12px; }"
-        "QToolButton#refreshButton { background: #ebf3ff; border: 1px solid #c9ddff; border-radius: 48px; padding: 10px; }"
-        "QToolButton#refreshButton:hover { background: #dcecff; border-color: #9fc2ff; }"
-        "QToolButton#refreshButton:pressed { background: #cadfff; }"
-        "QToolButton#refreshButton:disabled { background: #eef2f8; border-color: #d8e0eb; }"
+        "QToolButton#refreshButton { background: #f0f7ff; border: 2px solid #c9ddff; border-radius: 40px; padding: 16px; }"
+        "QToolButton#refreshButton:hover { background: #e1f0ff; border-color: #7fb3ff; }"
+        "QToolButton#refreshButton:pressed { background: #d0e5ff; }"
+        "QToolButton#refreshButton:disabled { background: #f5f7fa; border-color: #e0e5ec; }"
     );
 
     connect(m_loginBtn, &QPushButton::clicked, this, &LoginWindow::onLoginClicked);
@@ -212,14 +217,7 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
     connect(m_passEdit, &QLineEdit::returnPressed, this, &LoginWindow::onLoginClicked);
     connect(m_serverEdit, &QLineEdit::returnPressed, this, &LoginWindow::doConnect);
     connect(m_refreshBtn, &QToolButton::clicked, this, &LoginWindow::doConnect);
-    m_refreshSpinTimer = new QTimer(this);
-    m_refreshSpinTimer->setInterval(45);
-    connect(m_refreshSpinTimer, &QTimer::timeout, this, [this]() {
-        if (!m_refreshBtn || m_refreshIcon.isNull()) return;
-        m_refreshAngle = (m_refreshAngle + 18) % 360;
-        const QPixmap rotated = m_refreshIcon.transformed(QTransform().rotate(m_refreshAngle), Qt::SmoothTransformation);
-        m_refreshBtn->setIcon(QIcon(rotated));
-    });
+    // 不再使用旋转动画，使用静态图标
     m_reconnectTimer = new QTimer(this);
     m_reconnectTimer->setSingleShot(true);
     m_reconnectTimer->setInterval(m_reconnectIntervalMs);
@@ -676,18 +674,16 @@ void LoginWindow::showLoginState() {
 }
 
 void LoginWindow::startRefreshAnimation() {
-    if (!m_refreshSpinTimer || !m_refreshBtn || m_refreshIcon.isNull()) return;
-    if (!m_refreshSpinTimer->isActive()) {
-        m_refreshSpinTimer->start();
+    // 不再使用旋转动画，保持静态图标
+    // 可以通过改变边框颜色或添加阴影来提示正在连接
+    if (m_refreshBtn) {
+        m_refreshBtn->setEnabled(false);
     }
 }
 
 void LoginWindow::stopRefreshAnimation() {
-    if (m_refreshSpinTimer && m_refreshSpinTimer->isActive()) {
-        m_refreshSpinTimer->stop();
-    }
-    m_refreshAngle = 0;
-    if (m_refreshBtn && !m_refreshIcon.isNull()) {
-        m_refreshBtn->setIcon(QIcon(m_refreshIcon));
+    // 不再需要停止旋转动画
+    if (m_refreshBtn) {
+        m_refreshBtn->setEnabled(true);
     }
 }
