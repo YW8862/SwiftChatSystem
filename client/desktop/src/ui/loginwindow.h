@@ -66,7 +66,7 @@ private:
     int m_refreshAngle = 0;
     int m_reconnectIntervalMs = 3000;
     QWidget* m_loginPage = nullptr;
-    QLineEdit* m_serverEdit = nullptr;
+    // m_serverEdit 已移除，服务器地址硬编码
     QLineEdit* m_userEdit = nullptr;
     QLineEdit* m_passEdit = nullptr;
     QLabel* m_statusLabel = nullptr;

@@ -96,13 +96,13 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
     auto *card = new QFrame(m_loginPage);
     card->setObjectName("loginCard");
     auto *cardLayout = new QVBoxLayout(card);
-    cardLayout->setContentsMargins(36, 32, 36, 30);  // 增加左右边距，确保内容不贴边
-    cardLayout->setSpacing(14);  // 增加间距
+    cardLayout->setContentsMargins(40, 36, 40, 34);  // 进一步增加边距
+    cardLayout->setSpacing(16);  // 进一步增加间距
 
     auto *titleLabel = new QLabel("SwiftChat", card);
     titleLabel->setObjectName("loginTitle");
     QFont titleFont = titleLabel->font();
-    titleFont.setPointSize(22);  // 稍微减小字体，确保完整显示
+    titleFont.setPointSize(20);  // 减小字体确保完整显示
     titleFont.setWeight(QFont::Bold);
     titleLabel->setFont(titleFont);
     titleLabel->setAlignment(Qt::AlignCenter);
@@ -112,29 +112,22 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
     subtitleLabel->setObjectName("loginSubtitle");
     subtitleLabel->setAlignment(Qt::AlignCenter);
     subtitleLabel->setWordWrap(true);
-    subtitleLabel->setStyleSheet("padding: 0 10px;");  // 添加左右内边距，防止文字贴边
+    subtitleLabel->setStyleSheet("padding: 0 16px;");  // 增加内边距
     cardLayout->addWidget(subtitleLabel);
 
     cardLayout->addSpacing(6);
 
-    m_statusLabel = new QLabel("连接中...", card);
+    m_statusLabel = new QLabel("正在连接...", card);
     m_statusLabel->setObjectName("statusLabel");
     m_statusLabel->setAlignment(Qt::AlignCenter);
-    m_statusLabel->setWordWrap(true);  // 允许自动换行
+    m_statusLabel->setWordWrap(true);
     cardLayout->addWidget(m_statusLabel);
 
-    cardLayout->addSpacing(10);
+    cardLayout->addSpacing(8);
 
-    auto *serverLabel = new QLabel("服务器地址", card);
-    serverLabel->setObjectName("fieldLabel");
-    cardLayout->addWidget(serverLabel);
-    m_serverEdit = new QLineEdit(card);
-    m_serverEdit->setPlaceholderText("ws://host:port/ws");
-    m_serverEdit->setMinimumHeight(42);
-    m_serverEdit->setText(Settings::instance().serverUrl());
-    cardLayout->addWidget(m_serverEdit);
-
-    cardLayout->addSpacing(2);
+    // 服务器地址已硬编码，不再显示输入框
+    const QString defaultServerUrl = "ws://117.72.44.96:9090/ws";
+    Settings::instance().setServerUrl(defaultServerUrl);
 
     auto *userLabel = new QLabel("用户名", card);
     userLabel->setObjectName("fieldLabel");
@@ -187,8 +180,8 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
     setStyleSheet(
         "LoginWindow { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #edf3ff, stop:1 #d8e7ff); }"
         "QFrame#loginCard { background: #ffffff; border: 1px solid #dbe5f5; border-radius: 18px; }"
-        "QLabel#loginTitle { color: #1f2f4a; padding: 8px 0; }"
-        "QLabel#loginSubtitle { color: #6b7790; font-size: 13px; padding: 4px 0; }"
+        "QLabel#loginTitle { color: #1f2f4a; padding: 10px 0; }"
+        "QLabel#loginSubtitle { color: #6b7790; font-size: 13px; padding: 6px 0; }"
         "QLabel#statusLabel { color: #4f6ea8; font-size: 13px; background: #eef4ff; border: 1px solid #d5e4ff; border-radius: 10px; padding: 6px 8px; }"
         "QLabel#fieldLabel { color: #2f3b50; font-size: 13px; font-weight: 600; }"
         "QLabel#tipLabel { color: #8a95ab; font-size: 12px; }"
@@ -215,7 +208,6 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
     connect(m_loginBtn, &QPushButton::clicked, this, &LoginWindow::onLoginClicked);
     connect(m_registerBtn, &QPushButton::clicked, this, &LoginWindow::onRegisterClicked);
     connect(m_passEdit, &QLineEdit::returnPressed, this, &LoginWindow::onLoginClicked);
-    connect(m_serverEdit, &QLineEdit::returnPressed, this, &LoginWindow::doConnect);
     connect(m_refreshBtn, &QToolButton::clicked, this, &LoginWindow::doConnect);
     // 不再使用旋转动画，使用静态图标
     m_reconnectTimer = new QTimer(this);
@@ -240,11 +232,8 @@ LoginWindow::LoginWindow(WebSocketClient *wsClient, ProtocolHandler *protocol,
 LoginWindow::~LoginWindow() = default;
 
 QString LoginWindow::currentServerUrl() const {
-    const QString typed = m_serverEdit ? m_serverEdit->text().trimmed() : QString();
-    if (!typed.isEmpty()) {
-        return typed;
-    }
-    return Settings::instance().serverUrl();
+    // 服务器地址已硬编码
+    return "ws://117.72.44.96:9090/ws";
 }
 
 bool LoginWindow::ensureConnectedForRequest(const QString& connectingStatus) {
@@ -263,16 +252,8 @@ void LoginWindow::doConnect() {
     if (m_wsClient) {
         cancelAutoReconnect();
         const QString url = currentServerUrl();
-        if (url.isEmpty()) {
-            if (m_statusLabel) {
-                m_statusLabel->setText("请先输入服务器地址");
-            }
-            if (m_refreshBtn) m_refreshBtn->setEnabled(true);
-            return;
-        }
-        if (!url.isEmpty()) {
-            Settings::instance().setServerUrl(url);
-        }
+        // 服务器地址已硬编码，直接连接
+        Settings::instance().setServerUrl(url);
         showDisconnectedState("正在尝试连接服务器...");
         if (m_refreshBtn) m_refreshBtn->setEnabled(false);
         startRefreshAnimation();
@@ -649,7 +630,7 @@ void LoginWindow::onRegisterClicked() {
 }
 
 void LoginWindow::setLoginUiEnabled(bool enabled) {
-    if (m_serverEdit) m_serverEdit->setEnabled(enabled);
+    // m_serverEdit 已移除
     if (m_userEdit) m_userEdit->setEnabled(enabled);
     if (m_passEdit) m_passEdit->setEnabled(enabled);
     if (m_loginBtn) m_loginBtn->setEnabled(enabled);
